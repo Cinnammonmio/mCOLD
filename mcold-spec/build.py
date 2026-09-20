@@ -5,9 +5,9 @@ import subprocess
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
-OUT_PDF = HERE.parent / "Foam_Functions_and_Usage_Flow_2026-09-20.pdf"
+OUT_PDF = HERE.parent / "mCOLD_Functions_and_Usage_Flow_2026-09-20.pdf"
 EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-PROFILE = pathlib.Path(os.environ.get("TEMP", HERE)) / "foam-spec-edge"
+PROFILE = pathlib.Path(os.environ.get("TEMP", HERE)) / "mcold-spec-edge"
 
 
 def icon_svg(name):
@@ -33,7 +33,7 @@ def main():
     if missing:
         sys.exit(f"missing icons: {sorted(missing)}")
 
-    built = HERE / "foam_spec.html"
+    built = HERE / "mcold_spec.html"
     built.write_text(html, encoding="utf-8")
 
     cmd = [EDGE, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
