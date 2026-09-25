@@ -23,17 +23,28 @@ OUT = Path(__file__).parent / "out"
 
 
 def font(weight, size):
-    return ImageFont.truetype(str(FONTS / f"IBMPlexSansThai-{weight}.ttf"), size)
+    """Basic layout keeps advances on whole pixels; Raqm's fractional ones
+    smear tracked caps."""
+    return ImageFont.truetype(str(FONTS / f"IBMPlexSansThai-{weight}.ttf"), size,
+                              layout_engine=ImageFont.Layout.BASIC)
+
+
+def mono(img):
+    """A draw context that rasterises text 1-bit with hinting, no antialiasing."""
+    d = ImageDraw.Draw(img)
+    d.fontmode = "1"
+    return d
 
 
 # Type scale: one micro caps size, one reading size, one value size, two display sizes.
-MICRO = font("SemiBold", 9)     # tracked caps: labels, header, footer
-SMALL = font("Medium", 12)      # secondary sentences and detail rows
-STATUS = font("SemiBold", 12)   # the one status word under the hero
-TITLE = font("SemiBold", 25)    # takeover headline
+MICRO = font("SemiBold", 11)    # tracked caps: labels, header, footer
+SMALL = font("Medium", 13)      # secondary sentences and detail rows
+STATUSES = [font("SemiBold", s) for s in (13, 12, 11)]  # shrinks to clear the column
+TITLE = font("SemiBold", 26)    # takeover headline
 HEROES = [font("Light", s) for s in (58, 52, 46)]  # shrinks to clear the column
 HERO_UNIT = font("Light", 18)
-VALUES = [font("Medium", s) for s in (14, 13, 12, 11)]  # widest that fits wins
+VALUES = [font("Medium", s) for s in (15, 14, 13, 12)]  # widest that fits wins
+TRACK = 0.8                     # caps tracking, applied on whole pixels
 
 # Layout grid. Every y below is a baseline except the header/footer bands,
 # so glyphs never cross the two hairlines.
@@ -53,65 +64,66 @@ class Screen:
     def __init__(self, name, accent=None):
         self.name = name
         self.img = Image.new("RGB", (W, H), WHITE)
-        self.d = ImageDraw.Draw(self.img)
+        self.d = mono(self.img)
         if accent:
             self.bar(accent)
 
     def _stamp(self, mask, color):
-        self.img.paste(color, (0, 0), mask.point(lambda v: 255 if v >= 128 else 0))
+        self.img.paste(color, (0, 0), mask)
 
     def bar(self, color):
         """Left edge accent: the only place colour carries state, and never alone."""
         m = Image.new("L", (W, H), 0)
-        ImageDraw.Draw(m).rectangle([0, 0, 3, H - 1], fill=255)
+        mono(m).rectangle([0, 0, 3, H - 1], fill=255)
         self._stamp(m, color)
 
     def width(self, txt, fnt, track=0.0):
-        w = self.d.textlength(txt, font=fnt)
-        return w + track * max(len(txt) - 1, 0)
+        if not track:
+            return round(self.d.textlength(txt, font=fnt))
+        return sum(round(self.d.textlength(c, font=fnt)) + track for c in txt) - track
 
     def text(self, xy, txt, fnt, color=BLACK, anchor="ls", track=0.0):
         m = Image.new("L", (W, H), 0)
-        d = ImageDraw.Draw(m)
+        d = mono(m)
+        x, y = round(xy[0]), round(xy[1])
         if not track:
-            d.text(xy, txt, font=fnt, fill=255, anchor=anchor)
+            d.text((x, y), txt, font=fnt, fill=255, anchor=anchor)
         else:
-            x, y = xy
-            widths = [d.textlength(c, font=fnt) for c in txt]
+            widths = [round(d.textlength(c, font=fnt)) for c in txt]
             total = sum(widths) + track * (len(txt) - 1)
             if anchor[0] == "r":
-                x -= total
+                x -= round(total)
             elif anchor[0] == "m":
-                x -= total / 2
+                x -= round(total / 2)
             for c, w in zip(txt, widths):
-                d.text((x, y), c, font=fnt, fill=255, anchor="l" + anchor[1])
+                d.text((round(x), y), c, font=fnt, fill=255, anchor="l" + anchor[1])
                 x += w + track
         self._stamp(m, color)
 
     def rule(self, y, x0=M, x1=EDGE_R):
         m = Image.new("L", (W, H), 0)
-        ImageDraw.Draw(m).rectangle([x0, y, x1 - 1, y], fill=255)
+        mono(m).rectangle([x0, y, x1 - 1, y], fill=255)
         self._stamp(m, BLACK)
 
     # ---- shared bands -------------------------------------------------
     def header(self, device, stamp, stale=False):
-        self.text((M, 15), device, MICRO, track=0.7)
+        self.text((M, 15), device, MICRO, track=TRACK)
         self.text((EDGE_R, 15), stamp if not stale else f"{stamp}  STALE", MICRO,
-                  RED if stale else BLACK, anchor="rs", track=0.7)
+                  RED if stale else BLACK, anchor="rs", track=TRACK)
         self.rule(RULE_TOP)
 
     def footer(self, left, right=""):
         self.rule(RULE_BOT)
-        self.text((M, 113), left, MICRO, track=0.7)
+        self.text((M, 113), left, MICRO, track=TRACK)
         if right:
-            self.text((EDGE_R, 113), right, MICRO, anchor="rs", track=0.7)
+            self.text((EDGE_R, 113), right, MICRO, anchor="rs", track=TRACK)
 
     def stat_rows(self, stats):
         """Label left, value right on one baseline; the value takes the
         largest size that still clears the label."""
         for (label, value), y in zip(stats, COL_ROWS):
-            self.text((COL_R, y), label, MICRO, track=0.7)
-            room = EDGE_R - COL_R - self.width(label, MICRO, 0.7) - 7
+            self.text((COL_R, y), label, MICRO, track=TRACK)
+            room = EDGE_R - COL_R - self.width(label, MICRO, TRACK) - 7
             fnt = next((f for f in VALUES if self.width(value, f) <= room), VALUES[-1])
             self.text((EDGE_R, y), value, fnt, anchor="rs")
 
@@ -133,7 +145,13 @@ def monitor(name, *, device="MCOLD-0117", stamp="UPDATED 14:32", stale=False,
     hero = next((f for f in HEROES if s.width(temp, f) <= room), HEROES[-1])
     s.text((M - 1, BASE_HERO), temp, hero, hero_color)
     s.text((M - 1 + s.width(temp, hero) + 4, BASE_HERO - 24), "°C", HERO_UNIT, hero_color)
-    s.text((M, BASE_STATUS), status, STATUS, status_color, track=0.4)
+    room = COL_R - M - 6
+    fnt = next((f for f in STATUSES if s.width(status, f, 0.5) <= room), None)
+    if fnt is None:
+        fnt = STATUSES[-1]
+        print(f"  warn {name}: status {status!r} overflows by "
+              f"{round(s.width(status, fnt, 0.5) - room)} px")
+    s.text((M, BASE_STATUS), status, fnt, status_color, track=0.5)
     s.stat_rows(stats)
     s.footer(foot_l, foot_r)
     return s.save()
@@ -158,7 +176,7 @@ def takeover(name, *, device="MCOLD-0117", stamp="14:32", title="", sub="",
 def detail(name, *, device="MCOLD-0117", stamp="14:32", title="", rows=(), foot=""):
     s = Screen(name)
     s.header(device, stamp)
-    s.text((M, 38), title, MICRO, track=0.7)
+    s.text((M, 38), title, MICRO, track=TRACK)
     for i, (label, value) in enumerate(rows):
         y = 58 + i * 17
         s.text((M, y), label, SMALL)
@@ -198,13 +216,13 @@ def build():
         foot_l="TRIP 0142 / LOGGING", foot_r="1 FAULT")))
 
     add(("A6  CHARGING / DOCK", monitor(
-        "A6_charging", temp="4.4", status="CHARGING IN DOCK",
+        "A6_charging", temp="4.4", status="CHARGING",
         stats=(("BATT", "62%"), ("CHG", "1.18A"), ("FULL", "42M")),
         foot_l="NO ACTIVE TRIP", foot_r="DOCK  PD 20V")))
 
     add(("A7  STALE SAMPLE", monitor(
         "A7_stale", temp="4.2", stamp="UPDATED 11:05", stale=True,
-        status="NO SAMPLE 3H 27M",
+        status="NO SAMPLE 3H",
         stats=(("MIN", "2.8"), ("MAX", "6.1"), ("DOOR", "CLOSED")),
         foot_l="TRIP 0142 / GAP", foot_r="1 FAULT")))
 
@@ -246,7 +264,7 @@ def build():
             ("Trip", "0142 · 21 Sep 08:20"),
             ("Storage", "94% free · no SD"),
             ("Upload", "184 records pending")),
-        foot="FW 0.1.0 · GNSS FIX 12M AGO · RTC OK")))
+        foot="FW 0.1.0 · GNSS 12M · RTC OK")))
 
     contact_sheet()
     print(f"{len(SCREENS)} screens -> {OUT}")

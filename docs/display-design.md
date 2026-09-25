@@ -3,8 +3,8 @@
 ออกแบบสำหรับ Waveshare 2.13" e-Paper (G) 250×122, 4 ink (B/W/Y/R)
 mockup ทุกหน้าอยู่ที่ `display-mock/out/` สร้างด้วย `python display-mock/render.py`
 
-renderer ใช้ palette 4 สีจริงและ threshold ตัวอักษรแบบ 1-bit ไม่มี antialias
-ภาพที่เห็นจึงเป็นสิ่งที่จอแสดงได้จริง ไม่ใช่ภาพสวยบนจอคอม
+renderer ใช้ palette 4 สีจริง และให้ FreeType เรนเดอร์ตัวอักษรเป็น monochrome พร้อม hinting
+(ไม่ใช่ antialias แล้วมา threshold) ภาพที่เห็นจึงเป็นสิ่งที่จอแสดงได้จริง ไม่ใช่ภาพสวยบนจอคอม
 
 ## หลักการ
 
@@ -42,22 +42,36 @@ margin 11 px ซ้าย/ขวา · ค่าคอลัมน์ขวา�
 
 | บทบาท | Font | ขนาด | ใช้ที่ |
 |---|---|---|---|
-| micro caps (tracking 0.7) | SemiBold | 9 | header, footer, label คอลัมน์ขวา |
-| body | Medium | 12 | ประโยคอธิบาย, แถว label/value หน้า C |
-| status | SemiBold | 12 | คำสถานะใต้ตัวเลขใหญ่ |
-| value | Medium | 14→11 | ค่าคอลัมน์ขวา ย่อเองให้พ้น label |
-| title | SemiBold | 25 | หัวข้อหน้า takeover |
+| micro caps (tracking 0.8) | SemiBold | 11 | header, footer, label คอลัมน์ขวา |
+| body | Medium | 13 | ประโยคอธิบาย, แถว label/value หน้า C |
+| status | SemiBold | 13→11 | คำสถานะใต้ตัวเลขใหญ่ ย่อเองให้พ้นคอลัมน์ขวา |
+| value | Medium | 15→12 | ค่าคอลัมน์ขวา ย่อเองให้พ้น label |
+| title | SemiBold | 26 | หัวข้อหน้า takeover |
 | hero | Light | 58→46 | ตัวเลขอุณหภูมิ ย่อเองให้พ้นคอลัมน์ขวา |
 
 ฟอนต์ IBM Plex Sans Thai (มีใน repo แล้ว) รองรับไทยด้วยถ้าต้องเปลี่ยนภาษาภายหลัง
 
-### สองข้อที่ได้จากการทำ mockup จริง
+## ความคมของตัวอักษร
 
-- **ต่ำกว่า 12 px ห้ามใช้น้ำหนักบางกว่า Medium** — ตอนทดลองด้วย Regular 11 px เส้นตั้งของ `d`
-  บางไม่ถึง threshold แล้วหายกลายเป็น `c` ("stopped" อ่านได้เป็น "stoppec")
-  จอนี้ไม่มี grayscale มาช่วยกลบ ทุก stem ต้องหนาพอเป็น 1 px เต็ม
+จอไม่มี grayscale ทุก pixel เป็น 0 หรือ 1 ความคมจึงมาจาก 3 อย่าง ไม่ใช่การเลือกฟอนต์สวย
+
+1. **เรนเดอร์เป็น monochrome พร้อม hinting ตั้งแต่ต้น** (`fontmode = "1"`)
+   ไม่ใช่วาดแบบ antialias แล้วมา threshold — hinting จะดึง stem ทุกเส้นให้ลงตรงกลาง pixel
+   วิธี threshold ทำให้ stem ที่ตกคร่อม pixel มีค่าไม่ถึงเกณฑ์แล้วหายไปเลย
+2. **advance ต้องเป็นจำนวนเต็ม** ใช้ layout engine แบบ BASIC และปัดพิกัดทุกตัวอักษรเป็น int
+   ถ้าปล่อยให้เป็นเศษ ตัวอักษรเดียวกันจะ rasterise ไม่เหมือนกันในแต่ละตำแหน่ง ดูสั่น
+3. **ขนาดต้องพอกับ typeface** ไม่ใช่ทุกขนาดคม — วัดแล้วพบว่า IBM Plex Sans Thai
+   ที่ 9–10 px ตัว `U`/`P` เบี้ยวทุกน้ำหนัก, **11 px SemiBold เป็นขนาดเล็กสุดที่ stem ลงล็อกครบ**
+   จึงยก micro caps จาก 9 เป็น 11 px และ body จาก 12 เป็น 13 px
+
+### สามข้อที่ได้จากการทำ mockup จริง
+
+- **ต่ำกว่า 12 px ห้ามใช้น้ำหนักบางกว่า Medium** — ตอนทดลองด้วย Regular 11 px แบบ threshold
+  เส้นตั้งของ `d` หายกลายเป็น `c` ("stopped" อ่านได้เป็น "stoppec")
 - **ตัวเลขใหญ่ต้องย่อได้เอง** — `11.6` กว้างกว่า `4.2` จนหน่วย °C ไปทับ label คอลัมน์ขวา
   view model จึงต้องเลือกขนาดจากความกว้างที่วัดได้ ไม่ใช่ขนาดคงที่
+- **บรรทัดสถานะก็ต้องย่อได้เอง** — พอ type scale ใหญ่ขึ้น "CHARGING IN DOCK" ล้นไปชนคอลัมน์ขวา
+  ทุกข้อความที่ผู้ใช้/config กำหนดได้ต้องมีกล่องคุมความกว้าง และ renderer เตือนเมื่อล้น
 
 ## หน้าจอ 15 state / 3 template
 
