@@ -23,8 +23,10 @@
 ```
 docs/
   mCOLD_Firmware_Requirements_2026-09-19.md   เอกสาร requirement ฉบับเต็ม (แหล่งอ้างอิงหลัก)
+  display-design.md                           สเปกหน้าจอ e-paper (layout, type, ไอคอน, refresh)
   SCH_Schematic_foamV1.0.1_P.1_2026-09-19.pdf schematic ตัวเครื่อง
   SCH_Schematic_foam_dock_P.3_2026-09-19.pdf  schematic dock
+display-mock/                                 renderer + ภาพหน้าจอทุก state ขนาดจริง
 mcold-spec/                                   ต้นฉบับเอกสารสเปกสำหรับผู้บริหาร/ฝ่ายขาย
 mCOLD_Functions_and_Usage_Flow_2026-09-20.pdf เอกสารที่ build ออกมาแล้ว (8 หน้า)
 ```
@@ -62,6 +64,16 @@ CHG_CE_N pull-down R22 10 kΩ, INA226 VIN+ = BAT_CHARGER (กระแสเป�
 - **Buzzer**: LCSC C94599 = MLT-8530 เป็น **passive electromagnetic** ต้องขับ PWM 2.7 kHz
   ขดลวด 16 Ω → peak ~200 mA ที่ 3.3 V ดังนั้น beep ต้องสั้น (50–200 ms) · Q5 = MMBT2222A,
   R34 = 1 kΩ ให้ Ib แค่ ~2.6 mA จะไม่ saturate เต็ม ถ้าเสียงเบาให้เปลี่ยน R34 เป็น 330 Ω
+
+## หน้าจอ
+
+ออกแบบครบ 14 state แล้ว ดูภาพขนาดจริงได้ที่ `display-mock/out/contact_sheet.png`
+รายละเอียด layout/type/ไอคอน/refresh policy อยู่ที่ `docs/display-design.md`
+สร้างภาพใหม่ด้วย `python display-mock/render.py`
+
+ใช้ 3 หมึก (ขาว/ดำ/แดง) · header กลับสี · อุณหภูมิกึ่งกลางใหญ่สุด min/max ล่างสุด ·
+footer แถวสถานะ (wifi, cloud, trip, shock, charge, แบต, เมม) · alarm เป็นกรอบแดง
+โค้ด layout ยกไปเป็น view model ใน firmware ได้ตรง ๆ เหลือเปลี่ยน backend เป็น panel driver
 
 ## แผนพัฒนา firmware
 
