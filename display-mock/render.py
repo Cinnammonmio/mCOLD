@@ -49,6 +49,8 @@ BIG = font("Bold", 44)           # state of charge
 HEROES = [font("Bold", s) for s in (54, 48, 42)]
 HERO_UNIT = font("Light", 18)
 TRACK = 0.8
+BATT_LOW = 20       # % at or below -> battery indicator red
+MEM_HIGH = 90       # % used at or above -> storage indicator red
 
 # Layout bands
 BAR = 21            # header bar height
@@ -56,9 +58,8 @@ RULE = 100          # footer divider
 M = 8               # side margin
 EDGE_R = W - M
 BASE_BAR = 14       # header baseline
-BASE_HERO = 62
-BASE_STATUS = 79
-BASE_MINMAX = 96
+BASE_HERO = 74      # temperature, fixed on every monitor screen
+BASE_BOTTOM = 96    # min/max, or a caps note when there is no trip
 ICON_BOTTOM = 115   # icons and footer text sit on this line
 
 # 1-bit icons, drawn on the pixel grid rather than scaled from vector art.
@@ -168,31 +169,63 @@ class Screen:
         self.text((EDGE_R, BASE_BAR), clock, CHROME, WHITE, anchor="rs", track=TRACK)
 
     def footer(self, *, trip=False, shock=False, wifi=False, cloud=False,
-               charging=False, battery=78, storage=94):
-        """One row of state: trip, shock, link, cloud, charge, battery,
-        storage. No SD indicator -- the card is optional and not user-facing."""
+               charging=False, battery=78, storage=6):
+        """One row of state. `storage` is percent USED, so both gauges fill
+        toward their own bad news and the red rule reads the same way.
+        No SD indicator -- the card is optional and not user-facing."""
         self.box((0, RULE), (W - 1, RULE))
-        x = M
-        for name, shown in (("trip", trip), ("shock", shock)):
-            if shown:
-                x += self.icon(name, x, ICON_BOTTOM) + 6
-        for name, on in (("wifi", wifi), ("cloud", cloud)):
-            x += self.icon(name, x, ICON_BOTTOM, off=not on) + 6
 
-        # The two numeric states get caps labels, not pictograms: no 6-pixel
-        # glyph for "storage" survived reading next to its own percentage
-        # (a cylinder became the digit 8, a notched card became a blob).
-        # Icons stay where they win -- the on/off states above.
+        # Left: always-on indicators first, conditional ones appended to the
+        # right, so an icon appearing never shifts the ones already there.
+        x = M
+        for name, on in (("wifi", wifi), ("cloud", cloud)):
+            x += self.icon(name, x, ICON_BOTTOM, off=not on) + 7
+        if trip:
+            x += self.icon("trip", x, ICON_BOTTOM) + 7
+        if shock:
+            x += self.icon("shock", x, ICON_BOTTOM, RED) + 7
+
+        # Right: gauge + percentage, built right to left.
         x = EDGE_R
-        for label, pct in (("MEM", storage), ("BAT", battery)):
+        for kind, pct in (("storage", storage), ("battery", battery)):
+            red = pct >= MEM_HIGH if kind == "storage" else pct <= BATT_LOW
+            color = RED if red else BLACK
             value = f"{pct}%"
             x -= self.width(value, CHROME)
-            self.text((x, ICON_BOTTOM), value, CHROME)
-            x -= 4 + self.width(label, LABEL, TRACK)
-            self.text((x, ICON_BOTTOM), label, LABEL, track=TRACK)
-            x -= 10
+            self.text((x, ICON_BOTTOM), value, CHROME, color)
+            x -= 4
+            x -= self.gauge(kind, x, ICON_BOTTOM, pct, color)
+            x -= 9
         if charging:
-            self.icon("bolt", x - 5, ICON_BOTTOM)
+            self.icon("bolt", x - 6, ICON_BOTTOM)
+
+    def gauge(self, kind, right, bottom, pct, color):
+        """Battery lies down and shows charge left; storage stands up and
+        fills from the bottom. Different silhouettes so neither is read as
+        the other, and the fill level carries the value at a glance."""
+        m = Image.new("L", (W, H), 0)
+        d = mono(m)
+        pct = max(0, min(pct, 100))
+        if kind == "battery":
+            w, h = 15, 7
+            x, top = right - w, bottom - h
+            d.rectangle([(x, top), (x + 12, bottom - 1)], outline=255)
+            d.rectangle([(x + 13, top + 2), (x + 14, bottom - 3)], fill=255)
+            fill = round(pct / 100 * 9)
+            if fill:
+                d.rectangle([(x + 2, top + 2), (x + 1 + fill, bottom - 3)], fill=255)
+        else:
+            w, h = 8, 11
+            x, top = right - w, bottom - h
+            d.rectangle([(x + 1, top), (x + w - 2, top)], fill=255)
+            d.rectangle([(x, top + 1), (x, bottom - 1)], fill=255)
+            d.rectangle([(x + w - 1, top + 1), (x + w - 1, bottom - 1)], fill=255)
+            d.rectangle([(x, bottom - 1), (x + w - 1, bottom - 1)], fill=255)
+            fill = round(pct / 100 * (h - 3))
+            if fill:
+                d.rectangle([(x + 2, bottom - 1 - fill), (x + w - 3, bottom - 2)], fill=255)
+        self._stamp(m, color)
+        return w
 
     def alarm_frame(self):
         """Alarm is the whole frame, not a badge: visible across a warehouse."""
@@ -216,22 +249,24 @@ class Screen:
 # Template A -- Monitor: temperature centred and largest, min/max last.
 # ---------------------------------------------------------------------
 def monitor(name, *, device="MCOLD-0117", clock="14:32", temp="4.2",
-            status="", status_color=BLACK, alarm=False, minmax=("2.8", "6.1"),
-            **flags):
+            red=False, alarm=False, minmax=("2.8", "6.1"), note="", **flags):
+    """No words explain the temperature any more: red means this number is
+    not to be trusted (out of band, or no valid sample) and a red frame
+    means it is an alarm. The reason lives in the LED, the log and the app."""
     s = Screen(name)
     s.header(device, clock)
-    hero_color = RED if alarm else BLACK
+    hero_color = RED if (red or alarm) else BLACK
     room = W - 2 * M - s.width("°C", HERO_UNIT) - 5
     hero = next((f for f in HEROES if s.width(temp, f) <= room), HEROES[-1])
     s.centered([(temp, hero, hero_color, 0), ("°C", HERO_UNIT, hero_color, 0)],
                BASE_HERO, gap=5)
-    if status:
-        s.centered([(status, LABEL, status_color, TRACK)], BASE_STATUS)
     if minmax:
         lo, hi = minmax
         s.centered([("MIN", LABEL, BLACK, TRACK), (lo, READING, BLACK, 0),
                     ("MAX", LABEL, BLACK, TRACK), (hi, READING, BLACK, 0)],
-                   BASE_MINMAX, gap=7)
+                   BASE_BOTTOM, gap=7)
+    elif note:
+        s.centered([(note, LABEL, BLACK, TRACK)], BASE_BOTTOM)
     s.footer(**flags)
     if alarm:
         s.alarm_frame()
@@ -295,7 +330,7 @@ def detail(name, *, device="MCOLD-0117", clock="14:32", title="", rows=(), **fla
 
 
 SCREENS = []
-LIVE = dict(trip=True, wifi=True, cloud=True, battery=78, storage=94)
+LIVE = dict(trip=True, wifi=True, cloud=True, battery=78, storage=6)
 
 
 def build():
@@ -303,39 +338,32 @@ def build():
     add = SCREENS.append
 
     add(("A1  IDLE / READY", monitor(
-        "A1_idle", status="NO ACTIVE TRIP", minmax=None,
-        wifi=True, cloud=True, battery=78, storage=94)))
+        "A1_idle", minmax=None, note="NO ACTIVE TRIP",
+        wifi=True, cloud=True, battery=78, storage=6)))
 
     add(("A2  TRIP ACTIVE", monitor("A2_trip", **LIVE)))
 
-    add(("A3  WARNING", monitor(
-        "A3_warning", temp="8.4", status="ABOVE 8.0 FOR 4 MIN", status_color=RED,
-        minmax=("2.8", "8.4"), **LIVE)))
+    add(("A3  OUT OF BAND", monitor(
+        "A3_warning", temp="8.4", red=True, minmax=("2.8", "8.4"), **LIVE)))
 
     add(("A4  ALARM", monitor(
-        "A4_alarm", temp="11.6", status="TEMP HIGH", status_color=RED, alarm=True,
-        minmax=("2.8", "11.6"), trip=True, shock=True, wifi=True, cloud=False,
-        battery=61, storage=93)))
+        "A4_alarm", temp="11.6", alarm=True, minmax=("2.8", "11.6"),
+        trip=True, shock=True, wifi=True, cloud=False, battery=61, storage=7)))
 
-    add(("A5  PROBE FAULT", monitor(
-        "A5_probe", temp="--", status="PROBE OPEN", status_color=RED,
-        minmax=("2.8", "6.1"), **LIVE)))
+    add(("A5  NO READING", monitor(
+        "A5_noreading", temp="--", red=True, minmax=("2.8", "6.1"),
+        trip=True, wifi=False, cloud=False, battery=16, storage=6)))
 
     add(("A6  CHARGING", charge(
         "A6_charging", soc=62, state="FAST CHARGE", rows=(
             ("SOURCE", "DOCK PD 20V"),
             ("CURRENT", "1.18 A"),
             ("FULL IN", "42 MIN")),
-        charging=True, wifi=True, cloud=True, battery=62, storage=94)))
-
-    add(("A7  STALE SAMPLE", monitor(
-        "A7_stale", clock="14:32", status="NO SAMPLE 3H 27M", status_color=RED,
-        minmax=("2.8", "6.1"), trip=True, wifi=False, cloud=False,
-        battery=74, storage=94)))
+        charging=True, wifi=True, cloud=True, battery=62, storage=6)))
 
     add(("B1  BOOT / SELF-TEST", takeover(
         "B1_boot", clock="--:--", title="SELF-TEST", sub="Checking sensors and storage",
-        data="FIRMWARE 0.1.0 · SERIAL 0117", battery=78, storage=94)))
+        data="FIRMWARE 0.1.0 · SERIAL 0117", battery=78, storage=6)))
 
     add(("B2  USB CONNECTED", takeover(
         "B2_usb", title="USB DRIVE", sub="Read-only. Copy the CSV, then eject.",
@@ -343,7 +371,7 @@ def build():
 
     add(("B3  BLE SESSION", takeover(
         "B3_ble", title="MCOLD-0117", sub="Confirm this ID in the app to pair.",
-        data="PAIRING WINDOW 60 S", wifi=True, cloud=True, battery=78, storage=94)))
+        data="PAIRING WINDOW 60 S", wifi=True, cloud=True, battery=78, storage=6)))
 
     add(("B4  STORAGE FULL", takeover(
         "B4_storage", title="STORAGE FULL", sub="Oldest finished trip was dropped.",
@@ -353,7 +381,7 @@ def build():
     add(("B5  CRITICAL BATTERY", takeover(
         "B5_battery", title="BATTERY 4%", sub="Logging stopped. Charge the device.",
         data="LAST RECORD 14:32", alarm=True, title_color=RED,
-        wifi=False, cloud=False, battery=4, storage=94)))
+        wifi=False, cloud=False, battery=4, storage=6)))
 
     add(("B6  FAULT / RECOVERY", takeover(
         "B6_fault", title="SENSOR FAULT", sub="Temperature bus not responding.",
@@ -364,7 +392,7 @@ def build():
             ("Duration", "3d 06h 12m"),
             ("Temperature", "2.8 / 6.1 °C"),
             ("Alarms", "1 high · 2 shock")),
-        wifi=True, cloud=True, battery=74, storage=91)))
+        wifi=True, cloud=True, battery=74, storage=9)))
 
     add(("C2  DETAIL (NFC TAP)", detail(
         "C2_detail", title="DEVICE DETAIL", rows=(
