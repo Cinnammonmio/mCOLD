@@ -2,20 +2,20 @@
 """mCOLD e-paper screen mockups.
 
 Renders every display state of the 2.13" Waveshare (G) panel at its real
-250x122 geometry using only the panel's four inks. Text is drawn into a
-1-bit mask and thresholded, so the preview has no greys the panel cannot
-show. The layout tables here are the same ones the firmware view model
-will use; only the backend changes when the panel driver comes up.
+250x122 geometry using three of its inks (white, black, red -- yellow is
+unused by choice). Text is rasterised 1-bit with hinting, so the preview
+carries no greys and no soft edges the panel cannot reproduce.
+
+The layout tables and the icon bitmaps here are the firmware view model;
+only the backend changes when the panel driver comes up.
 """
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 W, H = 250, 122
 
-# Approximate ink colours of the 4-colour (G) panel, not screen primaries.
 WHITE = (255, 255, 255)
 BLACK = (26, 26, 26)
-YELLOW = (238, 200, 32)
 RED = (198, 44, 38)
 
 FONTS = Path(__file__).parent.parent / "mcold-spec" / "fonts"
@@ -36,46 +36,79 @@ def mono(img):
     return d
 
 
-# Type scale: one micro caps size, one reading size, one value size, two display sizes.
-MICRO = font("SemiBold", 11)    # tracked caps: labels, header, footer
-SMALL = font("Medium", 13)      # secondary sentences and detail rows
-STATUSES = [font("SemiBold", s) for s in (13, 12, 11)]  # shrinks to clear the column
-TITLE = font("SemiBold", 26)    # takeover headline
-HEROES = [font("Light", s) for s in (58, 52, 46)]  # shrinks to clear the column
+# Type scale: weight rises with size. Hinted 1-bit rendering holds a Light
+# stem at one pixel, so small text stays thin and large text carries the weight.
+CHROME = font("Light", 12)       # header bar, footer percentages
+LABEL = font("Light", 11)        # tracked caps: status line, min/max labels
+BODY = font("Light", 13)         # sentences on takeover screens
+READING = font("Light", 15)      # min/max values
+READINGS = [font("Light", s) for s in (15, 13, 12)]  # right-aligned values
+STATUS = font("Medium", 13)      # charge state word
+TITLE = font("Bold", 26)         # takeover headline
+BIG = font("Bold", 44)           # state of charge
+HEROES = [font("Bold", s) for s in (54, 48, 42)]
 HERO_UNIT = font("Light", 18)
-VALUES = [font("Medium", s) for s in (15, 14, 13, 12)]  # widest that fits wins
-TRACK = 0.8                     # caps tracking, applied on whole pixels
+TRACK = 0.8
 
-# Layout grid. Every y below is a baseline except the header/footer bands,
-# so glyphs never cross the two hairlines.
-M = 11              # side margin
-RULE_TOP = 23
-RULE_BOT = 99
-BASE_HERO = 75      # temperature baseline
-BASE_STATUS = 92    # status word baseline
-COL_R = 147         # right column label x
-COL_ROWS = (44, 66, 88)
+# Layout bands
+BAR = 21            # header bar height
+RULE = 100          # footer divider
+M = 8               # side margin
 EDGE_R = W - M
+BASE_BAR = 14       # header baseline
+BASE_HERO = 62
+BASE_STATUS = 79
+BASE_MINMAX = 96
+ICON_BOTTOM = 115   # icons and footer text sit on this line
+
+# 1-bit icons, drawn on the pixel grid rather than scaled from vector art.
+ICONS = {
+    "wifi": ('.#######.',
+             '#.......#',
+             '..#####..',
+             '.#.....#.',
+             '...###...',
+             '....#....'),
+    "cloud": ('...####....',
+              '..#....##..',
+              '.#.......#.',
+              '#.........#',
+              '#.........#',
+              '.#########.'),
+    "bolt": ('...##',
+             '..##.',
+             '.##..',
+             '#####',
+             '..##.',
+             '.##..',
+             '##...'),
+    "trip": ('##.....',
+             '####...',
+             '######.',
+             '#######',
+             '######.',
+             '####...',
+             '##.....'),
+    "shock": ('..#.#.#..',
+              '...###...',
+              '#..###..#',
+              '.#######.',
+              '#..###..#',
+              '...###...',
+              '..#.#.#..'),
+}
 
 
 class Screen:
-    """A 250x122 frame that only ever contains the four panel inks."""
+    """A 250x122 frame that only ever contains white, black and red."""
 
-    def __init__(self, name, accent=None):
+    def __init__(self, name):
         self.name = name
         self.img = Image.new("RGB", (W, H), WHITE)
         self.d = mono(self.img)
-        if accent:
-            self.bar(accent)
 
     def _stamp(self, mask, color):
         self.img.paste(color, (0, 0), mask)
-
-    def bar(self, color):
-        """Left edge accent: the only place colour carries state, and never alone."""
-        m = Image.new("L", (W, H), 0)
-        mono(m).rectangle([0, 0, 3, H - 1], fill=255)
-        self._stamp(m, color)
 
     def width(self, txt, fnt, track=0.0):
         if not track:
@@ -100,32 +133,79 @@ class Screen:
                 x += w + track
         self._stamp(m, color)
 
-    def rule(self, y, x0=M, x1=EDGE_R):
+    def box(self, xy0, xy1, color=BLACK, fill=True, width=1):
         m = Image.new("L", (W, H), 0)
-        mono(m).rectangle([x0, y, x1 - 1, y], fill=255)
-        self._stamp(m, BLACK)
+        d = mono(m)
+        if fill:
+            d.rectangle([xy0, xy1], fill=255)
+        else:
+            d.rectangle([xy0, xy1], outline=255, width=width)
+        self._stamp(m, color)
+
+    def icon(self, name, x, bottom, color=BLACK, off=False):
+        """Blit a 1-bit icon; `off` strikes it through instead of hiding it,
+        so a persisted frame never reads as 'indicator missing'."""
+        art = ICONS[name]
+        h, w = len(art), len(art[0])
+        top = bottom - h
+        m = Image.new("L", (W, H), 0)
+        d = ImageDraw.Draw(m)
+        for row, line in enumerate(art):
+            for col, px in enumerate(line):
+                if px == "#":
+                    d.point((x + col, top + row), fill=255)
+        if off:
+            d.line([(x - 1, top + h), (x + w, top - 1)], fill=255)
+        self._stamp(m, color)
+        return w
 
     # ---- shared bands -------------------------------------------------
-    def header(self, device, stamp, stale=False):
-        self.text((M, 15), device, MICRO, track=TRACK)
-        self.text((EDGE_R, 15), stamp if not stale else f"{stamp}  STALE", MICRO,
-                  RED if stale else BLACK, anchor="rs", track=TRACK)
-        self.rule(RULE_TOP)
+    def header(self, device, clock):
+        """Inverted: white on black. Ink spread thins reversed text, so this
+        is the one small text that gets a heavier weight than its size."""
+        self.box((0, 0), (W - 1, BAR - 1))
+        self.text((M, BASE_BAR), device, CHROME, WHITE, track=TRACK)
+        self.text((EDGE_R, BASE_BAR), clock, CHROME, WHITE, anchor="rs", track=TRACK)
 
-    def footer(self, left, right=""):
-        self.rule(RULE_BOT)
-        self.text((M, 113), left, MICRO, track=TRACK)
-        if right:
-            self.text((EDGE_R, 113), right, MICRO, anchor="rs", track=TRACK)
+    def footer(self, *, trip=False, shock=False, wifi=False, cloud=False,
+               charging=False, battery=78, storage=94):
+        """One row of state: trip, shock, link, cloud, charge, battery,
+        storage. No SD indicator -- the card is optional and not user-facing."""
+        self.box((0, RULE), (W - 1, RULE))
+        x = M
+        for name, shown in (("trip", trip), ("shock", shock)):
+            if shown:
+                x += self.icon(name, x, ICON_BOTTOM) + 6
+        for name, on in (("wifi", wifi), ("cloud", cloud)):
+            x += self.icon(name, x, ICON_BOTTOM, off=not on) + 6
 
-    def stat_rows(self, stats):
-        """Label left, value right on one baseline; the value takes the
-        largest size that still clears the label."""
-        for (label, value), y in zip(stats, COL_ROWS):
-            self.text((COL_R, y), label, MICRO, track=TRACK)
-            room = EDGE_R - COL_R - self.width(label, MICRO, TRACK) - 7
-            fnt = next((f for f in VALUES if self.width(value, f) <= room), VALUES[-1])
-            self.text((EDGE_R, y), value, fnt, anchor="rs")
+        # The two numeric states get caps labels, not pictograms: no 6-pixel
+        # glyph for "storage" survived reading next to its own percentage
+        # (a cylinder became the digit 8, a notched card became a blob).
+        # Icons stay where they win -- the on/off states above.
+        x = EDGE_R
+        for label, pct in (("MEM", storage), ("BAT", battery)):
+            value = f"{pct}%"
+            x -= self.width(value, CHROME)
+            self.text((x, ICON_BOTTOM), value, CHROME)
+            x -= 4 + self.width(label, LABEL, TRACK)
+            self.text((x, ICON_BOTTOM), label, LABEL, track=TRACK)
+            x -= 10
+        if charging:
+            self.icon("bolt", x - 5, ICON_BOTTOM)
+
+    def alarm_frame(self):
+        """Alarm is the whole frame, not a badge: visible across a warehouse."""
+        self.box((0, 0), (W - 1, H - 1), RED, fill=False, width=3)
+
+    def centered(self, runs, baseline, gap=0):
+        """Lay out (text, font, colour, track) runs as one centred group."""
+        widths = [self.width(t, f, tr) for t, f, _, tr in runs]
+        total = sum(widths) + gap * (len(runs) - 1)
+        x = (W - total) / 2
+        for (t, f, c, tr), w in zip(runs, widths):
+            self.text((x, baseline), t, f, c, track=tr)
+            x += w + gap
 
     def save(self):
         self.img.save(OUT / f"{self.name}.png")
@@ -133,138 +213,165 @@ class Screen:
 
 
 # ---------------------------------------------------------------------
-# Template A -- Monitor: hero temperature left, three quiet stats right.
+# Template A -- Monitor: temperature centred and largest, min/max last.
 # ---------------------------------------------------------------------
-def monitor(name, *, device="MCOLD-0117", stamp="UPDATED 14:32", stale=False,
-            temp="4.2", status="IN RANGE", status_color=BLACK, hero_color=BLACK,
-            accent=None, stats=(("MIN", "2.8"), ("MAX", "6.1"), ("DOOR", "CLOSED")),
-            foot_l="TRIP 0142 / 3D 04H", foot_r="WI-FI  78%"):
-    s = Screen(name, accent)
-    s.header(device, stamp, stale)
-    room = COL_R - M - 8 - s.width("°C", HERO_UNIT) - 4
+def monitor(name, *, device="MCOLD-0117", clock="14:32", temp="4.2",
+            status="", status_color=BLACK, alarm=False, minmax=("2.8", "6.1"),
+            **flags):
+    s = Screen(name)
+    s.header(device, clock)
+    hero_color = RED if alarm else BLACK
+    room = W - 2 * M - s.width("°C", HERO_UNIT) - 5
     hero = next((f for f in HEROES if s.width(temp, f) <= room), HEROES[-1])
-    s.text((M - 1, BASE_HERO), temp, hero, hero_color)
-    s.text((M - 1 + s.width(temp, hero) + 4, BASE_HERO - 24), "°C", HERO_UNIT, hero_color)
-    room = COL_R - M - 6
-    fnt = next((f for f in STATUSES if s.width(status, f, 0.5) <= room), None)
-    if fnt is None:
-        fnt = STATUSES[-1]
-        print(f"  warn {name}: status {status!r} overflows by "
-              f"{round(s.width(status, fnt, 0.5) - room)} px")
-    s.text((M, BASE_STATUS), status, fnt, status_color, track=0.5)
-    s.stat_rows(stats)
-    s.footer(foot_l, foot_r)
+    s.centered([(temp, hero, hero_color, 0), ("°C", HERO_UNIT, hero_color, 0)],
+               BASE_HERO, gap=5)
+    if status:
+        s.centered([(status, LABEL, status_color, TRACK)], BASE_STATUS)
+    if minmax:
+        lo, hi = minmax
+        s.centered([("MIN", LABEL, BLACK, TRACK), (lo, READING, BLACK, 0),
+                    ("MAX", LABEL, BLACK, TRACK), (hi, READING, BLACK, 0)],
+                   BASE_MINMAX, gap=7)
+    s.footer(**flags)
+    if alarm:
+        s.alarm_frame()
+    return s.save()
+
+
+# ---------------------------------------------------------------------
+# Charge screen -- no temperature; the full charging picture instead.
+# ---------------------------------------------------------------------
+def charge(name, *, device="MCOLD-0117", clock="14:32", soc=62,
+           state="FAST CHARGE", rows=(), **flags):
+    s = Screen(name)
+    s.header(device, clock)
+    s.text((M, 66), f"{soc}%", BIG)
+    s.text((M, 90), state, STATUS, track=0.4)
+    col = 104
+    for i, (label, value) in enumerate(rows):
+        y = 42 + i * 18
+        s.text((col, y), label, LABEL, track=TRACK)
+        room = EDGE_R - col - s.width(label, LABEL, TRACK) - 7
+        fnt = next((f for f in READINGS if s.width(value, f) <= room), None)
+        if fnt is None:
+            fnt = READINGS[-1]
+            print(f"  warn {name}: {value!r} overflows by "
+                  f"{round(s.width(value, fnt) - room)} px")
+        s.text((EDGE_R, y), value, fnt, anchor="rs")
+    s.footer(**flags)
     return s.save()
 
 
 # ---------------------------------------------------------------------
 # Template B -- Takeover: one headline, one sentence, one data line.
 # ---------------------------------------------------------------------
-def takeover(name, *, device="MCOLD-0117", stamp="14:32", title="", sub="",
-             data="", accent=None, title_color=BLACK):
-    s = Screen(name, accent)
-    s.header(device, stamp)
-    s.text((M, 58), title, TITLE, title_color)
-    s.text((M, 80), sub, SMALL)
-    s.footer(data)
+def takeover(name, *, device="MCOLD-0117", clock="14:32", title="", sub="",
+             data="", alarm=False, title_color=BLACK, **flags):
+    s = Screen(name)
+    s.header(device, clock)
+    s.text((M, 54), title, TITLE, title_color)
+    s.text((M, 76), sub, BODY)
+    if data:
+        s.text((M, 93), data, LABEL, track=TRACK)
+    s.footer(**flags)
+    if alarm:
+        s.alarm_frame()
     return s.save()
 
 
 # ---------------------------------------------------------------------
-# Template C -- Detail: three label/value rows, no hero.
+# Template C -- Detail: label/value rows, no hero.
 # ---------------------------------------------------------------------
-def detail(name, *, device="MCOLD-0117", stamp="14:32", title="", rows=(), foot=""):
+def detail(name, *, device="MCOLD-0117", clock="14:32", title="", rows=(), **flags):
     s = Screen(name)
-    s.header(device, stamp)
-    s.text((M, 38), title, MICRO, track=TRACK)
+    s.header(device, clock)
+    s.text((M, 36), title, LABEL, track=TRACK)
     for i, (label, value) in enumerate(rows):
-        y = 58 + i * 17
-        s.text((M, y), label, SMALL)
-        s.text((EDGE_R, y), value, SMALL, anchor="rs")
-    s.footer(foot)
+        y = 56 + i * 18
+        s.text((M, y), label, BODY)
+        s.text((EDGE_R, y), value, BODY, anchor="rs")
+    s.footer(**flags)
     return s.save()
 
 
 SCREENS = []
+LIVE = dict(trip=True, wifi=True, cloud=True, battery=78, storage=94)
 
 
 def build():
     OUT.mkdir(exist_ok=True)
     add = SCREENS.append
 
-    # -- A: monitor states -------------------------------------------
     add(("A1  IDLE / READY", monitor(
-        "A1_idle", temp="4.2", status="READY",
-        stats=(("BATT", "78%"), ("STORE", "94%"), ("SYNC", "13:50")),
-        foot_l="NO ACTIVE TRIP", foot_r="WI-FI  78%")))
+        "A1_idle", status="NO ACTIVE TRIP", minmax=None,
+        wifi=True, cloud=True, battery=78, storage=94)))
 
-    add(("A2  TRIP ACTIVE", monitor("A2_trip", status="IN RANGE")))
+    add(("A2  TRIP ACTIVE", monitor("A2_trip", **LIVE)))
 
     add(("A3  WARNING", monitor(
-        "A3_warning", temp="8.4", status="ABOVE 8.0 · 4 MIN", accent=YELLOW,
-        stats=(("MIN", "2.8"), ("MAX", "8.4"), ("DOOR", "OPEN")),
-        foot_r="1 WARNING")))
+        "A3_warning", temp="8.4", status="ABOVE 8.0 FOR 4 MIN", status_color=RED,
+        minmax=("2.8", "8.4"), **LIVE)))
 
     add(("A4  ALARM", monitor(
-        "A4_alarm", temp="11.6", status="TEMP HIGH", status_color=RED, hero_color=RED,
-        accent=RED, stats=(("MIN", "2.8"), ("MAX", "11.6"), ("DOOR", "21M")),
-        foot_r="ALARM 1 OF 3")))
+        "A4_alarm", temp="11.6", status="TEMP HIGH", status_color=RED, alarm=True,
+        minmax=("2.8", "11.6"), trip=True, shock=True, wifi=True, cloud=False,
+        battery=61, storage=93)))
 
     add(("A5  PROBE FAULT", monitor(
-        "A5_probe", temp="--", status="PROBE OPEN", accent=YELLOW,
-        stats=(("LAST", "4.2"), ("SINCE", "14:12"), ("DOOR", "CLOSED")),
-        foot_l="TRIP 0142 / LOGGING", foot_r="1 FAULT")))
+        "A5_probe", temp="--", status="PROBE OPEN", status_color=RED,
+        minmax=("2.8", "6.1"), **LIVE)))
 
-    add(("A6  CHARGING / DOCK", monitor(
-        "A6_charging", temp="4.4", status="CHARGING",
-        stats=(("BATT", "62%"), ("CHG", "1.18A"), ("FULL", "42M")),
-        foot_l="NO ACTIVE TRIP", foot_r="DOCK  PD 20V")))
+    add(("A6  CHARGING", charge(
+        "A6_charging", soc=62, state="FAST CHARGE", rows=(
+            ("SOURCE", "DOCK PD 20V"),
+            ("CURRENT", "1.18 A"),
+            ("FULL IN", "42 MIN")),
+        charging=True, wifi=True, cloud=True, battery=62, storage=94)))
 
     add(("A7  STALE SAMPLE", monitor(
-        "A7_stale", temp="4.2", stamp="UPDATED 11:05", stale=True,
-        status="NO SAMPLE 3H",
-        stats=(("MIN", "2.8"), ("MAX", "6.1"), ("DOOR", "CLOSED")),
-        foot_l="TRIP 0142 / GAP", foot_r="1 FAULT")))
+        "A7_stale", clock="14:32", status="NO SAMPLE 3H 27M", status_color=RED,
+        minmax=("2.8", "6.1"), trip=True, wifi=False, cloud=False,
+        battery=74, storage=94)))
 
-    # -- B: takeovers -------------------------------------------------
     add(("B1  BOOT / SELF-TEST", takeover(
-        "B1_boot", stamp="--:--", title="SELF-TEST", sub="Checking sensors and storage",
-        data="FIRMWARE 0.1.0 · SERIAL 0117")))
+        "B1_boot", clock="--:--", title="SELF-TEST", sub="Checking sensors and storage",
+        data="FIRMWARE 0.1.0 · SERIAL 0117", battery=78, storage=94)))
 
     add(("B2  USB CONNECTED", takeover(
         "B2_usb", title="USB DRIVE", sub="Read-only. Copy the CSV, then eject.",
-        data="SNAPSHOT 14:31 · 2,184 RECORDS")))
+        data="SNAPSHOT 14:31 · 2,184 RECORDS", **LIVE)))
 
     add(("B3  BLE SESSION", takeover(
         "B3_ble", title="MCOLD-0117", sub="Confirm this ID in the app to pair.",
-        data="PAIRING WINDOW 60 S")))
+        data="PAIRING WINDOW 60 S", wifi=True, cloud=True, battery=78, storage=94)))
 
     add(("B4  STORAGE FULL", takeover(
         "B4_storage", title="STORAGE FULL", sub="Oldest finished trip was dropped.",
-        data="TRIP 0139 LOST · UPLOAD NOW", accent=RED, title_color=RED)))
+        data="TRIP 0139 LOST · UPLOAD NOW", alarm=True, title_color=RED,
+        trip=True, wifi=True, cloud=False, battery=54, storage=100)))
 
     add(("B5  CRITICAL BATTERY", takeover(
         "B5_battery", title="BATTERY 4%", sub="Logging stopped. Charge the device.",
-        data="LAST RECORD 14:32", accent=RED, title_color=RED)))
+        data="LAST RECORD 14:32", alarm=True, title_color=RED,
+        wifi=False, cloud=False, battery=4, storage=94)))
 
     add(("B6  FAULT / RECOVERY", takeover(
         "B6_fault", title="SENSOR FAULT", sub="Temperature bus not responding.",
-        data="TRIP CONTINUES · SEE APP", accent=YELLOW)))
+        data="TRIP CONTINUES · SEE APP", title_color=RED, **LIVE)))
 
-    # -- C: detail and summary ---------------------------------------
     add(("C1  TRIP SUMMARY", detail(
         "C1_summary", title="TRIP 0142 CLOSED", rows=(
             ("Duration", "3d 06h 12m"),
             ("Temperature", "2.8 / 6.1 °C"),
-            ("Door", "4 opens / 26 min")),
-        foot="1 ALARM · UPLOAD PENDING")))
+            ("Alarms", "1 high · 2 shock")),
+        wifi=True, cloud=True, battery=74, storage=91)))
 
     add(("C2  DETAIL (NFC TAP)", detail(
         "C2_detail", title="DEVICE DETAIL", rows=(
             ("Trip", "0142 · 21 Sep 08:20"),
-            ("Storage", "94% free · no SD"),
-            ("Upload", "184 records pending")),
-        foot="FW 0.1.0 · GNSS 12M · RTC OK")))
+            ("Upload", "184 records pending"),
+            ("Firmware", "0.1.0 · RTC OK")),
+        **LIVE)))
 
     contact_sheet()
     print(f"{len(SCREENS)} screens -> {OUT}")
