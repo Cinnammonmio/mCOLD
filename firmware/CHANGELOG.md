@@ -19,8 +19,9 @@ The firmware shares the mCOLD repo with the docs and design work, so
 every git name it uses starts with `firmware/`:
 
 - release tags `firmware/vX.Y.Z`
-- `firmware/main` holds released firmware only, and reaches the repo's
-  `main` by pull request
+- `firmware/main` holds released firmware only, and is merged into the
+  repo's `main` at each release (directly, no pull request: agreed
+  2026-10-02)
 - phase work on `firmware/pN-...`, merged into `firmware/main` when the
   phase is verified on the board
 
@@ -30,7 +31,8 @@ To cut a release:
 2. Move the `Unreleased` notes below under that number
 3. Build, flash, and check that the boot banner prints the new number
 4. Merge into `firmware/main`, then `git tag -a firmware/vX.Y.Z`
-5. Set `PROJECT_VER` to the next `-dev` version
+5. Merge `firmware/main` into `main`; push both and the tag (never force)
+6. Set `PROJECT_VER` to the next `-dev` version
 
 ## Unreleased
 
