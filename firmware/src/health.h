@@ -40,7 +40,13 @@ enum class Dev : uint8_t {
   Leds,
   Buzzer,
   Sd,
-  Count
+  Count,
+
+  // A bus call made under this tag is not accounted at all. For the
+  // rare driver where a NAK is information rather than failure -- the
+  // NFC tag refuses I2C while a phone holds its RF side -- and which
+  // therefore reports its own health instead.
+  Untracked = 0xFF,
 };
 
 struct DevHealth {
