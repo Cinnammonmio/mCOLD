@@ -37,7 +37,7 @@ RAM   6.4% (20,820 B)      Flash 12.4% (389,824 B of a 3 MiB OTA slot)
 
 P0 and P1 complete. Next: **P2**, time, configuration and storage.
 
-**Git.** `C:\mCOLDirmware` is a git repo. **No remote yet** -- nothing
+**Git.** `C:\mCOLD\firmware` is a git repo. **No remote yet** -- nothing
 is pushed. `main` holds tagged releases only; phase work is on `pN/...`
 branches and merged when the phase is verified. Version scheme, release
 steps and what each release contains: `CHANGELOG.md`. The version is
