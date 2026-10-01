@@ -13,6 +13,10 @@
 // number is stored too, so a future change that cannot be expressed
 // that way -- a unit changing, say -- has something to key off.
 //
+// Alarm thresholds are not here on purpose: they are set by the app
+// when a trip starts and belong to that trip (P3), because one box
+// carries 2-8 C vaccine one week and something else the next.
+//
 // Credentials (Wi-Fi, MQTT) are not here yet: they arrive with P6 and
 // belong in an encrypted NVS namespace, not beside the sample period.
 #pragma once
@@ -22,10 +26,6 @@
 
 struct Config {
   int32_t sample_period_s;    // trip sampling; 60 is the fastest §9.3 allows
-  int32_t temp_low_c10;       // alarm below this, 0.1 C
-  int32_t temp_high_c10;      // alarm above this, 0.1 C
-  int32_t temp_hyst_c10;      // must come back this far inside to clear
-  int32_t temp_dwell_s;       // must stay outside this long to raise
   int32_t cal_offset_c100;    // added after gain, 0.01 C
   int32_t cal_gain_ppm;       // 1000000 = unity
   int32_t cal_version;        // 0 = never calibrated

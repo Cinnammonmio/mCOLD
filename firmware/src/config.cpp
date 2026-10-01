@@ -9,7 +9,16 @@
 namespace {
 
 const char *NS = "cfg";
-const uint32_t SCHEMA = 1;
+// 1: first release. 2: alarm thresholds left for the trip -- they are
+// set when a trip starts, per trip, not once per device.
+const uint32_t SCHEMA = 2;
+
+// Keys that earlier schemas stored and this one no longer reads.
+// Erased on the first boot that finds them, so a value nobody uses
+// cannot be mistaken for one that is in force.
+const char *const RETIRED[] = {
+    "temp_low_c10", "temp_high_c10", "temp_hyst_c10", "temp_dwell_s",
+};
 
 struct Field {
   const char *key;           // NVS key: 15 characters at most
@@ -33,10 +42,6 @@ constexpr const char *key15(const char *k, size_t n) {
 // allow, not what seems sensible today; the product team narrows them.
 constexpr Field FIELDS[] = {
     F(sample_period_s, 60, 3600, 300, "s"),
-    F(temp_low_c10, -400, 1000, 20, "0.1 C"),
-    F(temp_high_c10, -400, 1000, 80, "0.1 C"),
-    F(temp_hyst_c10, 0, 100, 5, "0.1 C"),
-    F(temp_dwell_s, 0, 3600, 300, "s"),
     F(cal_offset_c100, -1000, 1000, 0, "0.01 C"),
     F(cal_gain_ppm, 900000, 1100000, 1000000, "ppm"),
     F(cal_version, 0, 0x7FFFFFFF, 0, ""),
@@ -93,6 +98,18 @@ void load(void) {
   nvs_close(h);
 }
 
+void migrate(void) {
+  nvs_handle_t h;
+  if (nvs_open(NS, NVS_READWRITE, &h) != ESP_OK) return;
+  for (const char *k : RETIRED) nvs_erase_key(h, k);   // absent is fine
+  nvs_set_u32(h, "schema", SCHEMA);
+  nvs_commit(h);
+  nvs_close(h);
+  printf("[config] settings migrated from schema %lu to %lu\n",
+         (unsigned long)g_schema, (unsigned long)SCHEMA);
+  g_schema = SCHEMA;
+}
+
 }  // namespace
 
 void config_init(void) {
@@ -108,17 +125,7 @@ void config_init(void) {
     printf("[config] NVS failed (%s): running on defaults\n", esp_err_to_name(e));
   }
   load();
-
-  // Low below high, or neither alarm means anything. Checked as a pair
-  // because each value alone can be in range and the two still nonsense.
-  if (g_cfg.temp_low_c10 >= g_cfg.temp_high_c10) {
-    printf("[config] temp_low_c10 %ld is not below temp_high_c10 %ld;"
-           " using defaults for both\n",
-           (long)g_cfg.temp_low_c10, (long)g_cfg.temp_high_c10);
-    g_cfg.temp_low_c10 = find("temp_low_c10")->def;
-    g_cfg.temp_high_c10 = find("temp_high_c10")->def;
-    g_rejected++;
-  }
+  if (g_schema && g_schema < SCHEMA) migrate();
 }
 
 const Config &config(void) { return g_cfg; }
@@ -128,11 +135,6 @@ int config_rejected(void) { return g_rejected; }
 bool config_set(const char *key, int32_t value) {
   const Field *f = find(key);
   if (!f || value < f->min || value > f->max) return false;
-
-  // The pair rule again, against the value about to change.
-  Config next = g_cfg;
-  *(int32_t *)((uint8_t *)&next + f->offset) = value;
-  if (next.temp_low_c10 >= next.temp_high_c10) return false;
 
   nvs_handle_t h;
   if (nvs_open(NS, NVS_READWRITE, &h) != ESP_OK) return false;

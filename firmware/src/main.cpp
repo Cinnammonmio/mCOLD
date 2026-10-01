@@ -557,8 +557,7 @@ void run_command(char *line) {
     if (sscanf(line + 11, "%23s %ld", key, &v) != 2) {
       printf("  config set KEY VALUE\n");
     } else if (!config_set(key, (int32_t)v)) {
-      printf("  refused: unknown key, out of range, or low not below high"
-             " (see 'config')\n");
+      printf("  refused: unknown key or out of range (see 'config')\n");
     } else {
       printf("  %s = %ld, stored\n", key, v);
       // The one setting that has a consumer already.
