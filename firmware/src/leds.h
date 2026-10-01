@@ -1,9 +1,14 @@
 // The four addressable pixels.
 //
-// Chain order, measured: index 0 is LED4 (XL-4020RGBC-2812B, the side
-// light), 1..3 are LED1..3 (SK6812MINI-E, the front). Two different
-// parts on one data line, both driven as GRB -- which is what bring-up
-// ran them as, and how they lit.
+// Chain order and colour, checked by eye on 2026-10-02: index 0 is LED4
+// (XL-4020RGBC-2812B) on the side of the case; index 1 is the front
+// RIGHT, 2 the front middle, 3 the front LEFT. Both part types take
+// GRB and showed the colour asked for.
+//
+// docs/led-design.md assumed LED1 was front left. It is front right.
+// The design fixes meaning by position -- left cargo, middle alive,
+// right device -- because position is what a colour-blind reader
+// relies on, so the names below follow position, not designator.
 //
 // The rule that matters more than any colour: the rail is on only while
 // a pixel is lit. The pixels draw current dark (around 1 mA each, still
@@ -41,10 +46,10 @@ void leds_pulse(int index, uint8_t r, uint8_t g, uint8_t b, uint32_t ms);
 // Everything dark and the rail released.
 void leds_off(void);
 
-static const int LED_SIDE = 0;     // LED4: charge status
-static const int LED_CARGO = 1;    // LED1
-static const int LED_ALIVE = 2;    // LED2
-static const int LED_DEVICE = 3;   // LED3
+static const int LED_SIDE = 0;     // LED4, side: charge status
+static const int LED_DEVICE = 1;   // LED1, front right
+static const int LED_ALIVE = 2;    // LED2, front middle
+static const int LED_CARGO = 3;    // LED3, front left
 
 // 20% of full scale: docs/led-design.md, configurable later.
 static const uint8_t LEDS_BRIGHTNESS_CAP = 51;

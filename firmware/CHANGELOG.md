@@ -42,6 +42,14 @@ P1, drivers.
 - Four addressable LEDs on RMT, with a brightness cap and the rail held
   only while a pixel is lit
 - Buzzer on LEDC at 2.7 kHz, non-blocking and bounded in length
+- Side light (LED4) shows charge state: breathe yellow while charging,
+  breathe green from 80 %, steady green when full, yellow blink with
+  input but no charging, red blink on a charge fault, off on battery
+- LED index names follow physical position (front left is index 3,
+  front right index 1), checked by eye
+- Motion events while the buzzer sounds, and 250 ms after, are ignored:
+  the buzzer trips the accelerometer by itself
+- GNSS reports satellites in view, heard, and best SNR
 
 ## 0.0.1 — 2026-10-02
 

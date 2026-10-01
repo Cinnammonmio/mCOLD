@@ -1,6 +1,6 @@
 idf_component_register(SRCS "main.cpp" "health.cpp" "rails.cpp" "bus.cpp"
                             "temp.cpp" "rtcclock.cpp" "power.cpp"
-                            "accel.cpp" "gnss.cpp" "nfc.cpp" "leds.cpp"
+                            "accel.cpp" "gnss.cpp" "nfc.cpp" "leds.cpp" "chargeled.cpp"
                             "buzzer.cpp"
                        INCLUDE_DIRS "."
                        REQUIRES driver esp_driver_i2c esp_driver_spi

@@ -167,7 +167,7 @@ bool accel_take_event(AccelEvent *ev) {
   }
   if (!(src & (SRC_WU | SRC_FF))) return false;
   if (ev) decode(src, ev);
-  g_events++;
+  g_events = g_events + 1;
   g_last_ms = now_ms();
   return true;
 }

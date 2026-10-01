@@ -80,7 +80,18 @@ bool show_locked(void) {
   return ok;
 }
 
-void pulse_done(void *) { leds_off(); }
+// The pixel a pulse lit, so that ending it puts out that one only. The
+// side light may be showing charge status at the same time, and a tap
+// on the front must not switch it off.
+volatile int g_pulse_idx = -1;
+
+void pulse_done(void *) {
+  const int i = g_pulse_idx;
+  g_pulse_idx = -1;
+  if (i < 0) return;
+  leds_set(i, 0, 0, 0);
+  leds_show();
+}
 
 }  // namespace
 
@@ -155,7 +166,9 @@ void leds_pulse(int i, uint8_t r, uint8_t g, uint8_t b, uint32_t ms) {
   if (!g_pulse_timer) return;
   if (ms > LEDS_PULSE_MAX_MS) ms = LEDS_PULSE_MAX_MS;
   esp_timer_stop(g_pulse_timer);      // a new pulse replaces the old one
-  leds_clear();
+  const int prev = g_pulse_idx;
+  if (prev >= 0 && prev != i) leds_set(prev, 0, 0, 0);
+  g_pulse_idx = i;
   leds_set(i, r, g, b);
   leds_show();
   esp_timer_start_once(g_pulse_timer, (uint64_t)ms * 1000);

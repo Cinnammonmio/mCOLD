@@ -55,6 +55,7 @@ version is `PROJECT_VER` in the root `CMakeLists.txt` and nowhere else.
 | `nfc.*` | ST25DV04KC: UID, phone detection, verified NDEF writes |
 | `leds.*` | RMT, 20% cap, rail held only while lit |
 | `buzzer.*` | LEDC 2.7 kHz, self-terminating, 3 s cap |
+| `chargeled.*` | side light (LED4) shows charge state per docs/led-design.md, only on external power |
 | `main.cpp` | 6 tasks + supervisor; console: `help` lists the commands |
 
 Verified on the board for 0.1.0-dev: |a| 994 mg at rest; UID
@@ -67,7 +68,8 @@ each pulse.
 | ~~Tap → motion event~~ passed 2026-10-02 | tap the board: LED2 flashes green, console prints `[accel] motion` |
 | ~~Phone → NFC arrival~~ passed 2026-10-02 | hold a phone on the tag: LED3 flashes blue, `[nfc] phone on the tag` |
 | GNSS fix and RTC set from it | board near a window for one session (≤ 2 min, every 10 min): `[gnss] fix ...`. Indoors on 2026-10-02 it reported **0 satellites in view** after a minute: not even a weak signal. Either the room is that shielded or the antenna path is not working -- a fix has never been seen on this board |
-| LED colours | sequence was run 2026-10-02; colours not yet confirmed by the person watching |
+| ~~LED colours~~ passed 2026-10-02 | all four show the colour asked for (GRB). **Order differs from the doc:** index 1 is front RIGHT, index 3 front LEFT. Names in `leds.h` follow position (left cargo, right device) |
+| Side light charge status | `health` shows the mode; check by eye that it breathes yellow while charging, and goes out when USB is unplugged |
 
 Then: set `PROJECT_VER` to `0.1.0`, merge to `main`, tag `v0.1.0`.
 

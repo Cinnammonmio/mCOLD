@@ -28,6 +28,7 @@
 #include "board.h"
 #include "bus.h"
 #include "buzzer.h"
+#include "chargeled.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -63,7 +64,7 @@ Beat g_beats[(int)Job::Count] = {
     {0, 0, 5000, "console"},
 };
 
-inline void beat(Job j) { g_beats[(int)j].count++; }
+inline void beat(Job j) { g_beats[(int)j].count = g_beats[(int)j].count + 1; }
 
 uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
@@ -270,6 +271,7 @@ void task_power(void *) {
     PowerStatus ps;
     power_read(&ps);
     g_power = ps;
+    chargeled_update(ps);
 
     // Kicked on its own clock, not once per read loop: the charger
     // gives about forty seconds and the sampling period may grow a
@@ -338,6 +340,7 @@ void print_health(void) {
   if (p.charger_valid) {
     printf("  charger      %s, input %s, power-good %d\n",
            charge_state_name(p.charge), vbus_type_name(p.vbus), p.power_good);
+    printf("  side light   %s\n", chargeled_name(chargeled_mode()));
     if (p.watchdog_expired) {
       printf("               WATCHDOG expired: the charger reset its own"
              " registers\n");
@@ -575,6 +578,7 @@ extern "C" void app_main(void) {
   bus_init();
   leds_init();
   buzzer_init();
+  chargeled_start();
   rtc_begin();
   power_init();
 
