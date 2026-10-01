@@ -17,6 +17,10 @@ const uint32_t HALF = 1u << (10 - 1);     // 50% duty
 esp_timer_handle_t g_timer = nullptr;
 bool g_ready = false;
 volatile bool g_muted = false;
+volatile bool g_sounding = false;
+volatile uint32_t g_stopped_ms = 0;
+
+uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
 void stop_cb(void *) { buzzer_stop(); }
 
@@ -68,6 +72,7 @@ void buzzer_beep(uint32_t ms) {
   } else {
     health_fail(Dev::Buzzer, -702);
   }
+  g_sounding = true;
   esp_timer_start_once(g_timer, (uint64_t)ms * 1000);
 }
 
@@ -77,6 +82,15 @@ void buzzer_stop(void) {
   // pin is held low, so Q5 is off and stays off.
   ledc_set_duty(MODE, CHAN, 0);
   ledc_update_duty(MODE, CHAN);
+  if (g_sounding) {
+    g_sounding = false;
+    g_stopped_ms = now_ms();
+  }
+}
+
+bool buzzer_recent(uint32_t tail_ms) {
+  if (g_sounding) return true;
+  return g_stopped_ms && now_ms() - g_stopped_ms < tail_ms;
 }
 
 void buzzer_mute(bool on) {

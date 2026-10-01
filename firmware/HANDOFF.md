@@ -64,10 +64,10 @@ each pulse.
 
 | P1 still to verify, needs a person | How |
 |---|---|
-| Tap → motion event | tap the board: LED2 flashes green, console prints `[accel] motion` |
-| Phone → NFC arrival | hold a phone on the tag: LED3 flashes blue, `[nfc] phone on the tag` |
-| GNSS fix and RTC set from it | board near a window for one session (≤ 2 min, every 10 min): `[gnss] fix ...` |
-| LED colours and buzzer sound | `led 0 255 0 0` … should be red on the side light; `beep 200` |
+| ~~Tap → motion event~~ passed 2026-10-02 | tap the board: LED2 flashes green, console prints `[accel] motion` |
+| ~~Phone → NFC arrival~~ passed 2026-10-02 | hold a phone on the tag: LED3 flashes blue, `[nfc] phone on the tag` |
+| GNSS fix and RTC set from it | board near a window for one session (≤ 2 min, every 10 min): `[gnss] fix ...`. Indoors on 2026-10-02 it reported **0 satellites in view** after a minute: not even a weak signal. Either the room is that shielded or the antenna path is not working -- a fix has never been seen on this board |
+| LED colours | sequence was run 2026-10-02; colours not yet confirmed by the person watching |
 
 Then: set `PROJECT_VER` to `0.1.0`, merge to `main`, tag `v0.1.0`.
 
@@ -223,6 +223,19 @@ happened" were treated as evidence about the hardware when they were
 evidence about the test. Prefer a signal the person can see directly —
 an LED on the board answered the motion question immediately, with no
 coordination at all.
+
+### The buzzer sets off the accelerometer
+
+Nobody touching the board: every beep fires the LIS2DW12 wake-up
+detector on all three axes at once (`WAKE_UP_SRC 0x0F`). Two to four
+events for a short beep, 47 for 1.6 s of beeping. The LEDs cause none.
+Whether it is the coil shaking the board or its ~200 mA pulse on the
+supply was not separated; the cure is the same.
+
+So `main.cpp` ignores motion events while the buzzer sounds and for
+250 ms after (`buzzer_recent()`), and counts them separately. Without
+that, every alarm beep would log itself as a shock. A real knock inside
+that window is lost too. P3 should know this when it sets shock alarms.
 
 ### The USB isolator browns the board out
 

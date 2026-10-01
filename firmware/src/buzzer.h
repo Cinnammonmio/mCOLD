@@ -30,5 +30,13 @@ void buzzer_stop(void);
 void buzzer_mute(bool on);
 bool buzzer_is_muted(void);
 
+// True while sounding, and for `tail_ms` after. The buzzer trips the
+// accelerometer: measured on the board with nobody touching it, every
+// beep produced two to four wake-up events on all three axes at once.
+// Whether that is the coil shaking the board or its current pulse on
+// the supply, the effect is the same -- an alarm beep would otherwise
+// log itself as a shock.
+bool buzzer_recent(uint32_t tail_ms);
+
 static const uint32_t BUZZER_FREQ_HZ = 2700;
 static const uint32_t BUZZER_MAX_MS = 3000;

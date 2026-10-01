@@ -30,7 +30,7 @@ To cut a release:
 
 P1, drivers.
 
-- Firmware reports its version, build time and image hash at boot and
+- Firmware reports its version and image hash at boot and
   with the `version` command
 - LIS2DW12 accelerometer: XYZ in mg, wake-up detection latched onto
   INT1 (GPIO2) and delivered to the sensor task by interrupt

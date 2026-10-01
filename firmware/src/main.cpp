@@ -77,6 +77,10 @@ PowerStatus g_power = {};
 bool g_accel_up = false;
 AccelSample g_accel = {};
 bool g_accel_valid = false;
+uint32_t g_motion_blanked = 0;
+
+// How long after a beep motion events are still the beep's own.
+const uint32_t BUZZER_BLANK_MS = 250;
 
 // Periods. P1 values: short enough to see each driver work on the
 // bench, and nothing here is yet the sampling policy of a trip (P3).
@@ -117,7 +121,14 @@ void task_sensors(void *) {
     // announce it would otherwise sit there forever with INT1 held high.
     if (g_accel_up) {
       AccelEvent ev;
-      if (accel_take_event(&ev)) report_motion(ev, "");
+      if (accel_take_event(&ev)) {
+        // The buzzer trips the detector by itself. An event during a
+        // beep, or just after one, is counted but not believed. A real
+        // knock in that window is lost with it, which is the lesser
+        // error: the alternative logs every alarm beep as a shock.
+        if (buzzer_recent(BUZZER_BLANK_MS)) g_motion_blanked++;
+        else report_motion(ev, "");
+      }
     }
 
     if (!first && t - last_pass < SENSOR_PASS_MS) continue;
@@ -367,7 +378,6 @@ void print_version(void) {
   char sha[17];
   esp_app_get_elf_sha256(sha, sizeof(sha));
   printf("\n  firmware   %s\n", app->version);
-  printf("  built      %s %s\n", app->date, app->time);
   printf("  esp-idf    %s\n", app->idf_ver);
   printf("  elf sha256 %s...\n\n", sha);
 }
@@ -382,7 +392,9 @@ void print_accel(void) {
     printf("\n  accelerometer did not answer\n");
   }
   const uint32_t last = accel_last_event_ms();
-  printf("  %lu motion events", (unsigned long)accel_event_count());
+  printf("  %lu motion events (%lu during the buzzer, ignored)",
+         (unsigned long)(accel_event_count() - g_motion_blanked),
+         (unsigned long)g_motion_blanked);
   if (last) printf(", last %lu s ago", (unsigned long)((now_ms() - last) / 1000));
   printf("   INT1 %s\n\n", accel_int_level() ? "HIGH" : "low");
 }
