@@ -485,13 +485,18 @@ void print_help(void) {
   printf("  nfc             tag identity, taps, first bytes of memory\n");
   printf("  nfc write       write the SN as an NDEF Text record\n");
   printf("  led I R G B     light pixel I (0-3) for a second\n");
-  printf("  ledtest         side red, left green, middle blue, right white\n");
+  printf("  ledtest [S] [N] side red, left green, middle blue, right white;\n");
+  printf("                  S seconds each (4), N rounds (1)\n");
   printf("  beep MS         sound the buzzer\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
 // position and colour together without knowing the chain order.
-void led_test(void) {
+void led_test(int hold_s, int rounds) {
+  if (hold_s < 1) hold_s = 1;
+  if (hold_s > 10) hold_s = 10;
+  if (rounds < 1) rounds = 1;
+  if (rounds > 5) rounds = 5;
   struct Step { int idx; const char *where; uint8_t r, g, b; const char *colour; };
   static const Step S[] = {
       {LED_SIDE, "side", 255, 0, 0, "RED"},
@@ -499,12 +504,19 @@ void led_test(void) {
       {LED_ALIVE, "front middle", 0, 0, 255, "BLUE"},
       {LED_DEVICE, "front right", 255, 255, 255, "WHITE"},
   };
-  for (const Step &s : S) {
-    printf("  %-13s (index %d)  %s\n", s.where, s.idx, s.colour);
-    fflush(stdout);
-    leds_pulse(s.idx, s.r, s.g, s.b, 1500);
-    vTaskDelay(pdMS_TO_TICKS(2500));
-    beat(Job::Console);     // ten seconds in all: longer than its stall limit
+  for (int r = 0; r < rounds; r++) {
+    for (const Step &s : S) {
+      printf("  %-13s (index %d)  %s\n", s.where, s.idx, s.colour);
+      fflush(stdout);
+      // Held by renewing a short pulse each second, so the light is
+      // still bounded by the pulse limit if this task were to stall.
+      for (int k = 0; k < hold_s; k++) {
+        leds_pulse(s.idx, s.r, s.g, s.b, 1200);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        beat(Job::Console);   // longer than the console's stall limit
+      }
+      vTaskDelay(pdMS_TO_TICKS(1200));   // dark gap between steps
+    }
   }
 }
 
@@ -517,7 +529,11 @@ void run_command(char *line) {
   else if (!strcmp(line, "nfc")) print_nfc();
   else if (!strcmp(line, "nfc write")) nfc_write_sn();
   else if (!strcmp(line, "help")) print_help();
-  else if (!strcmp(line, "ledtest")) led_test();
+  else if (!strncmp(line, "ledtest", 7)) {
+    int hold = 4, rounds = 1;
+    sscanf(line + 7, "%d %d", &hold, &rounds);
+    led_test(hold, rounds);
+  }
   else if (!strncmp(line, "led ", 4)) {
     int i, r, g, b;
     if (sscanf(line + 4, "%d %d %d %d", &i, &r, &g, &b) == 4 && i >= 0 &&
