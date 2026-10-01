@@ -28,31 +28,58 @@ Section numbers below refer to it.
 
 ## 2. State right now
 
-Builds, flashes, runs on hardware:
+Firmware **0.1.0-dev**. Builds, flashes, runs on hardware:
 
 ```
-RAM   5.9% (19,256 B)      Flash 9.7% (306,184 B of a 3 MiB OTA slot)
+RAM   6.3% (20,780 B)      Flash 12.2% (383,368 B of a 3 MiB OTA slot)
 ```
 
-P0 complete. P1 partly: the framework and three drivers.
+P0 complete. P1 code complete; three checks still need a person (below).
+
+**Git.** `C:\mCOLD\firmware` is a git repo now (no remote yet). `main`
+holds tagged releases only; phase work is on `pN/...` branches. P1 is
+on `p1/drivers`. Version scheme and release steps: `CHANGELOG.md`. The
+version is `PROJECT_VER` in the root `CMakeLists.txt` and nowhere else.
 
 | Done | |
 |---|---|
 | `partitions.csv` | verified with Espressif's `gen_esp32part.py` |
-| `health.*` | device registry, 5 states, backoff and recovery |
+| `health.*` | device registry, 5 states, backoff and recovery; `Dev::Untracked` for NAKs that are not faults |
 | `rails.*` | reference-counted rail manager |
 | `bus.*` | I2C/SPI behind mutexes with timeouts; reports health automatically |
 | `temp.*` | MAX6675 |
 | `rtcclock.*` | PCF8523 |
 | `power.*` | MAX17048 + INA226 + BQ25601 |
-| `main.cpp` | 4 tasks + supervisor + a `health` / `tasks` console |
+| `accel.*` | LIS2DW12: 100 Hz low-power mode 1, wake-up latched on INT1, interrupt-driven |
+| `gnss.*` | ATGM336H: 115200 NMEA, checksums, RMC/GGA, sessions, sets the RTC from status-A time |
+| `nfc.*` | ST25DV04KC: UID, phone detection, verified NDEF writes |
+| `leds.*` | RMT, 20% cap, rail held only while lit |
+| `buzzer.*` | LEDC 2.7 kHz, self-terminating, 3 s cap |
+| `main.cpp` | 6 tasks + supervisor; console: `help` lists the commands |
+
+Verified on the board for 0.1.0-dev: |a| 994 mg at rest; UID
+`E002506962DC8136`, IC_REF 0x50; GNSS 853 sentences, **0 bad
+checksums**; LED and buzzer accepted commands, LED rail released after
+each pulse.
+
+| P1 still to verify, needs a person | How |
+|---|---|
+| Tap → motion event | tap the board: LED2 flashes green, console prints `[accel] motion` |
+| Phone → NFC arrival | hold a phone on the tag: LED3 flashes blue, `[nfc] phone on the tag` |
+| GNSS fix and RTC set from it | board near a window for one session (≤ 2 min, every 10 min): `[gnss] fix ...` |
+| LED colours and buzzer sound | `led 0 255 0 0` … should be red on the side light; `beep 200` |
+
+Then: set `PROJECT_VER` to `0.1.0`, merge to `main`, tag `v0.1.0`.
+
+**Do not run `nfc write` casually.** The tag currently holds a JSON
+NDEF record from bring-up (`{"sn":"MCOLD-9A74","ble...`), possibly the
+one the iOS team tested against. `nfc write` replaces it with a plain
+Text record.
 
 | Not written yet | |
 |---|---|
-| LIS2DW12 driver | registers and wake-up proven in bring-up, not yet ported |
-| GNSS | 115200, NMEA |
-| ST25DV | NDEF; `i2c_*_mem16` already exists in `bus.cpp` |
-| LEDs, buzzer | RMT and LEDC |
+| Door sensor (GPIO7) | trivial GPIO; belongs with the trip logic in P3 |
+| HUSB238A | answers at 0x42; PD policy is §5.5 |
 | Display | blocked: see §5 |
 | Storage, trip state machine, BLE, Wi-Fi, USB MSC | phases 2 onward |
 
@@ -284,7 +311,30 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
 - **T− grounding at the MAX6675** — blocks honest probe-fault detection
 - The 4-colour panel is not in hand; busy polarity and 25 s refresh
   cannot be verified without it
-- Server endpoint, ACK format and credentials — P6 will need a mock
+- **Server is MQTT** (decided by the team, 2026-10-02): broker
+  `siamatic.co.th:1883`, run by the team themselves. Login is in the
+  team's hands; it goes in `secrets.ini` (gitignored, template in
+  `secrets.example.ini`), never in the repo. Not yet checked from here.
+  Still open, and all of it is P6:
+  - **1883 is plaintext** and the login is shared. §10.4 asks for TLS
+    with server certificate checking. Ask the team for 8883 + TLS and
+    per-device credentials before anything ships.
+  - **Topic layout and the application ACK.** A PUBACK only proves the
+    broker got the message, not that the server stored it (§9.5). The
+    server must publish an ACK naming device, trip and sequence range,
+    on a topic the device subscribes to, before the device may reclaim.
+- **OTA over MQTT** is possible, two ways, and either needs the
+  rollback that the `ota_0`/`ota_1` layout already allows:
+  1. *Recommended:* MQTT carries only the command (version, URL,
+     SHA-256, size); the image comes over HTTPS with `esp_https_ota`.
+     Needs a file server.
+  2. Image in chunks over MQTT itself, written with `esp_ota_write`,
+     each chunk sequenced and acknowledged. Works with only the
+     broker, but costs more code and is slower.
+  On a plaintext broker with a shared login, anyone who has that login
+  can push firmware to every box. So **signed images are not optional**:
+  the device must check the signature before it boots a new image
+  (Secure Boot v2 / signed app verification in ESP-IDF).
 - BLE UUIDs and the NDEF schema need the iOS app team. Note: **iOS
   cannot see a BLE MAC**, so the device must advertise its SN and the
   app must match on that. The app team has confirmed the MAC is only a
@@ -295,5 +345,4 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
   set rather than left at defaults. SOC currently reads low after a deep
   discharge; ModelGauge needs a full charge cycle before it is worth
   judging
-- `C:\mCOLD` is not a git repo — the copy left `.git` behind. Nothing
-  here is committed or pushed
+- The repo has no remote. Nothing is pushed anywhere
