@@ -1,0 +1,41 @@
+// Buzzer on GPIO6, through Q5.
+//
+// The part is an MLT-8530 (repo README): a passive magnetic transducer
+// resonant at 2.7 kHz, so it must be driven with a square wave -- held
+// high it only clicks once. Bring-up drove it at 2.7 kHz and it sounded.
+//
+// Nothing here blocks, and nothing can sound for long: a beep that
+// outlives the code that started it -- a task that stalls mid-alarm --
+// would be a box shrieking in a warehouse with nothing in charge of it.
+// Each beep ends itself on a timer.
+//
+// The coil pulls a peak of around 200 mA. docs/led-design.md asks that
+// LEDs and buzzer take turns rather than overlap; that is for the
+// pattern layer (P4) to arrange, not this driver.
+#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+
+bool buzzer_init(void);
+
+// Sound for `ms`, capped at BUZZER_MAX_MS. Replaces any beep already
+// sounding. Silent while muted.
+void buzzer_beep(uint32_t ms);
+void buzzer_stop(void);
+
+// Mute silences beeps; it does not clear anything that asked for them.
+// Acknowledging an alarm must never erase its history.
+void buzzer_mute(bool on);
+bool buzzer_is_muted(void);
+
+// True while sounding, and for `tail_ms` after. The buzzer trips the
+// accelerometer: measured on the board with nobody touching it, every
+// beep produced two to four wake-up events on all three axes at once.
+// Whether that is the coil shaking the board or its current pulse on
+// the supply, the effect is the same -- an alarm beep would otherwise
+// log itself as a shock.
+bool buzzer_recent(uint32_t tail_ms);
+
+static const uint32_t BUZZER_FREQ_HZ = 2700;
+static const uint32_t BUZZER_MAX_MS = 3000;
