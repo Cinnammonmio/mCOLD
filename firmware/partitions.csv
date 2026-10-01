@@ -1,0 +1,22 @@
+# mCOLD Foam V.1 -- 16 MiB flash.
+#
+# trip_log is sized so the device holds a month of records with no
+# network and no SD card. At the 300 s offline baseline that is 269
+# days; at 60 s it is 54. At 30 s it is 27, which does NOT meet the
+# one-month requirement -- so 60 s is the fastest sampling this layout
+# supports, and anything faster needs the layout revisited, not just a
+# config change.
+#
+# 0x40 is this project's custom type: subtype 0 metadata, 1 the log.
+# Neither is a filesystem, and neither is what the PC sees over USB --
+# that is a virtual read-only volume built on top.
+# Name,   Type, SubType,  Offset,   Size,     Flags
+nvs,      data, nvs,      0x009000, 0x004000,
+otadata,  data, ota,      0x00D000, 0x002000,
+phy_init, data, phy,      0x00F000, 0x001000,
+nvs_keys, data, nvs_keys, 0x010000, 0x001000,
+ota_0,    app,  ota_0,    0x020000, 0x300000,
+ota_1,    app,  ota_1,    0x320000, 0x300000,
+log_meta, 0x40, 0x00,     0x620000, 0x010000,
+trip_log, 0x40, 0x01,     0x630000, 0x9C0000,
+coredump, data, coredump, 0xFF0000, 0x010000,

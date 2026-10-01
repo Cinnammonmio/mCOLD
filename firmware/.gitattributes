@@ -1,0 +1,6 @@
+# Files are LF in the repo and on disk; ESP-IDF tooling and partition
+# scripts do not need CRLF, and mixed endings make diffs unreadable.
+* text=auto eol=lf
+*.pdf binary
+*.png binary
+*.bin binary
