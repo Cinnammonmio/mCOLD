@@ -17,8 +17,8 @@ find and will cost it again if it is rediscovered rather than read.
 | `C:\mCOLD` | **checkout of github.com/Cinnammonmio/mCOLD** — on a space-free path because ESP-IDF requires it |
 | `C:\mCOLD\firmware` | **the product firmware** |
 | `C:\mCOLD\docs` | requirements, schematics, display and LED design |
-| `C:\Arduino\Foam V.1\Firmware\mCOLD-main` | an older zip copy of the repo, **not a git checkout**. Holds work never pushed: `bringup/`, `bench/epd29-s3` edits, and a stale `firmware/` (an abandoned first attempt) |
-| `…\mCOLD-main\bringup` | the bring-up tool that proved the hardware. Arduino/PlatformIO, still useful, not the product. **Not in git** |
+| `C:\Arduino\Foam V.1\Firmware\mCOLD-main` | an older zip copy of the repo, **not a git checkout**. Its `bringup/` and `bench/` work is now on branch `bringup/import`; its stale `firmware/` (an abandoned first attempt) was left out |
+| `bringup/` (branch `bringup/import`) | the bring-up tool that proved the hardware. Arduino/PlatformIO, still useful, not the product |
 
 The board is on **COM7**, native USB, MAC `28:84:85:27:9A:74`.
 
@@ -29,14 +29,15 @@ Section numbers below refer to it.
 
 ## 2. State right now
 
-Firmware **0.1.0** released (tag `firmware/v0.1.0`, ELF sha256 `9332e8396...`).
+Firmware **0.2.0** released (tag `firmware/v0.2.0`, ELF sha256 `9f5ca65c3...`).
 Running on the board:
 
 ```
-RAM   6.4% (20,820 B)      Flash 12.4% (389,824 B of a 3 MiB OTA slot)
+RAM   6.5% (21,212 B)      Flash 13.6% (427,364 B of a 3 MiB OTA slot)
 ```
 
-P0 and P1 complete. Next: **P2**, time, configuration and storage.
+P0, P1 and P2 complete. Next: **P3**, the trip state machine and
+sensing -- which is where the trip log first gets real records.
 
 **Git.** The firmware lives in the shared mCOLD repo under `firmware/`,
 with its full history (imported 2026-10-02; until then it was a repo of
@@ -69,6 +70,9 @@ and nowhere else.
 | `leds.*` | RMT, GRB, 20% cap, rail held only while lit; names follow physical position |
 | `buzzer.*` | MLT-8530, LEDC 2.7 kHz, self-terminating, 3 s cap |
 | `chargeled.*` | side light shows charge state (table in CHANGELOG 0.1.0), only on external power |
+| `timekeep.*` | UTC + quality, boot counter in NVS, per-boot tick; system clock follows the RTC |
+| `config.*` | NVS settings from one table of ranges and defaults; schema 2; over-long keys fail the build |
+| `flashlog.*` | the trip log: CRC'd 128-byte frames, one trip per sector, power-cut safe; `logtest` runs 14 power-cut tests on the device |
 | `main.cpp` | 7 tasks + supervisor; console: `help` lists the commands |
 
 Checked on the board by a person, 2026-10-02: tap → motion event;
@@ -79,6 +83,14 @@ side light breathes yellow while charging below 80 %, green above.
 |---|---|
 | **GNSS fix** | never seen on this board. Indoors it reported **0 satellites in view** -- not even a weak one. Either the room is that shielded or the antenna path does not work. Next time outdoors: leave it 10 min and read `gnss` |
 | Side light going out on unplug | follows PG# directly; not yet watched |
+
+| For P3 to pick up from the trip log | |
+|---|---|
+| When a trip may be deleted | the log only erases on request. Policy (§9.6): after server ACK, or oldest completed trip first when full, with a loss record first. Never the active trip |
+| `log_meta` partition | still unused. Planned: trip table, ACK checkpoints, loss records -- a journal that can be rebuilt from `trip_log` |
+| Sample record schema | frame payload is 112 bytes, little-endian fields, never a C struct (§9.4) |
+| **Boot scan per wake** | the scan takes 168 ms. Once the box deep-sleeps between 5-minute samples, rescanning every wake costs ~5 mAh/day (~3 % of the budget). Keep the head position in RTC memory across sleep instead |
+| Trip id `0xBE5C0001` | reserved for the console's bench records; real trip ids must never reach it |
 
 **Do not run `nfc write` casually.** The tag currently holds a JSON
 NDEF record from bring-up (`{"sn":"MCOLD-9A74","ble...`), possibly the
@@ -320,8 +332,8 @@ like data. No device failure is ever rendered as 0.
 
 ## 7. Phases
 
-P0 skeleton · P1 drivers · **P2 time/config/storage (here)** ·
-P3 trip state machine and sensing · P4 display, LED, buzzer ·
+P0 skeleton · P1 drivers · P2 time/config/storage ·
+**P3 trip state machine and sensing (next)** · P4 display, LED, buzzer ·
 P5 BLE/NFC/protocol · P6 Wi-Fi sync and USB MSC/CSV ·
 P7 power measurement · P8 hardening
 
@@ -370,7 +382,6 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
   set rather than left at defaults. SOC currently reads low after a deep
   discharge; ModelGauge needs a full charge cycle before it is worth
   judging
-- `bringup/` and the `bench/epd29-s3` edits exist only in the zip copy
-  at `C:\Arduino\Foam V.1\Firmware\mCOLD-main` and are not in git. The
-  bring-up tool is the record of how the hardware was proven; it should
-  be committed before that folder is lost
+- `bringup/` and the `bench/epd29-s3` edits, recovered from the zip copy,
+  are on branch `bringup/import` (pushed 2026-10-02), waiting for a pull
+  request into `main`

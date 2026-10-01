@@ -30,6 +30,8 @@
 #include "buzzer.h"
 #include "chargeled.h"
 #include "config.h"
+#include "flashlog.h"
+#include "flashlog_test.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -485,6 +487,103 @@ void nfc_write_sn(void) {
   }
 }
 
+// ---- trip log ----------------------------------------------------------
+
+FlashIf g_log_flash;
+bool g_log_up = false;
+
+// Records written from the console go to this trip and only this trip,
+// so bench testing can never mix into a real one. P3 allocates real
+// trip ids from a counter, which will never reach this value.
+const uint32_t BENCH_TRIP = 0xBE5C0001;
+
+void log_start(void) {
+  const uint32_t t0 = now_ms();
+  g_log_up = flashlog_partition(&g_log_flash) && flashlog_init(&g_log_flash);
+  if (g_log_up) {
+    printf("[log] %lu sectors scanned in %lu ms\n",
+           (unsigned long)(g_log_flash.size / LOG_SECTOR),
+           (unsigned long)(now_ms() - t0));
+  } else {
+    printf("[log] trip_log partition missing or unreadable: NOTHING WILL BE"
+           " LOGGED\n");
+  }
+}
+
+void print_log(void) {
+  if (!g_log_up) {
+    printf("\n  trip log not available\n\n");
+    return;
+  }
+  LogStats s;
+  flashlog_stats(&s);
+  printf("\n  sectors    %lu: %lu in use, %lu free, %lu dirty (reusable)\n",
+         (unsigned long)s.sectors, (unsigned long)s.used,
+         (unsigned long)s.free, (unsigned long)s.dirty);
+  printf("  space      %lu of %lu records' worth used (%.1f%%)\n",
+         (unsigned long)(s.used * LOG_SLOTS),
+         (unsigned long)(s.sectors * LOG_SLOTS),
+         100.0 * s.used / (s.sectors ? s.sectors : 1));
+  // At the configured sample period, how long the free space lasts
+  // with nothing uploaded: the offline-capacity question of §9.3.
+  const double days = (double)(s.free + s.dirty) * LOG_SLOTS *
+                      config().sample_period_s / 86400.0;
+  printf("  offline    about %.0f days of samples at one per %ld s"
+         " (samples only)\n",
+         days, (long)config().sample_period_s);
+  uint32_t t[8];
+  const int n = flashlog_trips(t, 8);
+  printf("  trips      %d", n);
+  for (int i = 0; i < n && i < 8; i++) {
+    uint32_t last = 0;
+    const bool any = flashlog_last_seq(t[i], &last);
+    printf("%s%08lX (%s%lu)", i ? ", " : "  ", (unsigned long)t[i],
+           any ? "last seq " : "no records", any ? (unsigned long)last : 0UL);
+  }
+  printf("\n\n");
+}
+
+void log_bench_write(int n) {
+  if (n < 1 || n > 2000) {
+    printf("  log write N   (1..2000)\n");
+    return;
+  }
+  const uint32_t t0 = now_ms();
+  int ok = 0;
+  LogErr e = LogErr::Ok;
+  for (int i = 0; i < n; i++) {
+    uint8_t p[32];
+    uint32_t seq = 0;
+    uint32_t last;
+    const uint32_t next = flashlog_last_seq(BENCH_TRIP, &last) ? last + 1 : 0;
+    for (int k = 0; k < (int)sizeof(p); k++) p[k] = (uint8_t)(next + k);
+    e = flashlog_append(BENCH_TRIP, 0x7F, p, sizeof(p), &seq);
+    if (e != LogErr::Ok) break;
+    ok++;
+    if (i % 50 == 49) beat(Job::Console);
+  }
+  printf("  %d of %d written in %lu ms%s%s\n", ok, n,
+         (unsigned long)(now_ms() - t0), e == LogErr::Ok ? "" : ", stopped: ",
+         e == LogErr::Ok ? "" : log_err_name(e));
+}
+
+bool bench_visit(const LogRecord &r, void *ctx) {
+  uint32_t *bad = (uint32_t *)ctx;
+  bool ok = r.len == 32 && r.type == 0x7F;
+  for (int k = 0; k < 32 && ok; k++) ok = r.payload[k] == (uint8_t)(r.seq + k);
+  if (!ok) (*bad)++;
+  return true;
+}
+
+void log_bench_read(void) {
+  uint32_t bad = 0, torn = 0;
+  const uint32_t t0 = now_ms();
+  const uint32_t n = flashlog_read(BENCH_TRIP, 0, bench_visit, &bad, &torn);
+  printf("  %lu records, %lu wrong, %lu torn slots, read in %lu ms\n",
+         (unsigned long)n, (unsigned long)bad, (unsigned long)torn,
+         (unsigned long)(now_ms() - t0));
+}
+
 void print_help(void) {
   printf("\n  health          every device, its state, and the readings\n");
   printf("  tasks           heartbeats and heap\n");
@@ -500,7 +599,12 @@ void print_help(void) {
   printf("  config          every setting, its range and default\n");
   printf("  config set K V  change one setting (stored in NVS)\n");
   printf("  config reset    every setting back to its default\n");
-  printf("  reboot          restart the firmware\n\n");
+  printf("  reboot          restart the firmware\n");
+  printf("  log             trip log: sectors, trips, space\n");
+  printf("  logtest         power-cut tests against a RAM image\n");
+  printf("  log write N     append N records to the bench trip\n");
+  printf("  log read        check the bench trip's records\n");
+  printf("  log erase       delete the bench trip\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
@@ -542,7 +646,16 @@ void run_command(char *line) {
   else if (!strcmp(line, "nfc")) print_nfc();
   else if (!strcmp(line, "nfc write")) nfc_write_sn();
   else if (!strcmp(line, "help")) print_help();
-  else if (!strcmp(line, "reboot")) {
+  else if (!strcmp(line, "log")) print_log();
+  else if (!strcmp(line, "logtest")) {
+    printf("\n");
+    const int f = flashlog_selftest();
+    printf("\n  %s\n\n", f == 0 ? "all passed" : "FAILURES above");
+  } else if (!strncmp(line, "log write ", 10)) log_bench_write(atoi(line + 10));
+  else if (!strcmp(line, "log read")) log_bench_read();
+  else if (!strcmp(line, "log erase")) {
+    printf("  %s\n", log_err_name(flashlog_erase_trip(BENCH_TRIP)));
+  } else if (!strcmp(line, "reboot")) {
     printf("  restarting\n");
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -655,6 +768,7 @@ extern "C" void app_main(void) {
   config_init();
   rtc_begin();
   time_init();
+  log_start();
   power_init();
 
   // Armed here, not by a console command: opening and closing the
