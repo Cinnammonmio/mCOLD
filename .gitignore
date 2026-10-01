@@ -3,3 +3,4 @@ mcold-spec/mcold_spec.html
 
 # PlatformIO build output
 .pio/
+__pycache__/
