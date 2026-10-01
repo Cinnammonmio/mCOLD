@@ -29,6 +29,9 @@
 #include "bus.h"
 #include "buzzer.h"
 #include "chargeled.h"
+#include "config.h"
+#include "flashlog.h"
+#include "flashlog_test.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -37,6 +40,7 @@
 #include "rails.h"
 #include "rtcclock.h"
 #include "temp.h"
+#include "timekeep.h"
 
 namespace {
 
@@ -94,7 +98,8 @@ const uint32_t NFC_POLL_MS = 300;
 // ---- sensors ---------------------------------------------------------
 
 void report_motion(const AccelEvent &ev, const char *when) {
-  printf("[accel]%s%s%s%s%s  (src 0x%02X, event %lu)\n", when,
+  printf("[accel] %lu ms%s%s%s%s%s  (src 0x%02X, event %lu)\n",
+         (unsigned long)now_ms(), when,
          ev.free_fall ? " free-fall" : " motion", ev.x ? " X" : "",
          ev.y ? " Y" : "", ev.z ? " Z" : "", ev.raw_src,
          (unsigned long)accel_event_count());
@@ -143,7 +148,7 @@ void task_sensors(void *) {
     if (health_should_try(Dev::Accel, t)) {
       if (!g_accel_up) {
         AccelEvent pending;
-        g_accel_up = accel_begin(ACCEL_WAKE_THS_DEFAULT, &pending);
+        g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending);
       }
       AccelSample a;
       if (g_accel_up && accel_read(&a)) {
@@ -185,6 +190,8 @@ void task_gnss(void *) {
       vTaskDelay(pdMS_TO_TICKS(5000));
       continue;
     }
+    printf("[gnss] %lu ms session start\n", (unsigned long)now_ms());
+    fflush(stdout);
 
     const uint32_t start = now_ms();
     int fixes = 0;
@@ -200,7 +207,7 @@ void task_gnss(void *) {
       // gone. Satellite time is the most trustworthy source this box
       // has; the first status-A sentence puts the clock back.
       if (!rtc_time_valid() && f.time_valid) {
-        if (rtc_set(&f.utc, TimeSource::Gnss)) {
+        if (time_set(&f.utc, TimeSource::Gnss, false)) {
           printf("[gnss] clock set from satellite time\n");
           fflush(stdout);
         }
@@ -323,6 +330,10 @@ void print_health(void) {
   } else {
     printf("  clock        no answer\n");
   }
+  TimeStamp ts;
+  time_now(&ts);
+  printf("  order        boot %lu, %lu ms\n", (unsigned long)ts.boot,
+         (unsigned long)ts.tick_ms);
 
   const PowerStatus &p = g_power;
   if (p.cell_valid) {
@@ -476,6 +487,103 @@ void nfc_write_sn(void) {
   }
 }
 
+// ---- trip log ----------------------------------------------------------
+
+FlashIf g_log_flash;
+bool g_log_up = false;
+
+// Records written from the console go to this trip and only this trip,
+// so bench testing can never mix into a real one. P3 allocates real
+// trip ids from a counter, which will never reach this value.
+const uint32_t BENCH_TRIP = 0xBE5C0001;
+
+void log_start(void) {
+  const uint32_t t0 = now_ms();
+  g_log_up = flashlog_partition(&g_log_flash) && flashlog_init(&g_log_flash);
+  if (g_log_up) {
+    printf("[log] %lu sectors scanned in %lu ms\n",
+           (unsigned long)(g_log_flash.size / LOG_SECTOR),
+           (unsigned long)(now_ms() - t0));
+  } else {
+    printf("[log] trip_log partition missing or unreadable: NOTHING WILL BE"
+           " LOGGED\n");
+  }
+}
+
+void print_log(void) {
+  if (!g_log_up) {
+    printf("\n  trip log not available\n\n");
+    return;
+  }
+  LogStats s;
+  flashlog_stats(&s);
+  printf("\n  sectors    %lu: %lu in use, %lu free, %lu dirty (reusable)\n",
+         (unsigned long)s.sectors, (unsigned long)s.used,
+         (unsigned long)s.free, (unsigned long)s.dirty);
+  printf("  space      %lu of %lu records' worth used (%.1f%%)\n",
+         (unsigned long)(s.used * LOG_SLOTS),
+         (unsigned long)(s.sectors * LOG_SLOTS),
+         100.0 * s.used / (s.sectors ? s.sectors : 1));
+  // At the configured sample period, how long the free space lasts
+  // with nothing uploaded: the offline-capacity question of §9.3.
+  const double days = (double)(s.free + s.dirty) * LOG_SLOTS *
+                      config().sample_period_s / 86400.0;
+  printf("  offline    about %.0f days of samples at one per %ld s"
+         " (samples only)\n",
+         days, (long)config().sample_period_s);
+  uint32_t t[8];
+  const int n = flashlog_trips(t, 8);
+  printf("  trips      %d", n);
+  for (int i = 0; i < n && i < 8; i++) {
+    uint32_t last = 0;
+    const bool any = flashlog_last_seq(t[i], &last);
+    printf("%s%08lX (%s%lu)", i ? ", " : "  ", (unsigned long)t[i],
+           any ? "last seq " : "no records", any ? (unsigned long)last : 0UL);
+  }
+  printf("\n\n");
+}
+
+void log_bench_write(int n) {
+  if (n < 1 || n > 2000) {
+    printf("  log write N   (1..2000)\n");
+    return;
+  }
+  const uint32_t t0 = now_ms();
+  int ok = 0;
+  LogErr e = LogErr::Ok;
+  for (int i = 0; i < n; i++) {
+    uint8_t p[32];
+    uint32_t seq = 0;
+    uint32_t last;
+    const uint32_t next = flashlog_last_seq(BENCH_TRIP, &last) ? last + 1 : 0;
+    for (int k = 0; k < (int)sizeof(p); k++) p[k] = (uint8_t)(next + k);
+    e = flashlog_append(BENCH_TRIP, 0x7F, p, sizeof(p), &seq);
+    if (e != LogErr::Ok) break;
+    ok++;
+    if (i % 50 == 49) beat(Job::Console);
+  }
+  printf("  %d of %d written in %lu ms%s%s\n", ok, n,
+         (unsigned long)(now_ms() - t0), e == LogErr::Ok ? "" : ", stopped: ",
+         e == LogErr::Ok ? "" : log_err_name(e));
+}
+
+bool bench_visit(const LogRecord &r, void *ctx) {
+  uint32_t *bad = (uint32_t *)ctx;
+  bool ok = r.len == 32 && r.type == 0x7F;
+  for (int k = 0; k < 32 && ok; k++) ok = r.payload[k] == (uint8_t)(r.seq + k);
+  if (!ok) (*bad)++;
+  return true;
+}
+
+void log_bench_read(void) {
+  uint32_t bad = 0, torn = 0;
+  const uint32_t t0 = now_ms();
+  const uint32_t n = flashlog_read(BENCH_TRIP, 0, bench_visit, &bad, &torn);
+  printf("  %lu records, %lu wrong, %lu torn slots, read in %lu ms\n",
+         (unsigned long)n, (unsigned long)bad, (unsigned long)torn,
+         (unsigned long)(now_ms() - t0));
+}
+
 void print_help(void) {
   printf("\n  health          every device, its state, and the readings\n");
   printf("  tasks           heartbeats and heap\n");
@@ -487,7 +595,16 @@ void print_help(void) {
   printf("  led I R G B     light pixel I (0-3) for a second\n");
   printf("  ledtest [S] [N] side red, left green, middle blue, right white;\n");
   printf("                  S seconds each (4), N rounds (1)\n");
-  printf("  beep MS         sound the buzzer\n\n");
+  printf("  beep MS         sound the buzzer\n");
+  printf("  config          every setting, its range and default\n");
+  printf("  config set K V  change one setting (stored in NVS)\n");
+  printf("  config reset    every setting back to its default\n");
+  printf("  reboot          restart the firmware\n");
+  printf("  log             trip log: sectors, trips, space\n");
+  printf("  logtest         power-cut tests against a RAM image\n");
+  printf("  log write N     append N records to the bench trip\n");
+  printf("  log read        check the bench trip's records\n");
+  printf("  log erase       delete the bench trip\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
@@ -529,7 +646,39 @@ void run_command(char *line) {
   else if (!strcmp(line, "nfc")) print_nfc();
   else if (!strcmp(line, "nfc write")) nfc_write_sn();
   else if (!strcmp(line, "help")) print_help();
-  else if (!strncmp(line, "ledtest", 7)) {
+  else if (!strcmp(line, "log")) print_log();
+  else if (!strcmp(line, "logtest")) {
+    printf("\n");
+    const int f = flashlog_selftest();
+    printf("\n  %s\n\n", f == 0 ? "all passed" : "FAILURES above");
+  } else if (!strncmp(line, "log write ", 10)) log_bench_write(atoi(line + 10));
+  else if (!strcmp(line, "log read")) log_bench_read();
+  else if (!strcmp(line, "log erase")) {
+    printf("  %s\n", log_err_name(flashlog_erase_trip(BENCH_TRIP)));
+  } else if (!strcmp(line, "reboot")) {
+    printf("  restarting\n");
+    fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    esp_restart();
+  } else if (!strcmp(line, "config")) config_print();
+  else if (!strcmp(line, "config reset")) {
+    config_reset();
+    printf("  every setting back to its default\n");
+  } else if (!strncmp(line, "config set ", 11)) {
+    char key[24];
+    long v;
+    if (sscanf(line + 11, "%23s %ld", key, &v) != 2) {
+      printf("  config set KEY VALUE\n");
+    } else if (!config_set(key, (int32_t)v)) {
+      printf("  refused: unknown key or out of range (see 'config')\n");
+    } else {
+      printf("  %s = %ld, stored\n", key, v);
+      // The one setting that has a consumer already.
+      if (!strcmp(key, "accel_wake_ths") && g_accel_up) {
+        accel_set_threshold((uint8_t)v);
+      }
+    }
+  } else if (!strncmp(line, "ledtest", 7)) {
     int hold = 4, rounds = 1;
     sscanf(line + 7, "%d %d", &hold, &rounds);
     led_test(hold, rounds);
@@ -616,7 +765,10 @@ extern "C" void app_main(void) {
   leds_init();
   buzzer_init();
   chargeled_start();
+  config_init();
   rtc_begin();
+  time_init();
+  log_start();
   power_init();
 
   // Armed here, not by a console command: opening and closing the
@@ -624,7 +776,7 @@ extern "C" void app_main(void) {
   // gone before anyone can tap the box. Bring-up lost three motion
   // tests to that before it was understood.
   AccelEvent pending;
-  g_accel_up = accel_begin(ACCEL_WAKE_THS_DEFAULT, &pending);
+  g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending);
 
   const esp_app_desc_t *app = esp_app_get_description();
   printf("\n\nmCOLD Foam V.1   firmware %s   reset %d   heap %u B\n",

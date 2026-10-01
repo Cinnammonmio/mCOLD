@@ -34,6 +34,57 @@ To cut a release:
 
 ## Unreleased
 
+## 0.2.0 — 2026-10-02
+
+P2 complete: time, configuration, and the trip log that everything in a
+trip is written to first.
+
+### Trip log (`flashlog`)
+
+Append-only records in the 9.75 MiB `trip_log` partition (§9.2-9.4).
+
+- 4 KiB sectors: a 64-byte header (sector sequence, trip, CRC32) and 31
+  frames of 128 bytes; each frame carries type, length, trip, per-trip
+  sequence, up to 112 bytes of payload and its own CRC32
+- A frame commits by being written whole with a good CRC. A power cut
+  leaves at most one torn frame, which is skipped and never reused;
+  nothing committed is lost. All writes are 16-byte aligned, so this
+  still holds with flash encryption on
+- One trip per sector, so a trip can be deleted whole (§9.6); a trip
+  written again after another resumes its own last sector
+- Sectors are opened in rotation, spreading erases over the partition
+- Capacity at the 5-minute sample period: about 269 days of samples
+- Checked on the board, against a RAM image of NOR flash: power cut at
+  every byte of a record and of a sector header, between header and
+  first record, and in the middle of an erase; two interleaved trips;
+  deleting a trip; full and reclaimed; wrap-around; a garbage sector;
+  bad arguments. 14 of 14 pass (`logtest`)
+- Checked on the real partition: 250 records written across a reboot,
+  read back with 0 wrong and 0 torn; boot scan of 2,496 sectors 168 ms
+- Console: `log`, `logtest`, and `log write` / `log read` / `log erase`
+  against a bench trip id that no real trip can have
+
+Not in this release, because each needs something that comes later:
+when a trip may be deleted (P3 trip state, P6 server ACK), the
+`log_meta` journal of trips, ACK checkpoints and loss records, and the
+record schema of a sample (P3).
+
+### Time and configuration
+
+- Time: UTC with a quality (unknown / rtc / gnss / host), a boot counter
+  in NVS and a per-boot tick, so events stay ordered across resets and
+  clock corrections. The system clock follows the RTC; a lower-ranked
+  source cannot overwrite a higher one within a boot
+- Configuration in NVS, one key per setting from a single table of
+  ranges and defaults; out-of-range values are refused on set and
+  replaced by the default on load. Over-long NVS keys fail the build.
+  Console: `config`, `config set`, `config reset`
+- Config schema 2: temperature alarm thresholds are no longer device
+  settings; they are set per trip when it starts (decided 2026-10-02).
+  Keys left by schema 1 are erased on first boot
+- Sample period default 300 s (5 min), decided 2026-10-02
+- `reboot` command; motion events and GNSS sessions carry uptime stamps
+
 ## 0.1.0 — 2026-10-02
 
 P1 complete: every on-board device has a driver, checked on the board.
