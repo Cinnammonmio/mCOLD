@@ -28,6 +28,19 @@ To cut a release:
 
 ## Unreleased
 
+P2: time, configuration, storage.
+
+- Time: UTC with a quality (unknown / rtc / gnss / host), a boot counter
+  in NVS and a per-boot tick, so events stay ordered across resets and
+  clock corrections. The system clock follows the RTC; a lower-ranked
+  source cannot overwrite a higher one within a boot
+- Configuration in NVS, one key per setting from a single table of
+  ranges and defaults; out-of-range values are refused on set and
+  replaced by the default on load; temperature low must be below high.
+  Over-long NVS keys fail the build. Console: `config`, `config set`,
+  `config reset`
+- `reboot` command; motion events and GNSS sessions carry uptime stamps
+
 ## 0.1.0 — 2026-10-02
 
 P1 complete: every on-board device has a driver, checked on the board.
