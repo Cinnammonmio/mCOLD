@@ -12,18 +12,24 @@ first production release:
 | `0.N.0-dev` | work in progress towards phase N; never shipped |
 | `1.0.0` | first production release (after P8) |
 
-The version is written in exactly one place, `PROJECT_VER` in the root
-`CMakeLists.txt`, and ESP-IDF embeds it in the image header. Every
-release is a git tag of the same name with a `v` in front, made on
-`main`. Phase work happens on a `pN/...` branch and is merged when the
-phase is verified.
+The version is written in exactly one place, `PROJECT_VER` in
+`firmware/CMakeLists.txt`, and ESP-IDF embeds it in the image header.
+
+The firmware shares the mCOLD repo with the docs and design work, so
+every git name it uses starts with `firmware/`:
+
+- release tags `firmware/vX.Y.Z`
+- `firmware/main` holds released firmware only, and reaches the repo's
+  `main` by pull request
+- phase work on `firmware/pN-...`, merged into `firmware/main` when the
+  phase is verified on the board
 
 To cut a release:
 
 1. Set `PROJECT_VER` to the release number, without `-dev`
 2. Move the `Unreleased` notes below under that number
 3. Build, flash, and check that the boot banner prints the new number
-4. Merge to `main`, then `git tag -a vX.Y.Z`
+4. Merge into `firmware/main`, then `git tag -a firmware/vX.Y.Z`
 5. Set `PROJECT_VER` to the next `-dev` version
 
 ## Unreleased

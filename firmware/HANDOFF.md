@@ -14,10 +14,11 @@ find and will cost it again if it is rediscovered rather than read.
 
 | Path | What |
 |---|---|
-| `C:\mCOLD\firmware` | **the product firmware** — the only thing that must live on a space-free path |
-| `C:\Arduino\Foam V.1\Firmware\mCOLD-main` | the repo: `docs/`, `display-mock/`, `led-mock/`, `bench/`, `bringup/` |
-| `…\mCOLD-main\bringup` | the bring-up tool that proved the hardware. Arduino/PlatformIO, still useful, not the product |
-| `…\mCOLD-main\firmware` | **stale** — an abandoned first attempt. Ignore it or delete it |
+| `C:\mCOLD` | **checkout of github.com/Cinnammonmio/mCOLD** — on a space-free path because ESP-IDF requires it |
+| `C:\mCOLD\firmware` | **the product firmware** |
+| `C:\mCOLD\docs` | requirements, schematics, display and LED design |
+| `C:\Arduino\Foam V.1\Firmware\mCOLD-main` | an older zip copy of the repo, **not a git checkout**. Holds work never pushed: `bringup/`, `bench/epd29-s3` edits, and a stale `firmware/` (an abandoned first attempt) |
+| `…\mCOLD-main\bringup` | the bring-up tool that proved the hardware. Arduino/PlatformIO, still useful, not the product. **Not in git** |
 
 The board is on **COM7**, native USB, MAC `28:84:85:27:9A:74`.
 
@@ -28,7 +29,7 @@ Section numbers below refer to it.
 
 ## 2. State right now
 
-Firmware **0.1.0** released (tag `v0.1.0`, ELF sha256 `9332e8396...`).
+Firmware **0.1.0** released (tag `firmware/v0.1.0`, ELF sha256 `9332e8396...`).
 Running on the board:
 
 ```
@@ -37,11 +38,21 @@ RAM   6.4% (20,820 B)      Flash 12.4% (389,824 B of a 3 MiB OTA slot)
 
 P0 and P1 complete. Next: **P2**, time, configuration and storage.
 
-**Git.** `C:\mCOLD\firmware` is a git repo. **No remote yet** -- nothing
-is pushed. `main` holds tagged releases only; phase work is on `pN/...`
-branches and merged when the phase is verified. Version scheme, release
-steps and what each release contains: `CHANGELOG.md`. The version is
-`PROJECT_VER` in the root `CMakeLists.txt` and nowhere else.
+**Git.** The firmware lives in the shared mCOLD repo under `firmware/`,
+with its full history (imported 2026-10-02; until then it was a repo of
+its own, so commits before that have firmware files at the root of
+their tree). Everything firmware is namespaced so it stays apart from
+the rest of the repo:
+
+| | |
+|---|---|
+| `firmware/vX.Y.Z` | release tags, annotated with the release notes |
+| `firmware/main` | released firmware only; merged into `main` by pull request |
+| `firmware/pN-...` | phase work, merged into `firmware/main` when verified |
+
+Version scheme, release steps and what each release contains:
+`CHANGELOG.md`. The version is `PROJECT_VER` in `firmware/CMakeLists.txt`
+and nowhere else.
 
 | Done | |
 |---|---|
@@ -359,4 +370,7 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
   set rather than left at defaults. SOC currently reads low after a deep
   discharge; ModelGauge needs a full charge cycle before it is worth
   judging
-- The repo has no remote. Nothing is pushed anywhere
+- `bringup/` and the `bench/epd29-s3` edits exist only in the zip copy
+  at `C:\Arduino\Foam V.1\Firmware\mCOLD-main` and are not in git. The
+  bring-up tool is the record of how the hardware was proven; it should
+  be committed before that folder is lost
