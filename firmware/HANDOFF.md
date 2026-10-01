@@ -350,8 +350,11 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
   cannot see a BLE MAC**, so the device must advertise its SN and the
   app must match on that. The app team has confirmed the MAC is only a
   tiebreak when device IDs collide
-- Alarm thresholds — the only real data point is that lifting the board
-  by hand exceeds 1.45 g, which is not enough to set a shock threshold
+- **Temperature alarm thresholds are set per trip**, by the app at
+  START_TRIP (decided 2026-10-02) -- not device config. P3 puts them in
+  the trip header. **Sample period: 5 min** (300 s, the config default)
+- Shock threshold — the only real data point is that lifting the board
+  by hand exceeds 1.45 g, which is not enough to set one
 - Battery datasheet, so MAX17048 `RCOMP` and the charger limits can be
   set rather than left at defaults. SOC currently reads low after a deep
   discharge; ModelGauge needs a full charge cycle before it is worth

@@ -29,6 +29,7 @@
 #include "bus.h"
 #include "buzzer.h"
 #include "chargeled.h"
+#include "config.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -37,6 +38,7 @@
 #include "rails.h"
 #include "rtcclock.h"
 #include "temp.h"
+#include "timekeep.h"
 
 namespace {
 
@@ -94,7 +96,8 @@ const uint32_t NFC_POLL_MS = 300;
 // ---- sensors ---------------------------------------------------------
 
 void report_motion(const AccelEvent &ev, const char *when) {
-  printf("[accel]%s%s%s%s%s  (src 0x%02X, event %lu)\n", when,
+  printf("[accel] %lu ms%s%s%s%s%s  (src 0x%02X, event %lu)\n",
+         (unsigned long)now_ms(), when,
          ev.free_fall ? " free-fall" : " motion", ev.x ? " X" : "",
          ev.y ? " Y" : "", ev.z ? " Z" : "", ev.raw_src,
          (unsigned long)accel_event_count());
@@ -143,7 +146,7 @@ void task_sensors(void *) {
     if (health_should_try(Dev::Accel, t)) {
       if (!g_accel_up) {
         AccelEvent pending;
-        g_accel_up = accel_begin(ACCEL_WAKE_THS_DEFAULT, &pending);
+        g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending);
       }
       AccelSample a;
       if (g_accel_up && accel_read(&a)) {
@@ -185,6 +188,8 @@ void task_gnss(void *) {
       vTaskDelay(pdMS_TO_TICKS(5000));
       continue;
     }
+    printf("[gnss] %lu ms session start\n", (unsigned long)now_ms());
+    fflush(stdout);
 
     const uint32_t start = now_ms();
     int fixes = 0;
@@ -200,7 +205,7 @@ void task_gnss(void *) {
       // gone. Satellite time is the most trustworthy source this box
       // has; the first status-A sentence puts the clock back.
       if (!rtc_time_valid() && f.time_valid) {
-        if (rtc_set(&f.utc, TimeSource::Gnss)) {
+        if (time_set(&f.utc, TimeSource::Gnss, false)) {
           printf("[gnss] clock set from satellite time\n");
           fflush(stdout);
         }
@@ -323,6 +328,10 @@ void print_health(void) {
   } else {
     printf("  clock        no answer\n");
   }
+  TimeStamp ts;
+  time_now(&ts);
+  printf("  order        boot %lu, %lu ms\n", (unsigned long)ts.boot,
+         (unsigned long)ts.tick_ms);
 
   const PowerStatus &p = g_power;
   if (p.cell_valid) {
@@ -487,7 +496,11 @@ void print_help(void) {
   printf("  led I R G B     light pixel I (0-3) for a second\n");
   printf("  ledtest [S] [N] side red, left green, middle blue, right white;\n");
   printf("                  S seconds each (4), N rounds (1)\n");
-  printf("  beep MS         sound the buzzer\n\n");
+  printf("  beep MS         sound the buzzer\n");
+  printf("  config          every setting, its range and default\n");
+  printf("  config set K V  change one setting (stored in NVS)\n");
+  printf("  config reset    every setting back to its default\n");
+  printf("  reboot          restart the firmware\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
@@ -529,7 +542,30 @@ void run_command(char *line) {
   else if (!strcmp(line, "nfc")) print_nfc();
   else if (!strcmp(line, "nfc write")) nfc_write_sn();
   else if (!strcmp(line, "help")) print_help();
-  else if (!strncmp(line, "ledtest", 7)) {
+  else if (!strcmp(line, "reboot")) {
+    printf("  restarting\n");
+    fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    esp_restart();
+  } else if (!strcmp(line, "config")) config_print();
+  else if (!strcmp(line, "config reset")) {
+    config_reset();
+    printf("  every setting back to its default\n");
+  } else if (!strncmp(line, "config set ", 11)) {
+    char key[24];
+    long v;
+    if (sscanf(line + 11, "%23s %ld", key, &v) != 2) {
+      printf("  config set KEY VALUE\n");
+    } else if (!config_set(key, (int32_t)v)) {
+      printf("  refused: unknown key or out of range (see 'config')\n");
+    } else {
+      printf("  %s = %ld, stored\n", key, v);
+      // The one setting that has a consumer already.
+      if (!strcmp(key, "accel_wake_ths") && g_accel_up) {
+        accel_set_threshold((uint8_t)v);
+      }
+    }
+  } else if (!strncmp(line, "ledtest", 7)) {
     int hold = 4, rounds = 1;
     sscanf(line + 7, "%d %d", &hold, &rounds);
     led_test(hold, rounds);
@@ -616,7 +652,9 @@ extern "C" void app_main(void) {
   leds_init();
   buzzer_init();
   chargeled_start();
+  config_init();
   rtc_begin();
+  time_init();
   power_init();
 
   // Armed here, not by a console command: opening and closing the
@@ -624,7 +662,7 @@ extern "C" void app_main(void) {
   // gone before anyone can tap the box. Bring-up lost three motion
   // tests to that before it was understood.
   AccelEvent pending;
-  g_accel_up = accel_begin(ACCEL_WAKE_THS_DEFAULT, &pending);
+  g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending);
 
   const esp_app_desc_t *app = esp_app_get_description();
   printf("\n\nmCOLD Foam V.1   firmware %s   reset %d   heap %u B\n",
