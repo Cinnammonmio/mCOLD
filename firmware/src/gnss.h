@@ -42,6 +42,18 @@ struct GnssFix {
   uint32_t at_ms;           // uptime when received; 0 means never
 };
 
+// What the receiver can hear, from GSV. Indoors this is the useful
+// number: "no fix" alone does not say whether the module heard nothing
+// or was two satellites short.
+struct GnssSky {
+  uint8_t in_view;          // satellites the module expects overhead
+  uint8_t heard;            // of those, how many it is receiving (SNR > 0)
+  uint8_t best_snr;         // dB-Hz; a fix generally wants a few above ~30
+  uint32_t at_ms;           // 0: no GSV seen yet
+};
+
+void gnss_sky(GnssSky *out);
+
 struct GnssStats {
   uint32_t bytes;
   uint32_t sentences;       // checksum good

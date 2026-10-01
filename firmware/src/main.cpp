@@ -205,9 +205,13 @@ void task_gnss(void *) {
       printf("[gnss] fix %.6f, %.6f  %u sats  hdop %.1f\n", f.lat_deg,
              f.lon_deg, f.sats, f.hdop);
     } else {
-      printf("[gnss] no fix this session (%s)\n",
-             health_state(Dev::Gnss) == DevState::Ok ? "module talking, no sky"
-                                                     : "module silent");
+      GnssSky k;
+      gnss_sky(&k);
+      printf("[gnss] no fix this session (%s): %u satellites in view, %u"
+             " heard, best SNR %u dB-Hz\n",
+             health_state(Dev::Gnss) == DevState::Ok ? "module talking"
+                                                     : "module silent",
+             k.in_view, k.heard, k.best_snr);
     }
     fflush(stdout);
 
@@ -393,6 +397,15 @@ void print_gnss(void) {
          (unsigned long)st.bad_checksum);
   if (st.bad_checksum > st.sentences) {
     printf("             more bad than good: suspect the baud rate\n");
+  }
+  GnssSky k;
+  gnss_sky(&k);
+  if (k.at_ms) {
+    printf("  sky        %u in view, %u heard, best SNR %u dB-Hz  (%lu s ago)\n",
+           k.in_view, k.heard, k.best_snr,
+           (unsigned long)((now_ms() - k.at_ms) / 1000));
+    printf("             a fix generally needs four or more heard above"
+           " ~30 dB-Hz\n");
   }
   GnssFix f;
   if (!gnss_last_fix(&f)) {

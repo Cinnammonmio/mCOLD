@@ -141,6 +141,48 @@ void parse_rmc(const char *s, uint32_t t) {
   portEXIT_CRITICAL(&g_mux);
 }
 
+// One GSV sequence per constellation, each split over several sentences
+// of up to four satellites. Totals are kept per talker and summed when
+// read, so GPS and BeiDou do not overwrite each other.
+const int TALKERS = 5;
+uint8_t g_view[TALKERS], g_heard[TALKERS], g_best[TALKERS];
+uint32_t g_sky_at = 0;
+
+int talker_index(const char *s) {
+  if (!strncmp(s + 1, "GP", 2)) return 0;
+  if (!strncmp(s + 1, "BD", 2) || !strncmp(s + 1, "GB", 2)) return 1;
+  if (!strncmp(s + 1, "GL", 2)) return 2;
+  if (!strncmp(s + 1, "GA", 2)) return 3;
+  return 4;
+}
+
+void parse_gsv(const char *s, uint32_t t) {
+  char num[4], view[4], snr[6];
+  if (!field(s, 2, num, sizeof num) || !field(s, 3, view, sizeof view)) return;
+  const int k = talker_index(s);
+  portENTER_CRITICAL(&g_mux);
+  if (atoi(num) == 1) {
+    g_heard[k] = 0;
+    g_best[k] = 0;
+  }
+  g_view[k] = (uint8_t)atoi(view);
+  portEXIT_CRITICAL(&g_mux);
+
+  // Groups of four fields from field 4: PRN, elevation, azimuth, SNR.
+  // An empty SNR is a satellite expected but not heard.
+  for (int g = 0; g < 4; g++) {
+    if (!field(s, 4 + g * 4 + 3, snr, sizeof snr)) break;
+    if (!*snr) continue;
+    const int v = atoi(snr);
+    if (v <= 0) continue;
+    portENTER_CRITICAL(&g_mux);
+    g_heard[k]++;
+    if (v > g_best[k]) g_best[k] = (uint8_t)v;
+    portEXIT_CRITICAL(&g_mux);
+  }
+  g_sky_at = t;
+}
+
 void parse_gga(const char *s) {
   char q[4], ns[6], hd[10], al[12];
   if (!field(s, 6, q, sizeof q) || !field(s, 7, ns, sizeof ns) ||
@@ -171,6 +213,7 @@ bool handle_line(const char *s, int n) {
   // matters here.
   if (n > 6 && !strncmp(s + 3, "RMC,", 4)) parse_rmc(s, t);
   else if (n > 6 && !strncmp(s + 3, "GGA,", 4)) parse_gga(s);
+  else if (n > 6 && !strncmp(s + 3, "GSV,", 4)) parse_gsv(s, t);
   return true;
 }
 
@@ -285,4 +328,18 @@ uint32_t gnss_last_sentence_ms(void) { return g_last_sentence; }
 
 void gnss_stats(GnssStats *out) {
   if (out) *out = g_stats;
+}
+
+void gnss_sky(GnssSky *out) {
+  if (!out) return;
+  GnssSky k = {};
+  portENTER_CRITICAL(&g_mux);
+  for (int i = 0; i < TALKERS; i++) {
+    k.in_view += g_view[i];
+    k.heard += g_heard[i];
+    if (g_best[i] > k.best_snr) k.best_snr = g_best[i];
+  }
+  portEXIT_CRITICAL(&g_mux);
+  k.at_ms = g_sky_at;
+  *out = k;
 }
