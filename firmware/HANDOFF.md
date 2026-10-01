@@ -28,18 +28,20 @@ Section numbers below refer to it.
 
 ## 2. State right now
 
-Firmware **0.1.0-dev**. Builds, flashes, runs on hardware:
+Firmware **0.1.0** released (tag `v0.1.0`, ELF sha256 `9332e8396...`).
+Running on the board:
 
 ```
-RAM   6.3% (20,780 B)      Flash 12.2% (383,368 B of a 3 MiB OTA slot)
+RAM   6.4% (20,820 B)      Flash 12.4% (389,824 B of a 3 MiB OTA slot)
 ```
 
-P0 complete. P1 code complete; three checks still need a person (below).
+P0 and P1 complete. Next: **P2**, time, configuration and storage.
 
-**Git.** `C:\mCOLD\firmware` is a git repo now (no remote yet). `main`
-holds tagged releases only; phase work is on `pN/...` branches. P1 is
-on `p1/drivers`. Version scheme and release steps: `CHANGELOG.md`. The
-version is `PROJECT_VER` in the root `CMakeLists.txt` and nowhere else.
+**Git.** `C:\mCOLDirmware` is a git repo. **No remote yet** -- nothing
+is pushed. `main` holds tagged releases only; phase work is on `pN/...`
+branches and merged when the phase is verified. Version scheme, release
+steps and what each release contains: `CHANGELOG.md`. The version is
+`PROJECT_VER` in the root `CMakeLists.txt` and nowhere else.
 
 | Done | |
 |---|---|
@@ -51,27 +53,21 @@ version is `PROJECT_VER` in the root `CMakeLists.txt` and nowhere else.
 | `rtcclock.*` | PCF8523 |
 | `power.*` | MAX17048 + INA226 + BQ25601 |
 | `accel.*` | LIS2DW12: 100 Hz low-power mode 1, wake-up latched on INT1, interrupt-driven |
-| `gnss.*` | ATGM336H: 115200 NMEA, checksums, RMC/GGA, sessions, sets the RTC from status-A time |
+| `gnss.*` | ATGM336H: 115200 NMEA, checksums, RMC/GGA/GSV, sessions, sets the RTC from status-A time |
 | `nfc.*` | ST25DV04KC: UID, phone detection, verified NDEF writes |
-| `leds.*` | RMT, 20% cap, rail held only while lit |
-| `buzzer.*` | LEDC 2.7 kHz, self-terminating, 3 s cap |
-| `chargeled.*` | side light (LED4) shows charge state per docs/led-design.md, only on external power |
-| `main.cpp` | 6 tasks + supervisor; console: `help` lists the commands |
+| `leds.*` | RMT, GRB, 20% cap, rail held only while lit; names follow physical position |
+| `buzzer.*` | MLT-8530, LEDC 2.7 kHz, self-terminating, 3 s cap |
+| `chargeled.*` | side light shows charge state (table in CHANGELOG 0.1.0), only on external power |
+| `main.cpp` | 7 tasks + supervisor; console: `help` lists the commands |
 
-Verified on the board for 0.1.0-dev: |a| 994 mg at rest; UID
-`E002506962DC8136`, IC_REF 0x50; GNSS 853 sentences, **0 bad
-checksums**; LED and buzzer accepted commands, LED rail released after
-each pulse.
+Checked on the board by a person, 2026-10-02: tap → motion event;
+phone → NFC arrival; all four LED colours and positions (`ledtest`);
+side light breathes yellow while charging below 80 %, green above.
 
-| P1 still to verify, needs a person | How |
+| Still unverified | |
 |---|---|
-| ~~Tap → motion event~~ passed 2026-10-02 | tap the board: LED2 flashes green, console prints `[accel] motion` |
-| ~~Phone → NFC arrival~~ passed 2026-10-02 | hold a phone on the tag: LED3 flashes blue, `[nfc] phone on the tag` |
-| GNSS fix and RTC set from it | board near a window for one session (≤ 2 min, every 10 min): `[gnss] fix ...`. Indoors on 2026-10-02 it reported **0 satellites in view** after a minute: not even a weak signal. Either the room is that shielded or the antenna path is not working -- a fix has never been seen on this board |
-| ~~LED colours~~ passed 2026-10-02 | all four show the colour asked for (GRB). **Order differs from the doc:** index 1 is front RIGHT, index 3 front LEFT. Names in `leds.h` follow position (left cargo, right device) |
-| Side light charge status | `health` shows the mode; check by eye that it breathes yellow while charging, and goes out when USB is unplugged |
-
-Then: set `PROJECT_VER` to `0.1.0`, merge to `main`, tag `v0.1.0`.
+| **GNSS fix** | never seen on this board. Indoors it reported **0 satellites in view** -- not even a weak one. Either the room is that shielded or the antenna path does not work. Next time outdoors: leave it 10 min and read `gnss` |
+| Side light going out on unplug | follows PG# directly; not yet watched |
 
 **Do not run `nfc write` casually.** The tag currently holds a JSON
 NDEF record from bring-up (`{"sn":"MCOLD-9A74","ble...`), possibly the
@@ -313,7 +309,7 @@ like data. No device failure is ever rendered as 0.
 
 ## 7. Phases
 
-P0 skeleton · **P1 drivers (here)** · P2 time/config/storage ·
+P0 skeleton · P1 drivers · **P2 time/config/storage (here)** ·
 P3 trip state machine and sensing · P4 display, LED, buzzer ·
 P5 BLE/NFC/protocol · P6 Wi-Fi sync and USB MSC/CSV ·
 P7 power measurement · P8 hardening

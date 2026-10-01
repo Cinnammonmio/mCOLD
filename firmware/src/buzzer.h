@@ -1,9 +1,8 @@
 // Buzzer on GPIO6, through Q5.
 //
-// The schematic says 2.7 kHz; whether the part is active or passive is
-// still unconfirmed. Bring-up drove it with a 2.7 kHz square wave and it
-// sounded, and a square wave also sounds an active buzzer, so that is
-// what this does until the part number is known.
+// The part is an MLT-8530 (repo README): a passive magnetic transducer
+// resonant at 2.7 kHz, so it must be driven with a square wave -- held
+// high it only clicks once. Bring-up drove it at 2.7 kHz and it sounded.
 //
 // Nothing here blocks, and nothing can sound for long: a beep that
 // outlives the code that started it -- a task that stalls mid-alarm --
