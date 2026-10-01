@@ -48,7 +48,7 @@ the rest of the repo:
 | | |
 |---|---|
 | `firmware/vX.Y.Z` | release tags, annotated with the release notes |
-| `firmware/main` | released firmware only; merged into `main` by pull request |
+| `firmware/main` | released firmware only; merged into `main` at each release |
 | `firmware/pN-...` | phase work, merged into `firmware/main` when verified |
 
 Version scheme, release steps and what each release contains:
