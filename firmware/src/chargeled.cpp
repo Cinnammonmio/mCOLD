@@ -67,9 +67,18 @@ void render(ChargeLed m, uint32_t t) {
 
 void task(void *) {
   ChargeLed shown = ChargeLed::Off;
+  bool stale = false;
   for (;;) {
-    ChargeLed m = input_present() ? g_mode : ChargeLed::Off;
-    if (m != shown || m != ChargeLed::Off) {
+    if (leds_pulse_active(LED_SIDE)) {
+      // A pulse has the side pixel (a test, say). Stand aside, and
+      // redraw whatever is due once it ends.
+      stale = true;
+      vTaskDelay(pdMS_TO_TICKS(FRAME_MS));
+      continue;
+    }
+    const ChargeLed m = input_present() ? g_mode : ChargeLed::Off;
+    if (stale || m != shown || m != ChargeLed::Off) {
+      stale = false;
       render(m, now_ms());
       leds_show();
       shown = m;

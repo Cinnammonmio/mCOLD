@@ -43,6 +43,10 @@ bool leds_show(void);
 // the requirements forbid a light left on through a trip.
 void leds_pulse(int index, uint8_t r, uint8_t g, uint8_t b, uint32_t ms);
 
+// True while a pulse holds pixel `index`. Anything that animates a
+// pixel on its own (the charge light) stands aside until it ends.
+bool leds_pulse_active(int index);
+
 // Everything dark and the rail released.
 void leds_off(void);
 

@@ -173,3 +173,5 @@ void leds_pulse(int i, uint8_t r, uint8_t g, uint8_t b, uint32_t ms) {
   leds_show();
   esp_timer_start_once(g_pulse_timer, (uint64_t)ms * 1000);
 }
+
+bool leds_pulse_active(int index) { return g_pulse_idx == index; }
