@@ -41,6 +41,15 @@ them, talks to a phone over BLE with tap-to-authorize, and uploads to
 the team's MQTT broker over Wi-Fi with application ACKs. **OTA and the
 USB drive are deferred.** Next: **P7**, power.
 
+**P7 in progress** (branch `firmware/p7-power`, `0.7.0-dev`): on battery
+the box now deep-sleeps between jobs (`pm.*`, section 6). Verified on
+the bench with `sleep_usb 1` (USB in, behaving as on battery): timer
+wakes on the sample grid, 0.13 s boot + 1.2 s awake per wake, 3.6 s
+with a panel refresh, motion wakes, upload sessions with backoff, the
+trip carrying on through sleep with no RESUMED events. **Not yet done:
+battery current measured on the battery alone; NFC tap wake checked
+with a phone; charger/PD policy (needs the battery datasheet).**
+
 Bench state: Wi-Fi networks `mio` and `Mio_2.4G` and the broker login
 are in this board's NVS (set over USB, never in git). The server does
 not ACK yet, so nothing is reclaimed (`sync` shows what is pending). The door is switched off (`MCOLD_DOOR 0` in
@@ -294,6 +303,30 @@ off by the script that set it up. Anything that must be live while a
 human does something physical has to be **armed in `setup()`**, not by a
 command.
 
+Scripts can avoid it: open the port with DTR and RTS held low
+(pyserial: set `dtr = rts = False` *before* `open()`) and the board is
+not reset. That is the only way to watch a box cycle through deep
+sleep: the USB port disappears every time the chip sleeps and the
+watcher has to reopen it without resetting what it is watching.
+
+### A box asleep cannot be flashed
+
+With `sleep_usb 1` (or on battery) the chip is awake about a second in
+every sample period and the USB port is gone the rest of the time;
+`pio run -t upload` fails. Catch a wake and send `config set sleep_usb
+0` first (it needs to arrive within that second -- the bench script
+writes the moment the port appears), or hold BOOT while plugging in. On
+real battery, plugging USB in wakes the box (PG#) and keeps it awake.
+
+### Motion events on the bench with nobody touching it
+
+During the sleep tests the accelerometer reported single Z (sometimes X
+or Y) events every few minutes, often near a Wi-Fi start or stop. Three
+panel refreshes in a row on USB produced none, so it is not the panel.
+Not yet known whether it is the radio's current step on 3V3_MAIN (as
+with the buzzer, see below) or the desk. Each one is a motion wake on
+battery (at most one a minute). Worth a controlled test before P8.
+
 ### A zero result from a test that needs human timing is not data
 
 Related, and the more general lesson. Several results of "nothing
@@ -380,6 +413,22 @@ past the task that owns it.
 - **`supervisor`** — watches heartbeats and reports stalls. It does not
   restart anything. A box that reboots loses its state and its time, and
   a reboot loop costs more than a sensor that limps.
+
+- **`pm`** (P7) — deep sleep on battery. A wake from deep sleep is a
+  reset to the CPU, so a wake runs as a short boot (`pm_warm()` tells a
+  module it is one). Three inputs, kept apart: **duties** (each module's
+  one pass for this wake, reported with `pm_done`), **holds** (something
+  sleep must not cut: BLE, a phone on the tag, a GNSS or Wi-Fi session,
+  a refresh, a light pattern, the console), and **next** (when each
+  module next needs the chip, `pm_next`). All duties done and no holds:
+  sleep until the earliest next. USB power never sleeps. A duty missing
+  after 60 s, or holds that are not a person's after 10 minutes, do not
+  keep the box up -- an awake box on battery is empty in a day and a
+  half. State that must cross a sleep is `RTC_DATA_ATTR` (reloaded on
+  any other reset, so it means exactly "this boot, through its
+  sleeps"); the wake record (`sleep` on the console) is `RTC_NOINIT`
+  so it survives the console reset too. Intervals that cross a sleep
+  use `mono_ms()`, never `esp_timer`, which restarts at every wake.
 
 **Values and their validity are always separate.** A stale reading with
 a flag beside it is honest; a stale reading on its own is a lie shaped

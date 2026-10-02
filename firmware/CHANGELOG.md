@@ -36,6 +36,48 @@ To cut a release:
 
 ## Unreleased
 
+P7, power: in progress.
+
+- **Deep sleep between jobs on battery** (`pm.*`). Each wake runs as a
+  short boot: every module does one pass and reports (`duties`), anything
+  a person or a session is doing keeps the chip up (`holds`), and it
+  sleeps until the earliest time any module asked for. USB power keeps
+  it awake. Wake sources: timer; motion (accelerometer INT1, EXT0; one
+  motion wake a minute); NFC GPO and PG# (EXT1, any low, each armed only
+  while high).
+- Pins held through sleep at safe levels: rails off, LED rail high, data
+  and select lines low so nothing feeds an unpowered part.
+- `mono_ms()`, a clock that runs through sleep. The boot counter now
+  counts real resets only (a wake is the same boot carrying on), and the
+  record stamp's tick uses this clock.
+- Kept in RTC memory across a sleep: the trip's dwell timers and motion
+  count, the sample schedule (samples stay on a fixed grid), the last
+  GNSS fix and the GNSS plan, the display's last picture, the NFC auth
+  key, the LED attention budget, the last Wi-Fi network, the upload plan.
+- A wake is not a resume: no `RESUMED` event, no boot sweep, no
+  rotation of the auth key, no redraw unless something changed.
+- Wi-Fi only while wanted. On battery, one upload session per
+  `upload_period_s`: join the last network directly (no scan), send,
+  `"0"` on `online`, radio off. A session without an ACK backs off,
+  doubling up to 4 hours. PROTOCOL.md section 6 updated for the server.
+- BLE stack started on first need (a tap or USB power), not every boot.
+- GNSS on battery: only during a trip (or with no valid time), every
+  `gnss_period_s` (1800 s), 90 s with a recent fix and 180 s without,
+  stretching x2/x4/x8 while sessions fail.
+- INA226 powered down while asleep (330 µA otherwise, ~5 % of the
+  budget); 16-sample averaging while awake.
+- Flash log boot scan through a memory map: 168 ms → 18 ms.
+- Faster boot: no PSRAM memory test, no image re-hash after deep sleep,
+  bootloader logs at warning level, no 300 ms console wait after a wake.
+- New settings: `sleep_en`, `idle_wake_s`, `gnss_period_s`,
+  `upload_period_s`, and `sleep_usb` (bench: behave as on battery with
+  the cable in). Console: `sleep`, `sleep clear`, `sleep test S`.
+
+Measured on the bench (USB power, `sleep_usb 1`): a timer wake is 0.13 s
+of ROM and bootloader plus 1.2 s of firmware; 3.6 s with a panel
+refresh; an upload session ~15 s while the server sends no ACK.
+Battery current: not measured yet.
+
 ## 0.6.0 — 2026-10-02
 
 P6 in part: the box reaches the server. **OTA and the USB drive are
