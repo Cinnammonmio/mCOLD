@@ -147,7 +147,7 @@ Errors:
 | `NOT_SUPPORTED` | defined, but not in this firmware yet |
 
 Units: temperatures in °C as numbers, times as Unix seconds UTC with a
-separate quality (`none`, `rtc`, `gnss`, `host`), durations in seconds.
+separate quality (`none`, `rtc`, `gnss`, `host`, `ntp`), durations in seconds.
 A value the device does not have is **absent or `null`, never 0**.
 
 ## 4. Commands
@@ -169,7 +169,11 @@ A value the device does not have is **absent or `null`, never 0**.
 | `GET_STORAGE_STATUS` | | | `sectors`, `used`, `free`, `trips`, `days_left` |
 | `SELF_TEST` | | | `health`: each device and its state |
 | `REBOOT` | ✎ | | (answered, then the device restarts) |
-| `GET_SYNC_STATUS`, `SYNC_NOW`, `GET_USB_SNAPSHOT_STATUS` | | | `NOT_SUPPORTED` until P6 |
+| `GET_SYNC_STATUS` | | | `wifi` (connected, ssid, rssi, `known`: names only), `server` (broker, `pending` records, `last_ack_s`) |
+| `SYNC_NOW` | ✎ | | upload now rather than at the next pass |
+| `SET_WIFI` | ✎ | `ssid`, `pass` (empty for open) | adds a network or changes its password; up to 5; joins the strongest in range |
+| `DEL_WIFI` | ✎ | `ssid` | forgets a network |
+| `GET_USB_SNAPSHOT_STATUS` | | | `NOT_SUPPORTED` until the USB drive |
 
 `GET_STATUS`:
 
@@ -200,3 +204,75 @@ by an older app, only not yet understood.
 3. Should STATUS be readable without AUTH? It carries temperature and
    position.
 4. The NFC record: keep `{"sn","ble","key"}`, and which URL for the banner?
+
+## 6. Server: MQTT (for the server team)
+
+**Status: PROPOSED, 2026-10-02.** The device side is built and running
+against the team's broker; the server side -- above all the ACK -- is
+what is missing.
+
+The device connects as client id `<sn>` (e.g. `MCOLD-9A74`) to the
+broker and login set in its NVS. All topics are under `mcold/<sn>/`:
+
+| Topic | Direction | QoS | Retained | Payload |
+|---|---|---|---|---|
+| `mcold/<sn>/rec` | device → server | 1 | no | a batch of records |
+| `mcold/<sn>/ack` | **server → device** | 1 | no | `{"trip":T,"upto":S}` |
+| `mcold/<sn>/status` | device → server | 0 | yes | `GET_STATUS` result (section 4) |
+| `mcold/<sn>/online` | device → server | 1 | yes | `"1"`; the broker publishes `"0"` (last will) if the device drops |
+
+Subscribing to `mcold/+/rec` gets every device's records.
+
+### Batches
+
+```json
+{"sn":"MCOLD-9A74","trip":8,"schema":1,"from":0,"to":15,
+ "records":[{"seq":0,"type":1,"data":"<base64>"}, ...]}
+```
+
+Up to 16 records, in sequence order, of one trip. `data` is the record
+payload exactly as `src/record.h` lays it out (little-endian, an 11-byte
+stamp first: UTC seconds, time quality, boot, tick) -- the same records
+`READ_LOG_CHUNK` returns over BLE. Types: 1 trip start, 2 sample,
+3 event, 4 trip stop.
+
+### The ACK -- what the server must do
+
+The device deletes nothing until the server says it has stored it (§9.5
+of the requirements). **An MQTT PUBACK does not count**: it only means
+the broker took the message.
+
+1. Store the batch's records durably. **The key is (sn, trip, seq)**: a
+   record that arrives twice -- the device resends whenever an ACK does
+   not come -- must be stored once, not twice.
+2. Then publish to `mcold/<sn>/ack`:
+   ```json
+   {"trip":8,"upto":15}
+   ```
+   meaning **every record of trip 8 with seq 0..15 is stored**. It is a
+   high-water mark, so it must be contiguous: only acknowledge `upto`
+   when all records below it are stored too.
+
+The device checks every ACK against its own log and rejects one for a
+trip it does not have, or past the last record it holds; a rejected ACK
+marks nothing. The mark only ever moves forward, so a late or repeated
+ACK is harmless.
+
+Timing: after a batch the device waits 15 s for the ACK, then resends,
+doubling the wait up to 5 minutes while the server stays silent, and
+going back to 15 s at the next ACK. While a trip is running, every other
+batch is its newest records, so live data is not stuck behind backlog.
+
+When the log fills, the device first deletes trips the server has
+acknowledged in full -- no data lost. Only if there are none does it
+delete the oldest unacknowledged trip, and then it records the loss.
+
+### Open questions for the server team
+
+1. Accept the topics and the ACK (or say what to change).
+2. **TLS on 8883 and per-device logins.** On 1883 everything, login
+   included, crosses the network in clear, and one shared login means
+   anyone holding it can publish as any box -- including false ACKs that
+   make devices delete data they never delivered. §10.4 asks for TLS.
+3. OTA: a file server for images (HTTPS), or images over MQTT? Either
+   way images will be signed and checked on the device.
