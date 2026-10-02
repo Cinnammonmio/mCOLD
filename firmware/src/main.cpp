@@ -871,13 +871,36 @@ void config_changed(const char *key, int32_t v) {
   }
 }
 
+// "SSID PASS", or "\"SSID WITH SPACES\" PASS". False if there is no SSID.
+bool wifi_args(const char *s, char *ssid, size_t sn, char *pass, size_t pn) {
+  while (*s == ' ') s++;
+  size_t i = 0;
+  if (*s == '"') {
+    s++;
+    while (*s && *s != '"' && i + 1 < sn) ssid[i++] = *s++;
+    if (*s == '"') s++;
+  } else {
+    while (*s && *s != ' ' && i + 1 < sn) ssid[i++] = *s++;
+  }
+  ssid[i] = 0;
+  while (*s == ' ') s++;
+  snprintf(pass, pn, "%s", s);
+  return i > 0;
+}
+
 void print_sync(void) {
   NetStatus n;
   net_status(&n);
   printf("\n  Wi-Fi      ");
-  if (!n.configured) printf("not set up (wifi set SSID PASS)\n");
+  if (!n.configured) printf("no networks (wifi add SSID PASS)\n");
   else if (n.connected) printf("%s, %s, %d dBm\n", n.ssid, n.ip, n.rssi);
-  else printf("%s, not connected (%lu retries)\n", n.ssid, (unsigned long)n.reconnects);
+  else printf("not connected (%lu attempts)\n", (unsigned long)n.reconnects);
+  printf("  known      ");
+  for (int i = 0; i < n.known; i++) {
+    char s[33];
+    if (net_known(i, s, sizeof(s))) printf("%s%s", i ? ", " : "", s);
+  }
+  printf("%s\n", n.known ? "" : "none");
   UplinkStatus u;
   uplink_status(&u);
   printf("  broker     ");
@@ -1076,11 +1099,19 @@ void run_command(char *line) {
     uplink_inject_ack(line + 4);
     print_sync();
   }
-  else if (!strncmp(line, "wifi set ", 9)) {
+  else if (!strncmp(line, "wifi add ", 9) || !strncmp(line, "wifi set ", 9)) {
     char ssid[40] = "", pass[72] = "";
-    sscanf(line + 9, "%39s %71s", ssid, pass);
-    printf("  %s\n", net_set(ssid, pass) ? "stored; connecting"
-                                         : "refused: SSID 1-32, password 8-63 or none");
+    if (!wifi_args(line + 9, ssid, sizeof(ssid), pass, sizeof(pass))) {
+      printf("  wifi add SSID PASS   (\"quotes\" around an SSID with spaces)\n");
+    } else if (net_add(ssid, pass)) {
+      printf("  %s stored (%d known); joins the strongest in range\n", ssid, net_count());
+    } else {
+      printf("  refused: SSID 1-32, password 8-63 or none, at most %d networks\n", NET_MAX);
+    }
+  } else if (!strncmp(line, "wifi del ", 9)) {
+    char ssid[40] = "", pass[2];
+    wifi_args(line + 9, ssid, sizeof(ssid), pass, sizeof(pass));
+    printf("  %s\n", net_remove(ssid) ? "removed" : "not a known network");
   } else if (!strncmp(line, "mqtt set ", 9)) {
     char host[64] = "", user[40] = "", pass[72] = "";
     int port = 0;

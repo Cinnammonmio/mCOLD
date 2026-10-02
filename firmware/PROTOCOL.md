@@ -169,7 +169,11 @@ A value the device does not have is **absent or `null`, never 0**.
 | `GET_STORAGE_STATUS` | | | `sectors`, `used`, `free`, `trips`, `days_left` |
 | `SELF_TEST` | | | `health`: each device and its state |
 | `REBOOT` | ✎ | | (answered, then the device restarts) |
-| `GET_SYNC_STATUS`, `SYNC_NOW`, `GET_USB_SNAPSHOT_STATUS` | | | `NOT_SUPPORTED` until P6 |
+| `GET_SYNC_STATUS` | | | `wifi` (connected, ssid, rssi, `known`: names only), `server` (broker, `pending` records, `last_ack_s`) |
+| `SYNC_NOW` | ✎ | | upload now rather than at the next pass |
+| `SET_WIFI` | ✎ | `ssid`, `pass` (empty for open) | adds a network or changes its password; up to 5; joins the strongest in range |
+| `DEL_WIFI` | ✎ | `ssid` | forgets a network |
+| `GET_USB_SNAPSHOT_STATUS` | | | `NOT_SUPPORTED` until the USB drive |
 
 `GET_STATUS`:
 

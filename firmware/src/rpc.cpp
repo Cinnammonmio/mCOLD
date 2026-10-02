@@ -511,7 +511,13 @@ cJSON *c_sync_status(uint32_t id, const cJSON *, RpcSession *) {
   cJSON *w = cJSON_AddObjectToObject(o, "wifi");
   cJSON_AddBoolToObject(w, "configured", n.configured);
   cJSON_AddBoolToObject(w, "connected", n.connected);
-  if (n.configured) cJSON_AddStringToObject(w, "ssid", n.ssid);
+  if (n.connected) cJSON_AddStringToObject(w, "ssid", n.ssid);
+  // The networks it knows, by name only: passwords never leave the box.
+  cJSON *k = cJSON_AddArrayToObject(w, "known");
+  for (int i = 0; i < n.known; i++) {
+    char s[33];
+    if (net_known(i, s, sizeof(s))) cJSON_AddItemToArray(k, cJSON_CreateString(s));
+  }
   num_or_null(w, "rssi", n.connected, n.rssi);
   cJSON *m = cJSON_AddObjectToObject(o, "server");
   cJSON_AddBoolToObject(m, "configured", u.configured);
@@ -532,8 +538,18 @@ cJSON *c_set_wifi(uint32_t id, const cJSON *req, RpcSession *) {
   const cJSON *s = cJSON_GetObjectItemCaseSensitive(req, "ssid");
   const cJSON *p = cJSON_GetObjectItemCaseSensitive(req, "pass");
   if (!cJSON_IsString(s) || (p && !cJSON_IsString(p)) ||
-      !net_set(s->valuestring, p ? p->valuestring : "")) {
-    return fail(id, "BAD_ARGS", "ssid 1-32 bytes, pass empty or 8-63");
+      !net_add(s->valuestring, p ? p->valuestring : "")) {
+    return fail(id, "BAD_ARGS", "ssid 1-32 bytes, pass empty or 8-63, at most 5 networks");
+  }
+  cJSON *o = ok(id);
+  cJSON_AddNumberToObject(o, "known", net_count());
+  return o;
+}
+
+cJSON *c_del_wifi(uint32_t id, const cJSON *req, RpcSession *) {
+  const cJSON *s = cJSON_GetObjectItemCaseSensitive(req, "ssid");
+  if (!cJSON_IsString(s) || !net_remove(s->valuestring)) {
+    return fail(id, "BAD_ARGS", "ssid: a known network");
   }
   return ok(id);
 }
@@ -567,6 +583,7 @@ const Cmd CMDS[] = {
     {"GET_SYNC_STATUS", false, c_sync_status},
     {"SYNC_NOW", true, c_sync_now},
     {"SET_WIFI", true, c_set_wifi},
+    {"DEL_WIFI", true, c_del_wifi},
     {"GET_USB_SNAPSHOT_STATUS", false, c_later},
 };
 

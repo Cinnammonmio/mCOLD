@@ -38,8 +38,16 @@ To cut a release:
 
 P6: sync, USB, OTA (in progress).
 
-- Wi-Fi station with credentials in NVS (console `wifi set`, app `SET_WIFI`),
+- Wi-Fi station knowing up to 5 networks (console `wifi add`/`wifi del`, app
+  `SET_WIFI`/`DEL_WIFI`): scans and joins the strongest known one, tries
+  another after a refusal; credentials in NVS, names only ever reported;
   reconnect with backoff
+- NTP once Wi-Fi is up: sets RTC and system clock (source `ntp`), logs a
+  correction over 2 s in the trip
+- RTC battery switch-over on, for the CR1220 hand-soldered on VBAT_3V:
+  checked, the time survives SW3 off
+- Display redraws at once on USB plug/unplug and footer icon changes
+  (at most every 30 s); Wi-Fi and cloud icons show real state
 - MQTT to the team broker (`mqtt set`), topics under `mcold/<sn>/`:
   record batches out, application ACKs in (contiguous high-water mark per
   trip, checked against the log, kept in NVS), retained status, online
