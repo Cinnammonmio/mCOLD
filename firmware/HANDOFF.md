@@ -149,6 +149,24 @@ for the low-power architecture §12 asks for.
 
 ### Unresolved
 
+**GNSS RF path: every DNP part was fitted (2026-10-02).** The board was
+built with all antenna options populated, for easy rework. Two of them
+kill the signal on their own:
+
+- **C_M1 and C_M2, 100 pF shunt to ground** at the onboard antenna's
+  matching network. At 1.575 GHz 100 pF is about 1 ohm -- a short across
+  a 50-ohm line. Those footprints are for matching parts of a few pF,
+  per the antenna's datasheet, or nothing.
+- **R_SET_PCB and R_SET_IPEX both fitted**, so RF_IN also drives the
+  empty u.FL connector: an open stub on the line.
+
+This matches what the firmware saw: 0 satellites in view, not even weak
+ones. Rework decided: **remove C_M1, C_M2 and R_SET_IPEX** (onboard
+antenna U3 GPS1003 in use). For the u.FL instead: remove R_SET_PCB, C_M1,
+C_M2, keep R_SET_IPEX -- and note VCC_RF (pin 14) is not connected, so
+only a passive antenna works there. After rework, `gnss` shows satellites
+heard and best SNR; outdoors a fix wants four or more near 30 dB-Hz.
+
 **An unidentified I2C device at 0x2D.** It acknowledges both a
 zero-length write and a one-byte read, so it is not a scan artefact, but
 no register in 0x00–0x1F reads and a plain read returns `FF` eight times.
