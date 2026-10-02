@@ -30,7 +30,6 @@ struct Config {
   int32_t cal_gain_ppm;       // 1000000 = unity
   int32_t cal_version;        // 0 = never calibrated
   int32_t cal_date;           // unix seconds of the calibration, 0 = none
-  int32_t door_closed_lvl;    // GPIO7 level that means closed [VERIFY]
   int32_t accel_wake_ths;     // 1..63, FS/64 per step (31.25 mg at +-2 g)
   int32_t led_bright_pct;     // not yet applied: the cap is fixed until P4
   int32_t buzzer_enabled;     // not yet applied: alarms are P3

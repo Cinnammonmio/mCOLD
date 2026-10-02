@@ -4,11 +4,11 @@
 #include <esp_timer.h>
 
 #include "board.h"
-#include "config.h"
 
 namespace {
 
 TaskHandle_t g_notify = nullptr;
+int g_closed_level = 0;
 DoorState g_state = DoorState::Unknown;
 uint32_t g_since = 0;
 
@@ -16,7 +16,7 @@ uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
 DoorState read_pin(void) {
   const int level = gpio_get_level((gpio_num_t)PIN_DOOR);
-  return level == config().door_closed_lvl ? DoorState::Closed : DoorState::Open;
+  return level == g_closed_level ? DoorState::Closed : DoorState::Open;
 }
 
 void IRAM_ATTR on_edge(void *) {
@@ -27,7 +27,8 @@ void IRAM_ATTR on_edge(void *) {
 
 }  // namespace
 
-void door_init(void) {
+void door_init(int closed_level) {
+  g_closed_level = closed_level;
   gpio_config_t c = {};
   c.pin_bit_mask = 1ULL << PIN_DOOR;
   c.mode = GPIO_MODE_INPUT;

@@ -34,6 +34,7 @@
 #include "flashlog.h"
 #include "flashlog_test.h"
 #include "door.h"
+#include "features.h"
 #include "record.h"
 #include "trip.h"
 #include "gnss.h"
@@ -319,18 +320,21 @@ void task_power(void *) {
 
 // ---- trip -------------------------------------------------------------
 //
-// Wakes on a door edge or once a second: the door is settled and
-// recorded, time-based alarms are checked, and a sample is written when
-// one is due. The first sample goes in at once -- on a new trip, and
-// after a resume, where it marks the far side of the gap the reset made.
+// Wakes once a second (and on a door edge, when the door feature is on):
+// time-based alarms are checked, and a sample is written when one is
+// due. The first sample goes in at once -- on a new trip, and after a
+// resume, where it marks the far side of the gap the reset made.
 
 void task_trip(void *) {
+#if MCOLD_DOOR
   door_notify_task(xTaskGetCurrentTaskHandle());
+#endif
   bool was_active = false;
   uint32_t next_sample = 0;
   for (;;) {
     beat(Job::Trip);
     if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000))) {
+#if MCOLD_DOOR
       DoorState s;
       uint32_t lasted = 0;
       if (door_settle(&s, &lasted)) {
@@ -339,6 +343,7 @@ void task_trip(void *) {
         fflush(stdout);
         trip_note_door(s, lasted);
       }
+#endif
     }
     trip_tick();
 
@@ -406,8 +411,9 @@ void print_health(void) {
     printf("  charger      %s, input %s, power-good %d\n",
            charge_state_name(p.charge), vbus_type_name(p.vbus), p.power_good);
     printf("  side light   %s\n", chargeled_name(chargeled_mode()));
-    printf("  door         %s (GPIO7 closed level %ld)\n",
-           door_state_name(door_state()), (long)config().door_closed_lvl);
+#if MCOLD_DOOR
+    printf("  door         %s\n", door_state_name(door_state()));
+#endif
     if (p.watchdog_expired) {
       printf("               WATCHDOG expired: the charger reset its own"
              " registers\n");
@@ -657,15 +663,19 @@ void print_trip(void) {
   printf("  alarms at  below %.1f C or above %.1f C, after %u s,"
          " clear %.1f C inside\n",
          p.low_c10 / 10.0, p.high_c10 / 10.0, p.dwell_s, p.hyst_c10 / 10.0);
+#if MCOLD_DOOR
   printf("             door open over %u s%s\n", p.door_alarm_s,
          p.door_alarm_s ? "" : " (off)");
+#endif
   printf("  samples    %lu, one per %ld s\n", (unsigned long)s.samples,
          (long)config().sample_period_s);
   if (s.have_temp) {
     printf("  range      %.2f .. %.2f C\n", s.min_c100 / 100.0, s.max_c100 / 100.0);
   }
-  printf("  door       opened %u times     motion %lu events\n", s.door_opens,
-         (unsigned long)s.motion_events);
+#if MCOLD_DOOR
+  printf("  door       opened %u times\n", s.door_opens);
+#endif
+  printf("  motion     %lu events\n", (unsigned long)s.motion_events);
   printf("  alarms     %u raised", s.alarms_raised);
   if (s.alarms_active) {
     printf(", active:");
@@ -705,8 +715,8 @@ bool dump_visit(const LogRecord &r, void *) {
       const uint8_t st = rd.u8();
       rd.u16();
       const int16_t c = rd.i16();
-      const uint8_t door = rd.u8();
-      rd.u16();
+      rd.u8();       // door state: not fitted while MCOLD_DOOR is off
+      rd.u16();      // door openings
       const uint16_t motion = rd.u16();
       rd.n = 30;
       const uint16_t age = rd.u16();
@@ -716,8 +726,7 @@ bool dump_visit(const LogRecord &r, void *) {
       const uint16_t alarms = rd.u16();
       if (st == 0 && c != I16_NONE) printf("SAMPLE  %6.2f C", c / 100.0);
       else printf("SAMPLE  temp -- (%s)", temp_status_name((TempStatus)st));
-      printf("  door %s  motion %u  fix %s  soc %s%u  alarms %04X",
-             door_state_name((DoorState)door), motion,
+      printf("  motion %u  fix %s  soc %s%u  alarms %04X", motion,
              age == U16_NONE ? "none" : "aged", soc == 0xFF ? "-" : "",
              soc == 0xFF ? 0 : soc, alarms);
       break;
@@ -768,16 +777,18 @@ void trip_command(const char *args) {
   if (!*args) {
     print_trip();
   } else if (!strncmp(args, "start", 5)) {
-    // trip start LOW HIGH [HYST DWELL DOOR], in C and seconds.
+    // trip start [LOW HIGH [HYST DWELL]], in C and seconds; 2..8 C by
+    // default. In the product these come from the app at START (P5).
     float lo = 2, hi = 8, hyst = 0.5f;
-    int dwell = 300, door = 300;
-    const int k = sscanf(args + 5, "%f %f %f %d %d", &lo, &hi, &hyst, &dwell, &door);
-    if (k != 0 && k < 2) {
-      printf("  trip start LOW HIGH [HYST DWELL_S DOOR_S]   e.g. trip start 2 8\n");
+    int dwell = 300;
+    // sscanf gives EOF (-1) for no arguments at all: that means defaults.
+    const int k = sscanf(args + 5, "%f %f %f %d", &lo, &hi, &hyst, &dwell);
+    if (k == 1) {
+      printf("  trip start [LOW HIGH [HYST DWELL_S]]   e.g. trip start 2 8\n");
       return;
     }
     TripParams p = {(int16_t)lroundf(lo * 10), (int16_t)lroundf(hi * 10),
-                    (uint16_t)lroundf(hyst * 10), (uint16_t)dwell, (uint16_t)door};
+                    (uint16_t)lroundf(hyst * 10), (uint16_t)dwell, 0};
     uint32_t id = 0;
     const TripErr e = trip_start(p, &id);
     if (e == TripErr::Ok) {
@@ -821,7 +832,9 @@ void print_help(void) {
   printf("  log read        check the bench trip's records\n");
   printf("  log erase       delete the bench trip\n");
   printf("  trip            the running trip: alarms, samples, counts\n");
-  printf("  trip start L H  start a trip, alarms below L / above H (C)\n");
+  printf("  trip start [L H [HYST DWELL]]  start a trip; alarms below L /\n");
+  printf("                  above H C (default 2..8), clear HYST inside,\n");
+  printf("                  raise after DWELL s out of range\n");
   printf("  trip stop       end it, with a summary record\n");
   printf("  trip ack        acknowledge alarms (history is kept)\n");
   printf("  trip dump [N]   the last N records, decoded\n\n");
@@ -988,7 +1001,9 @@ extern "C" void app_main(void) {
   buzzer_init();
   chargeled_start();
   config_init();
-  door_init();
+#if MCOLD_DOOR
+  door_init(MCOLD_DOOR_CLOSED_LEVEL);
+#endif
   rtc_begin();
   time_init();
   log_start();

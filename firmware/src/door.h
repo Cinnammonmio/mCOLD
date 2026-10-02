@@ -10,7 +10,9 @@
 // "normally closed" on a reed switch describes it with no magnet near,
 // and whether the magnet sits by the switch when the lid is shut
 // depends on the case. It has to be checked once with the real magnet
-// in the real lid (config door_closed_lvl) [VERIFY].
+// in the real lid [VERIFY].
+//
+// The whole feature is off for now: see features.h.
 //
 // Two wires cannot tell "door open" from "wire cut": both read as the
 // pull-up. This driver reports what it can see, not what it cannot.
@@ -24,7 +26,8 @@
 
 enum class DoorState : uint8_t { Unknown = 0, Closed = 1, Open = 2 };
 
-void door_init(void);
+// `closed_level` is the GPIO7 level that means the door is shut.
+void door_init(int closed_level);
 
 // Every edge notifies this task; it should then call door_settle().
 void door_notify_task(TaskHandle_t t);

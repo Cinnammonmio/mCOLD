@@ -11,13 +11,15 @@ namespace {
 const char *NS = "cfg";
 // 1: first release. 2: alarm thresholds left for the trip -- they are
 // set when a trip starts, per trip, not once per device.
-const uint32_t SCHEMA = 2;
+// 3: the door feature switched off; its polarity setting goes with it.
+const uint32_t SCHEMA = 3;
 
 // Keys that earlier schemas stored and this one no longer reads.
 // Erased on the first boot that finds them, so a value nobody uses
 // cannot be mistaken for one that is in force.
 const char *const RETIRED[] = {
     "temp_low_c10", "temp_high_c10", "temp_hyst_c10", "temp_dwell_s",
+    "door_closed_lvl",
 };
 
 struct Field {
@@ -46,7 +48,6 @@ constexpr Field FIELDS[] = {
     F(cal_gain_ppm, 900000, 1100000, 1000000, "ppm"),
     F(cal_version, 0, 0x7FFFFFFF, 0, ""),
     F(cal_date, 0, 0x7FFFFFFF, 0, "unix s"),
-    F(door_closed_lvl, 0, 1, 0, "level"),
     F(accel_wake_ths, 1, 63, 2, "x31 mg"),
     F(led_bright_pct, 1, 100, 20, "%"),
     F(buzzer_enabled, 0, 1, 1, ""),

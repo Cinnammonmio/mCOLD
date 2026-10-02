@@ -36,6 +36,19 @@ To cut a release:
 
 ## Unreleased
 
+P3: trips and sensing.
+
+- Trip: START with that trip's own alarm thresholds, a sample per
+  sample period, events, STOP with a summary; resume after a reset;
+  oldest finished trip deleted whole when the log is full
+- Record format documented byte for byte in `src/record.h`
+- Alarm engine: temperature high/low with dwell and hysteresis, no
+  temperature, battery low; acknowledging keeps the history
+- **Door switched off** (decided 2026-10-02): `MCOLD_DOOR 0` in
+  `src/features.h` -- no GPIO7 setup, interrupt, setting, event or
+  alarm. The record keeps its door fields, written as not fitted.
+  Config schema 3 removes `door_closed_lvl`
+
 ## 0.2.0 — 2026-10-02
 
 P2 complete: time, configuration, and the trip log that everything in a

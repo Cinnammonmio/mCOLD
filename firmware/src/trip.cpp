@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "features.h"
 #include "flashlog.h"
 #include "gnss.h"
 #include "health.h"
@@ -343,6 +344,7 @@ TripErr trip_start(const TripParams &p, uint32_t *id_out) {
   const uint32_t id = next_id();
   g_id = id;
   g_p = p;
+  if (!MCOLD_DOOR) g_p.door_alarm_s = 0;   // no door, no door alarm
   g_t = {};
   reset_inputs();
 
@@ -355,7 +357,7 @@ TripErr trip_start(const TripParams &p, uint32_t *id_out) {
   w.i16(p.high_c10);
   w.u16(p.hyst_c10);
   w.u16(p.dwell_s);
-  w.u16(p.door_alarm_s);
+  w.u16(g_p.door_alarm_s);
   w.u16((uint16_t)config().sample_period_s);
   w.u16((uint16_t)config_schema());
   w.i32(config().cal_offset_c100);
@@ -506,7 +508,7 @@ void trip_tick(void) {
   Lock l;
   if (!g_active) return;
   const uint32_t t = now_ms();
-  if (g_p.door_alarm_s && g_door_opened_at &&
+  if (MCOLD_DOOR && g_p.door_alarm_s && g_door_opened_at &&
       t - g_door_opened_at >= (uint32_t)g_p.door_alarm_s * 1000) {
     raise_alarm(AL_DOOR, (int16_t)((t - g_door_opened_at) / 1000 > 32767
                                  ? 32767 : (t - g_door_opened_at) / 1000));
