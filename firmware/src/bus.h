@@ -60,4 +60,10 @@ bool spi3_take(uint32_t wait_ms);
 void spi3_give(void);
 BusErr spi3_transfer16(Dev dev, int cs_pin, uint32_t hz, uint16_t *out);
 
+// Raw bytes to the e-paper panel. The caller holds spi3_take() and
+// drives the panel's CS and DC; this only clocks the bytes out. Health
+// is the display driver's to report, since only it knows whether the
+// panel answered (BUSY), which the bus cannot see.
+BusErr spi3_epd_write(const uint8_t *data, size_t n);
+
 const char *bus_err_name(BusErr e);

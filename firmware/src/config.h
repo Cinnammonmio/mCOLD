@@ -33,6 +33,7 @@ struct Config {
   int32_t accel_wake_ths;     // 1..63, FS/64 per step (31.25 mg at +-2 g)
   int32_t led_bright_pct;     // brightness cap, % of full scale
   int32_t buzzer_enabled;     // 0 silences alarm sounds
+  int32_t tz_offset_min;      // local time for the display only; records are UTC
 
   // Field names are the NVS keys, 15 characters at most; config.cpp
   // refuses to compile a longer one.

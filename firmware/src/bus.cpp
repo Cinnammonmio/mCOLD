@@ -17,6 +17,7 @@ i2c_master_bus_handle_t g_i2c_bus;
 SemaphoreHandle_t g_i2c_lock;
 SemaphoreHandle_t g_spi3_lock;
 spi_device_handle_t g_tc;          // MAX6675 on SPI3
+spi_device_handle_t g_epd;         // e-paper on SPI3
 bool g_ready = false;
 
 const int XFER_MS = 50;            // per transaction; nothing waits forever
@@ -114,6 +115,16 @@ void bus_init(void) {
   dc.spics_io_num = -1;
   dc.queue_size = 1;
   spi_bus_add_device(SPI3_HOST, &dc, &g_tc);
+
+  // The panel, write-only, at the 4 MHz bring-up drove it at. Its CS
+  // and DC are driven by the display driver for the same reason.
+  spi_device_interface_config_t ec = {};
+  ec.clock_speed_hz = 4000000;
+  ec.mode = 0;
+  ec.spics_io_num = -1;
+  ec.queue_size = 1;
+  ec.flags = SPI_DEVICE_HALFDUPLEX;
+  spi_bus_add_device(SPI3_HOST, &ec, &g_epd);
 
   g_ready = true;
 }
@@ -240,6 +251,21 @@ BusErr spi3_transfer16(Dev dev, int cs_pin, uint32_t hz, uint16_t *out) {
   if (v == 0x0000 || v == 0xFFFF) return done(dev, BusErr::Nak);
   if (out) *out = v;
   return done(dev, BusErr::Ok);
+}
+
+BusErr spi3_epd_write(const uint8_t *data, size_t n) {
+  if (!g_ready) return BusErr::NotReady;
+  while (n) {
+    // One transaction is capped by max_transfer_sz; a frame is 4,000.
+    const size_t k = n > 4000 ? 4000 : n;
+    spi_transaction_t t = {};
+    t.length = k * 8;
+    t.tx_buffer = data;
+    if (spi_device_polling_transmit(g_epd, &t) != ESP_OK) return BusErr::Nak;
+    data += k;
+    n -= k;
+  }
+  return BusErr::Ok;
 }
 
 const char *bus_err_name(BusErr e) {
