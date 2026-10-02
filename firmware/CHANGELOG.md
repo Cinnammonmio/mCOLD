@@ -36,7 +36,11 @@ To cut a release:
 
 ## Unreleased
 
-P6: sync, USB, OTA (in progress).
+## 0.6.0 — 2026-10-02
+
+P6 in part: the box reaches the server. **OTA and the USB drive are
+deferred** (decided 2026-10-02) to a later release; both are planned in
+PROTOCOL.md and HANDOFF.
 
 - Wi-Fi station knowing up to 5 networks (console `wifi add`/`wifi del`, app
   `SET_WIFI`/`DEL_WIFI`): scans and joins the strongest known one, tries

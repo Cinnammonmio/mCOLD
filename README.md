@@ -98,21 +98,22 @@ Hardware พิสูจน์แล้วด้วย [`bringup/`](bringup/) ·
 | เฟส | Release | เนื้อหา | สถานะ |
 |---|---|---|---|
 | P0 โครงระบบ | 0.0.1 | ESP-IDF, partition, health registry, rail, bus, task + supervisor | ✅ |
-| P1 drivers | 0.1.0 | อุปกรณ์บนบอร์ดครบทุกตัว · ไฟข้างเครื่องบอกสถานะชาร์จ | ✅ (GNSS ยังไม่เคย fix) |
+| P1 drivers | 0.1.0 | อุปกรณ์บนบอร์ดครบทุกตัว · ไฟข้างเครื่องบอกสถานะชาร์จ | ✅ · GNSS fix ได้แล้วหลังแก้วงจร RF |
 | P2 เวลา/ตั้งค่า/flash log | 0.2.0 | UTC + ความน่าเชื่อถือ · config ใน NVS · log ทนไฟดับ | ✅ |
 | P3 trip + sensing | 0.3.0 | เริ่ม/จบ trip พร้อม alarm ของ trip นั้น · เก็บข้อมูลทุก 5 นาที · event · alarm · กู้ trip หลัง reset · ลบ trip เก่าเมื่อเต็ม · ปิดฟังก์ชันประตู | ✅ |
 | P4 จอ, LED, buzzer | 0.4.0 | จอ e-paper (ใช้จอขาวดำไปก่อน) · pattern ไฟและเสียงตาม `docs/led-design.md` | ✅ · จอ 4 สียังไม่มา |
 | P5 BLE/NFC | 0.5.0 | BLE GATT · ชุดคำสั่ง · NDEF · แตะ NFC เพื่อยืนยันสิทธิ์ (ไม่ต้อง pair) | ✅ · รอทีม iOS ยืนยัน PROTOCOL.md |
-| P6 sync, USB, OTA | 0.6.0 | Wi-Fi + MQTT · ACK แล้วคืนพื้นที่ · USB drive + CSV · SD · OTA | กำลังทำ · รอ Wi-Fi, topic/ACK/TLS จากทีม server |
-| P7 พลังงาน | 0.7.0 | deep sleep · wake ทุกแหล่ง · charger/PD · วัดจริงให้ได้ 7 วัน | รอ datasheet แบต |
+| P6 sync, USB, OTA | 0.6.0 | Wi-Fi (หลายเครือข่าย) + NTP + MQTT ส่งข้อมูลพร้อม ACK · พักไว้: USB drive, SD, OTA | ✅ บางส่วน · รอทีม server ทำ ACK/TLS |
+| P7 พลังงาน | 0.7.0 | deep sleep · wake ทุกแหล่ง · charger/PD · วัดจริงให้ได้ 7 วัน | กำลังทำ · รอ datasheet แบต |
 | P8 พร้อมผลิต | 1.0.0 | watchdog · security · acceptance test §14 · Dock 6 เครื่อง · factory provisioning | — |
 
 ## เรื่องที่ยังรอ
 
 - ผลทดสอบ HUSB238A ตอน SW3 OFF กับที่ชาร์จ C-to-C
 - register map ฉบับเต็มของ HUSB238A-BB001 (ยังมีแค่ product brief) → PD 9 V ปิดไว้ก่อน
-- รูปแบบ Server API / ACK contract
+- ทีม server: ส่ง ACK ตาม `firmware/PROTOCOL.md` ข้อ 6 · เปิด TLS (8883) · login แยกต่อเครื่อง
 - BLE UUID และ NDEF schema ให้ตรงกับแอป iOS
+- datasheet แบตเตอรี่ 1500 mAh
 - ผลสอบเทียบอุณหภูมิ และผลวัดกระแสจริงเพื่อยืนยันเป้าหมาย 7 วัน / 31 วัน
 
 ## การ build เอกสารสเปก
