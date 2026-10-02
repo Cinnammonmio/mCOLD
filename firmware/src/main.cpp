@@ -37,6 +37,11 @@
 #include "features.h"
 #include "record.h"
 #include "trip.h"
+#include "indicate.h"
+#include "canvas.h"
+#include "epd.h"
+#include "screens.h"
+#include "display.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -111,10 +116,9 @@ void report_motion(const AccelEvent &ev, const char *when) {
          ev.y ? " Y" : "", ev.z ? " Z" : "", ev.raw_src,
          (unsigned long)accel_event_count());
   fflush(stdout);
-  // P1 verification aid: a person tapping the board sees the answer on
-  // the board, with no serial timing to get wrong. The P4 pattern layer
-  // replaces this.
-  leds_pulse(LED_ALIVE, 0, 255, 0, 120);
+  // Someone is handling the box: worth showing them its status for a
+  // little while, within the hourly budget.
+  indicate_attention();
 }
 
 void task_sensors(void *) {
@@ -277,8 +281,8 @@ void task_nfc(void *) {
                p.field == NfcField::RfBusy ? "I2C refused" : "field",
                (unsigned long)nfc_tap_count());
         fflush(stdout);
-        // P1 verification aid, as with motion. BLE comes up here in P5.
-        leds_pulse(LED_DEVICE, 0, 0, 255, 120);
+        // "This is the box you tapped." BLE comes up here in P5.
+        indicate_cue(Cue::NfcTap);
       }
     }
     // Edges latch in the tag, so a slow poll still catches a quick tap.
@@ -299,6 +303,7 @@ void task_power(void *) {
     g_power = ps;
     chargeled_update(ps);
     trip_note_power(ps);
+    display_note_power(ps);
 
     // Kicked on its own clock, not once per read loop: the charger
     // gives about forty seconds and the sampling period may grow a
@@ -784,6 +789,37 @@ void trip_dump(int n) {
   printf("\n");
 }
 
+// ---- display bench ------------------------------------------------------
+
+Canvas g_canvas;      // demo pages; the live display has its own
+
+void screen_command(const char *args) {
+  if (!*args || !strcmp(args, "live")) {
+    display_refresh();
+    printf("  live display, redrawing now\n");
+    return;
+  }
+  if (!strncmp(args, "rot ", 4)) {
+    display_set_rotation(atoi(args + 4));
+    printf("  rotation %d (screen live to redraw)\n", display_rotation());
+    return;
+  }
+  const int p = atoi(args);
+  if (p < 0 || p >= SCR_DEMO_PAGES || (*args < '0' || *args > '9')) {
+    printf("  screen | screen N (0..%d, design demo) | screen rot 1|3\n",
+           SCR_DEMO_PAGES - 1);
+    return;
+  }
+  // Demo pages hold the live display off until 'screen' or 'screen live'.
+  display_hold(true);
+  scr_demo(g_canvas, p);
+  const uint32_t t0 = now_ms();
+  const bool ok = display_show(g_canvas);
+  printf("  %s: %s, BUSY %lu ms, %lu ms in all  (screen live to go back)\n",
+         scr_demo_name(p), ok ? "shown" : "PANEL DID NOT ANSWER",
+         (unsigned long)epd_last_refresh_ms(), (unsigned long)(now_ms() - t0));
+}
+
 void trip_command(const char *args) {
   if (!*args) {
     print_trip();
@@ -848,7 +884,10 @@ void print_help(void) {
   printf("                  raise after DWELL s out of range\n");
   printf("  trip stop       end it, with a summary record\n");
   printf("  trip ack        acknowledge alarms (history is kept)\n");
-  printf("  trip dump [N]   the last N records, decoded\n\n");
+  printf("  trip dump [N]   the last N records, decoded\n");
+  printf("  screen          redraw the e-paper now (live view)\n");
+  printf("  screen N        design demo page N (0-13); 'screen' to go back\n");
+  printf("  screen rot 1|3  the two landscape orientations\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
@@ -891,6 +930,8 @@ void run_command(char *line) {
   else if (!strcmp(line, "nfc write")) nfc_write_sn();
   else if (!strcmp(line, "help")) print_help();
   else if (!strcmp(line, "log")) print_log();
+  else if (!strcmp(line, "screen")) screen_command("");
+  else if (!strncmp(line, "screen ", 7)) screen_command(line + 7);
   else if (!strcmp(line, "trip")) trip_command("");
   else if (!strncmp(line, "trip ", 5)) trip_command(line + 5);
   else if (!strcmp(line, "logtest")) {
@@ -919,9 +960,11 @@ void run_command(char *line) {
       printf("  refused: unknown key or out of range (see 'config')\n");
     } else {
       printf("  %s = %ld, stored\n", key, v);
-      // The one setting that has a consumer already.
+      // Settings that take effect at once; the rest are read where used.
       if (!strcmp(key, "accel_wake_ths") && g_accel_up) {
         accel_set_threshold((uint8_t)v);
+      } else if (!strcmp(key, "led_bright_pct")) {
+        leds_set_brightness((int)v);
       }
     }
   } else if (!strncmp(line, "ledtest", 7)) {
@@ -1010,6 +1053,7 @@ extern "C" void app_main(void) {
   bus_init();
   leds_init();
   buzzer_init();
+  epd_init();
   chargeled_start();
   config_init();
 #if MCOLD_DOOR
@@ -1023,7 +1067,9 @@ extern "C" void app_main(void) {
     char sn[16];
     device_sn(sn, sizeof(sn));
     trip_init(sn);     // resumes a trip a reset interrupted
+    display_start(sn); // like indicate: reads state, owns none
   }
+  indicate_start();    // boot sweep, then status; reads state, owns no state
 
   // Armed here, not by a console command: opening and closing the
   // serial port resets the board, so anything a command switches on is

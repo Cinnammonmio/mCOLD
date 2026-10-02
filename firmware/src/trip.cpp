@@ -633,6 +633,11 @@ void trip_status(TripStatus *out) {
   out->motion_events = g_t.motion;
   out->have_temp = g_t.have_temp;
   out->temp_read_since_boot = g_temp_at != 0;
+  out->temp_ok = g_temp_st == TempStatus::Ok && g_temp_at &&
+                 now_ms() - g_temp_at <= 60000;
+  out->temp_c = out->temp_ok ? calibrated(g_temp_c) : 0;
+  out->out_of_band = g_active && out->temp_ok &&
+                     (out->temp_c * 10 > g_p.high_c10 || out->temp_c * 10 < g_p.low_c10);
   out->min_c100 = g_t.min_c100;
   out->max_c100 = g_t.max_c100;
   out->lost_trips = g_lost_trips;
