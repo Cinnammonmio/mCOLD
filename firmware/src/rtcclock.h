@@ -28,6 +28,7 @@ enum class TimeSource : uint8_t {
   Rtc,         // the clock kept running across this reset
   Gnss,        // from satellite time, the most trustworthy source here
   Host,        // set over BLE, USB or the app
+  Ntp,         // from a time server, once Wi-Fi is up
 };
 
 // Writes CAP_SEL, reads the oscillator-stopped flag and decides whether

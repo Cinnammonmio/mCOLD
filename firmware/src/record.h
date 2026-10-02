@@ -9,7 +9,7 @@
 // Every payload starts with the same 11-byte stamp:
 //
 //   0  u32  utc_s        seconds since 1970 UTC; meaningless if quality 0
-//   4  u8   time_q       TimeSource: 0 none, 1 rtc, 2 gnss, 3 host
+//   4  u8   time_q       TimeSource: 0 none, 1 rtc, 2 gnss, 3 host, 4 ntp
 //   5  u16  boot         boot counter (low 16 bits)
 //   7  u32  tick_ms      ms since that boot
 //

@@ -127,6 +127,7 @@ const char *rtc_source_name(TimeSource s) {
     case TimeSource::Rtc:  return "rtc";
     case TimeSource::Gnss: return "gnss";
     case TimeSource::Host: return "host";
+    case TimeSource::Ntp:  return "ntp";
   }
   return "?";
 }

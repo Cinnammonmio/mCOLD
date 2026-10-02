@@ -78,6 +78,7 @@ const char *quality_name(TimeSource q) {
     case TimeSource::Rtc:  return "rtc";
     case TimeSource::Gnss: return "gnss";
     case TimeSource::Host: return "host";
+    case TimeSource::Ntp:  return "ntp";
     default:               return "none";
   }
 }

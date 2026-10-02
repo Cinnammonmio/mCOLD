@@ -2,6 +2,7 @@
 
 #include <esp_event.h>
 #include <esp_netif.h>
+#include <esp_netif_sntp.h>
 #include <esp_timer.h>
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
@@ -9,6 +10,11 @@
 #include <nvs.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+
+#include "rtcclock.h"
+#include "timekeep.h"
+#include "trip.h"
 
 namespace {
 
@@ -57,7 +63,12 @@ void on_event(void *, esp_event_base_t base, int32_t id, void *data) {
     g_connected = false;
     g_up_since = 0;
     g_ip[0] = 0;
-    if (was) printf("[net] disconnected\n");
+    // The reason, so "will not connect" can be told apart: 201 no AP
+    // found, 15/204 handshake (password), 2/200 beacon lost, 205 the
+    // connection itself failed.
+    const wifi_event_sta_disconnected_t *e = (const wifi_event_sta_disconnected_t *)data;
+    if (was) printf("[net] disconnected, reason %u\n", e->reason);
+    else printf("[net] connect failed, reason %u, rssi %d\n", e->reason, e->rssi);
     // Back off, doubling to a minute: an access point that is gone
     // should not cost the battery a connection attempt every second.
     g_retry_at = now_ms() + g_backoff_ms;
@@ -72,9 +83,41 @@ void on_event(void *, esp_event_base_t base, int32_t id, void *data) {
   }
 }
 
+// SNTP answered. Its callback runs in the network stack's own task, which
+// must not be held up by an I2C write and the RTC's 1.2 s oscillator
+// check -- so it only raises this flag, and the work happens below.
+volatile bool g_ntp_pending = false;
+void on_sntp(struct timeval *) { g_ntp_pending = true; }
+
+// The RTC has no backup supply: after a power-off its time is gone, and
+// until something sets it, records carry no time. A time server answers
+// within seconds of Wi-Fi coming up, so this is usually the first source
+// back (GNSS needs open sky, the app needs a tap).
+void apply_ntp(void) {
+  const time_t now = time(nullptr);       // SNTP has set the system clock
+  struct tm utc;
+  gmtime_r(&now, &utc);
+  // What the RTC said before, for the trip's record of the correction.
+  uint32_t before = 0;
+  struct tm rt;
+  if (rtc_time_valid() && rtc_get(&rt) && rtc_time_valid()) before = (uint32_t)mktime(&rt);
+  if (!time_set(&utc, TimeSource::Ntp, false)) return;
+  const long drift = before ? (long)now - (long)before : 0;
+  // Re-syncs come every hour; only a real correction goes in the log.
+  if (!before || drift > 2 || drift < -2) {
+    trip_note_time_set(TimeSource::Ntp, before);
+    if (before) printf("[net] clock corrected by %ld s from NTP\n", drift);
+    else printf("[net] clock set from NTP\n");
+  }
+}
+
 void task(void *) {
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(1000));
+    if (g_ntp_pending) {
+      g_ntp_pending = false;
+      apply_ntp();
+    }
     const uint32_t at = g_retry_at;
     if (g_ssid[0] && !g_connected && at && (int32_t)(now_ms() - at) >= 0) {
       g_retry_at = 0;
@@ -107,7 +150,12 @@ void net_start(void) {
     esp_wifi_start();
     g_started = true;
   }
-  xTaskCreatePinnedToCore(task, "net", 3072, nullptr, 2, nullptr, 0);
+  // Time from the network once it is up; SNTP waits for an address by
+  // itself and re-syncs every hour.
+  esp_sntp_config_t sc = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+  sc.sync_cb = on_sntp;
+  esp_netif_sntp_init(&sc);
+  xTaskCreatePinnedToCore(task, "net", 4096, nullptr, 2, nullptr, 0);
 }
 
 bool net_set(const char *ssid, const char *pass) {
