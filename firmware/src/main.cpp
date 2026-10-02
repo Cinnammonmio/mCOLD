@@ -16,6 +16,8 @@
 #include <driver/usb_serial_jtag.h>
 #include <esp_app_desc.h>
 #include <esp_mac.h>
+#include <esp_attr.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -45,6 +47,8 @@
 #include "rpc.h"
 #include "ble.h"
 #include "auth.h"
+#include "net.h"
+#include "uplink.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -863,6 +867,28 @@ void config_changed(const char *key, int32_t v) {
   }
 }
 
+void print_sync(void) {
+  NetStatus n;
+  net_status(&n);
+  printf("\n  Wi-Fi      ");
+  if (!n.configured) printf("not set up (wifi set SSID PASS)\n");
+  else if (n.connected) printf("%s, %s, %d dBm\n", n.ssid, n.ip, n.rssi);
+  else printf("%s, not connected (%lu retries)\n", n.ssid, (unsigned long)n.reconnects);
+  UplinkStatus u;
+  uplink_status(&u);
+  printf("  broker     ");
+  if (!u.configured) printf("not set up (mqtt set HOST PORT USER PASS)\n");
+  else printf("%s:%u, %s\n", u.host, u.port, u.connected ? "connected" : "not connected");
+  printf("  upload     %lu batches sent, %lu ACKs from the server", (unsigned long)u.batches_sent,
+         (unsigned long)u.acks);
+  if (u.acks_rejected) printf(", %lu rejected", (unsigned long)u.acks_rejected);
+  printf("\n  pending    %lu records not yet confirmed stored\n", (unsigned long)u.records_pending);
+  if (u.last_ack_ms) {
+    printf("  last ACK   %lu s ago\n", (unsigned long)((now_ms() - u.last_ack_ms) / 1000));
+  }
+  printf("\n");
+}
+
 void print_ble(void) {
   BleStatus b;
   ble_status(&b);
@@ -888,7 +914,7 @@ void rpc_command(const char *json) {
 
 // ---- display bench ------------------------------------------------------
 
-Canvas g_canvas;      // demo pages; the live display has its own
+EXT_RAM_BSS_ATTR Canvas g_canvas;   // demo pages; in PSRAM, as the live one is
 
 void screen_command(const char *args) {
   if (!*args || !strcmp(args, "live")) {
@@ -1040,6 +1066,24 @@ void run_command(char *line) {
   else if (!strcmp(line, "log")) print_log();
   else if (!strncmp(line, "rpc ", 4)) rpc_command(line + 4);
   else if (!strcmp(line, "ble")) print_ble();
+  else if (!strcmp(line, "wifi") || !strcmp(line, "sync")) print_sync();
+  else if (!strncmp(line, "ack ", 4)) {
+    // Bench only: what the server will send, before the server does.
+    uplink_inject_ack(line + 4);
+    print_sync();
+  }
+  else if (!strncmp(line, "wifi set ", 9)) {
+    char ssid[40] = "", pass[72] = "";
+    sscanf(line + 9, "%39s %71s", ssid, pass);
+    printf("  %s\n", net_set(ssid, pass) ? "stored; connecting"
+                                         : "refused: SSID 1-32, password 8-63 or none");
+  } else if (!strncmp(line, "mqtt set ", 9)) {
+    char host[64] = "", user[40] = "", pass[72] = "";
+    int port = 0;
+    sscanf(line + 9, "%63s %d %39s %71s", host, &port, user, pass);
+    printf("  %s\n", port > 0 && port < 65536 && uplink_set_server(host, (uint16_t)port, user, pass)
+                         ? "stored; connecting" : "mqtt set HOST PORT [USER PASS]");
+  }
   else if (!strcmp(line, "ble on")) {
     ble_enable(true);
     ble_window(BLE_TAP_WINDOW_MS);
@@ -1185,6 +1229,10 @@ extern "C" void app_main(void) {
     rpc_init(sn);
     auth_init(sn);     // a new key; the NFC task puts it on the tag
     ble_start(sn);     // after NVS (bonds) and rpc (what it carries)
+    net_start();       // Wi-Fi, if credentials are set
+    uplink_start(sn);  // MQTT once Wi-Fi is up
+    // A full log gives up what the server already has first.
+    trip_set_retention({uplink_fully_acked, uplink_forget});
     config_on_change(config_changed);
   }
   indicate_start();    // boot sweep, then status; reads state, owns no state
@@ -1208,13 +1256,25 @@ extern "C" void app_main(void) {
   // water marks once these tasks do their real work. Guessing them
   // small this early buys nothing and costs an overflow that presents
   // as a random crash somewhere else entirely.
-  xTaskCreatePinnedToCore(task_sensors, "sensors", 4096, nullptr, 5, nullptr, 1);
-  xTaskCreatePinnedToCore(task_power, "power", 4096, nullptr, 4, nullptr, 1);
-  xTaskCreatePinnedToCore(task_gnss, "gnss", 4096, nullptr, 3, nullptr, 1);
-  xTaskCreatePinnedToCore(task_nfc, "nfc", 3072, nullptr, 3, nullptr, 0);
-  xTaskCreatePinnedToCore(task_trip, "trip", 4096, nullptr, 4, nullptr, 1);
-  xTaskCreatePinnedToCore(task_console, "console", 6144, nullptr, 2, nullptr, 0);
-  xTaskCreatePinnedToCore(task_supervisor, "super", 3072, nullptr, 6, nullptr, 0);
+  // A task that cannot get its stack is never created, and nothing else
+  // says so -- the console simply never answers. So every one is checked.
+  struct Spawn { TaskFunction_t fn; const char *name; uint32_t stack; UBaseType_t prio; int core; };
+  static const Spawn TASKS[] = {
+      {task_sensors, "sensors", 4096, 5, 1}, {task_power, "power", 4096, 4, 1},
+      {task_gnss, "gnss", 4096, 3, 1},       {task_nfc, "nfc", 3072, 3, 0},
+      {task_trip, "trip", 4096, 4, 1},       {task_console, "console", 6144, 2, 0},
+      {task_supervisor, "super", 3072, 6, 0},
+  };
+  for (const Spawn &t : TASKS) {
+    if (xTaskCreatePinnedToCore(t.fn, t.name, t.stack, nullptr, t.prio, nullptr, t.core) != pdPASS) {
+      printf("TASK %s NOT CREATED: no %lu bytes of internal RAM for its stack\n", t.name,
+             (unsigned long)t.stack);
+    }
+  }
+  printf("internal RAM free %u B (largest block %u B)\n",
+         (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+         (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+  fflush(stdout);
 
   // app_main returns and the tasks it created carry on. Nothing is left
   // here to become the place where work quietly accumulates.

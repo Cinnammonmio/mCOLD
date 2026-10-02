@@ -1,5 +1,6 @@
 #include "display.h"
 
+#include <esp_attr.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -27,7 +28,8 @@ const uint32_t GNSS_FRESH_MS = 30 * 60000;
 const uint16_t CARGO_ALARMS =
     (1u << AL_TEMP_HIGH) | (1u << AL_TEMP_LOW) | (1u << AL_DOOR);
 
-Canvas g_draw;
+// In PSRAM: 7.6 KB that only the CPU touches, and internal RAM is short.
+EXT_RAM_BSS_ATTR Canvas g_draw;
 SemaphoreHandle_t g_epd = nullptr;   // one refresh at a time
 char g_sn[16] = "MCOLD";
 // Checked by eye on 2026-10-02: 3 is upright on this board (bring-up

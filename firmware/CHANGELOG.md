@@ -36,6 +36,26 @@ To cut a release:
 
 ## Unreleased
 
+P6: sync, USB, OTA (in progress).
+
+- Wi-Fi station with credentials in NVS (console `wifi set`, app `SET_WIFI`),
+  reconnect with backoff
+- MQTT to the team broker (`mqtt set`), topics under `mcold/<sn>/`:
+  record batches out, application ACKs in (contiguous high-water mark per
+  trip, checked against the log, kept in NVS), retained status, online
+  flag with last will; resend with backoff to 5 min while unanswered;
+  the running trip gets every other batch
+- Retention deletes server-acknowledged trips first, with no loss event
+- `GET_SYNC_STATUS`, `SYNC_NOW`; PROTOCOL.md section 6 for the server team
+- PSRAM takes NimBLE, Wi-Fi/LWIP buffers and the canvases: with Wi-Fi
+  added, internal RAM had run out and the console task was never created
+  (now checked and reported at boot)
+- Checked on the board: connected to Wi-Fi and to siamatic.co.th:1883,
+  batches sent; injected ACKs (`ack`) for an unknown trip, past the log,
+  and malformed were rejected; valid ones moved the mark and the next
+  batch went at once; the mark survived a reboot. No real server ACK yet
+
+
 ## 0.5.0 — 2026-10-02
 
 P5 complete: the app's way in -- NFC to find and authorize, BLE to talk,

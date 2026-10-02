@@ -52,3 +52,15 @@ CONFIG_BT_NIMBLE_ATT_PREFERRED_MTU=247
 # The NimBLE host logs every GAP procedure at INFO, which buries the
 # console. Warnings and errors only.
 CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
+
+# Wi-Fi + BLE + MQTT do not fit in internal RAM alongside everything
+# else: measured, the console task could not get its stack (3 KB left).
+# The 8 MB of PSRAM takes what does not need internal RAM: NimBLE's
+# pools, Wi-Fi/LWIP buffers where possible, and large static buffers
+# marked EXT_RAM_BSS_ATTR. Wi-Fi's IRAM speed-ups are given up -- on the
+# S3 IRAM is carved from the same SRAM, and throughput does not matter.
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
