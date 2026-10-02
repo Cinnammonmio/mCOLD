@@ -37,6 +37,7 @@
 #include "features.h"
 #include "record.h"
 #include "trip.h"
+#include "indicate.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -111,10 +112,9 @@ void report_motion(const AccelEvent &ev, const char *when) {
          ev.y ? " Y" : "", ev.z ? " Z" : "", ev.raw_src,
          (unsigned long)accel_event_count());
   fflush(stdout);
-  // P1 verification aid: a person tapping the board sees the answer on
-  // the board, with no serial timing to get wrong. The P4 pattern layer
-  // replaces this.
-  leds_pulse(LED_ALIVE, 0, 255, 0, 120);
+  // Someone is handling the box: worth showing them its status for a
+  // little while, within the hourly budget.
+  indicate_attention();
 }
 
 void task_sensors(void *) {
@@ -277,8 +277,8 @@ void task_nfc(void *) {
                p.field == NfcField::RfBusy ? "I2C refused" : "field",
                (unsigned long)nfc_tap_count());
         fflush(stdout);
-        // P1 verification aid, as with motion. BLE comes up here in P5.
-        leds_pulse(LED_DEVICE, 0, 0, 255, 120);
+        // "This is the box you tapped." BLE comes up here in P5.
+        indicate_cue(Cue::NfcTap);
       }
     }
     // Edges latch in the tag, so a slow poll still catches a quick tap.
@@ -919,9 +919,11 @@ void run_command(char *line) {
       printf("  refused: unknown key or out of range (see 'config')\n");
     } else {
       printf("  %s = %ld, stored\n", key, v);
-      // The one setting that has a consumer already.
+      // Settings that take effect at once; the rest are read where used.
       if (!strcmp(key, "accel_wake_ths") && g_accel_up) {
         accel_set_threshold((uint8_t)v);
+      } else if (!strcmp(key, "led_bright_pct")) {
+        leds_set_brightness((int)v);
       }
     }
   } else if (!strncmp(line, "ledtest", 7)) {
@@ -1024,6 +1026,7 @@ extern "C" void app_main(void) {
     device_sn(sn, sizeof(sn));
     trip_init(sn);     // resumes a trip a reset interrupted
   }
+  indicate_start();    // boot sweep, then status; reads state, owns no state
 
   // Armed here, not by a console command: opening and closing the
   // serial port resets the board, so anything a command switches on is

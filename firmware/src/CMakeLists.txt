@@ -3,7 +3,7 @@ idf_component_register(SRCS "main.cpp" "health.cpp" "rails.cpp" "bus.cpp"
                             "accel.cpp" "gnss.cpp" "nfc.cpp" "leds.cpp" "chargeled.cpp"
                             "buzzer.cpp" "timekeep.cpp" "config.cpp"
                             "flashlog.cpp" "flashlog_test.cpp"
-                            "door.cpp" "trip.cpp"
+                            "door.cpp" "trip.cpp" "indicate.cpp"
                        INCLUDE_DIRS "."
                        REQUIRES driver esp_driver_i2c esp_driver_spi
                                 esp_driver_gpio esp_driver_usb_serial_jtag
