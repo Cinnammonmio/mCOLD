@@ -29,16 +29,18 @@ Section numbers below refer to it.
 
 ## 2. State right now
 
-Firmware **0.3.0** released (tag `firmware/v0.3.0`, ELF sha256 `756942ed9...`).
+Firmware **0.4.0** released (tag `firmware/v0.4.0`, ELF sha256 `3cee788ad...`).
 Running on the board:
 
 ```
-RAM   6.5% (21,380 B)      Flash 14.1% (442,252 B of a 3 MiB OTA slot)
+RAM  12.5% (40,844 B)      Flash 14.9% (467,944 B of a 3 MiB OTA slot)
 ```
 
-P0 to P3 complete: the box runs trips and records them. Next: **P4**,
-display, LED and buzzer patterns. The door is switched off
-(`MCOLD_DOOR 0` in `src/features.h`, decided 2026-10-02).
+P0 to P4 complete: the box runs trips, records them, and shows them
+on its lights, buzzer and e-paper. Next: **P5**, BLE, NFC and the
+command protocol. The door is switched off (`MCOLD_DOOR 0` in
+`src/features.h`, decided 2026-10-02). The e-paper runs on the mono
+panel in hand; the four-ink panel is a long way off.
 
 **Git.** The firmware lives in the shared mCOLD repo under `firmware/`,
 with its full history (imported 2026-10-02; until then it was a repo of
@@ -77,6 +79,11 @@ and nowhere else.
 | `record.h` | the byte layout of every trip record, with its "none" values |
 | `trip.*` | trips: start/stop, samples, events, alarm engine, resume after reset, retention when full |
 | `door.*` | GPIO7 door contact, compiled but **off** (`features.h`) |
+| `indicate.*` | LED and buzzer patterns per docs/led-design.md |
+| `epd.*` | SSD1680 driver for the mono 2.13" panel; panel specifics in one `PanelDef` |
+| `canvas.*`, `gfxfont.h`, `fonts_mcold.h` | 250x122 three-ink framebuffer, Adafruit GFX algorithms and fonts |
+| `screens.*` | the design's templates, ported from `display-mock/render.py` |
+| `display.*` | chooses the screen from state, refreshes per display-design.md; rotation 3 |
 | `main.cpp` | 8 tasks + supervisor; console: `help` lists the commands |
 
 Checked on the board by a person, 2026-10-02: tap → motion event;
@@ -105,7 +112,6 @@ Text record.
 | Not written yet | |
 |---|---|
 | HUSB238A | answers at 0x42; PD policy is §5.5 |
-| Display | blocked: see §5 |
 | BLE, Wi-Fi, USB MSC, OTA | P5, P6 |
 
 ---
@@ -345,8 +351,8 @@ README once carried an older 14-step plan; this is the one in use.
 | P1 drivers | 0.1.0 ✅ | every on-board device: MAX6675, PCF8523, power chain, LIS2DW12, GNSS, ST25DV, LEDs, buzzer; side light shows charge state | a GNSS fix has never been seen |
 | P2 time/config/storage | 0.2.0 ✅ | UTC with quality + boot counter; NVS config; power-cut-safe trip log | -- |
 | P3 trip and sensing | 0.3.0 ✅ | trip state machine (§8, state axes kept separate); START/STOP with a trip header carrying that trip's alarm thresholds; a sample every 5 min into the log; events (motion, probe fault, alarms, reset/data gap); alarm engine (thresholds, hysteresis, dwell; ack never erases history); resume after a reset mid-trip; retention when full (§9.6). Driven from the console until BLE exists. Door switched off | shock threshold |
-| **P4 display, LED, buzzer** | 0.4.0 | e-paper driver behind a feature flag; screens from `display-mock`; LED and buzzer pattern engine per `docs/led-design.md` (never together); attention window | the 4-colour panel |
-| P5 BLE/NFC/protocol | 0.5.0 | NimBLE GATT advertising the SN; the §13 command set with request IDs and idempotency; NDEF record; tap brings BLE up; NFC GPO wake | UUIDs and NDEF schema from the iOS team |
+| P4 display, LED, buzzer | 0.4.0 ✅ | e-paper driver and screens from `display-mock`, live from state, on the mono panel in hand; LED and buzzer patterns per `docs/led-design.md` (never together); attention window | the four-ink panel (a driver table entry when it comes) |
+| **P5 BLE/NFC/protocol** | 0.5.0 | NimBLE GATT advertising the SN; the §13 command set with request IDs and idempotency; NDEF record; tap brings BLE up; NFC GPO wake | UUIDs and NDEF schema from the iOS team |
 | P6 sync, USB, OTA | 0.6.0 | Wi-Fi + MQTT to the team's broker; live and backlog upload; application ACK, then reclaim; USB mass storage showing a read-only CSV per trip; optional SD archive; OTA with signed images and rollback | topics, ACK format, TLS on the broker, per-device credentials, a file server for OTA |
 | P7 power | 0.7.0 | deep sleep between samples; every wake source (timer, accel, door, NFC, PG#); GPIO holds; log head kept in RTC memory; charger and PD policy; current measured until 7 days on 1500 mAh is shown | battery datasheet (RCOMP, charge limits) |
 | P8 hardening | 1.0.0 | watchdog and core-dump retrieval; quiet production logging; flash encryption / secure boot decision; the §14 acceptance cases; 31-day offline simulation; 6-device Dock; factory provisioning | -- |

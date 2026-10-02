@@ -36,6 +36,55 @@ To cut a release:
 
 ## Unreleased
 
+## 0.4.0 — 2026-10-02
+
+P4 complete: lights, sound and the e-paper -- on the mono panel in hand,
+since the four-ink panel the board was designed for is a long way off.
+
+### Lights and buzzer (`indicate`)
+
+Per docs/led-design.md; each front light owns one meaning:
+
+| Light | Means | Patterns |
+|---|---|---|
+| front left | the goods | DOUBLE red on a temperature alarm; BLINK blue on ack |
+| front middle | trip running | TRIPLE green on start, TICK each round, BLINK on stop |
+| front right | the box | TRIPLE amber on a device fault (unhealthy part, no time during a trip, probe or battery alarm) |
+| whole front row | boot, phone tap | white sweep left to right at boot, then green row or amber fault; white row blink on a tap |
+| side | charge | unchanged from 0.1.0 |
+
+- Status repeats every second on external power or in a 30 s attention
+  window (phone tap; motion, at most 4 an hour), otherwise once per
+  sample period. Every pattern ends dark; lights and buzzer never
+  sound together
+- An alarm sounds three beeps unless acknowledged or `buzzer_enabled`
+  is 0; `led_bright_pct` sets the brightness cap
+- SWEEP runs by position, left to right (LED1 is on the right)
+
+### E-paper
+
+- Driver for the fitted 2.13" mono SSD1680 panel (GxEPD2_213_B74
+  sequence, proven by bring-up); BUSY polarity and geometry in one
+  table, so the four-ink panel is one entry away. Full refresh,
+  2.3 s, deep sleep after; RST released so it cannot back-power the
+  panel. **Rotation 3** is upright on this board
+- The design's templates, ported from `display-mock/render.py` with the
+  same IBM Plex fonts; three inks, accent printed black on mono
+- Live screen chosen from state: A1 idle, A2 trip, A3 out of band,
+  A4 alarm (frame), A5 no reading ("--"), A6 charging, B6 probe fault,
+  C1 summary after a stop
+- Refreshes only when the picture changes: at once for alarm and trip
+  changes, otherwise at most every 5 minutes; the clock ticking is not
+  a change. The header time is when it was drawn, local time
+  (`tz_offset_min`, default UTC+7), "--:--" when the box has no time
+- Console: `screen`, `screen N` (the 14 design pages), `screen rot`
+
+### Checked on the board, by eye
+
+- All LED patterns and the alarm beeps through start, alarm, ack, stop
+- The display through boot, start, alarm and stop: four refreshes,
+  exactly at the four changes; upright, readable
+
 ## 0.3.0 — 2026-10-02
 
 P3 complete: the box runs trips and records them.
