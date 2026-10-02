@@ -21,6 +21,7 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -32,6 +33,9 @@
 #include "config.h"
 #include "flashlog.h"
 #include "flashlog_test.h"
+#include "door.h"
+#include "record.h"
+#include "trip.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -51,7 +55,7 @@ namespace {
 // different fault from a device that will not answer, and the two want
 // different responses -- so they are counted separately rather than
 // collapsed into one "something is wrong".
-enum class Job : uint8_t { Sensors = 0, Power, Gnss, Nfc, Console, Count };
+enum class Job : uint8_t { Sensors = 0, Power, Gnss, Nfc, Trip, Console, Count };
 
 struct Beat {
   volatile uint32_t count;
@@ -65,6 +69,7 @@ Beat g_beats[(int)Job::Count] = {
     {0, 0, 30000, "power"},
     {0, 0, 10000, "gnss"},
     {0, 0, 5000, "nfc"},
+    {0, 0, 5000, "trip"},
     {0, 0, 5000, "console"},
 };
 
@@ -132,8 +137,12 @@ void task_sensors(void *) {
         // beep, or just after one, is counted but not believed. A real
         // knock in that window is lost with it, which is the lesser
         // error: the alternative logs every alarm beep as a shock.
-        if (buzzer_recent(BUZZER_BLANK_MS)) g_motion_blanked++;
-        else report_motion(ev, "");
+        if (buzzer_recent(BUZZER_BLANK_MS)) {
+          g_motion_blanked++;
+        } else {
+          report_motion(ev, "");
+          trip_note_motion(ev);
+        }
       }
     }
 
@@ -171,6 +180,7 @@ void task_sensors(void *) {
         g_temp_valid = false;
       }
       g_temp_status = ts;
+      trip_note_temp(ts, c);
     }
   }
 }
@@ -207,7 +217,14 @@ void task_gnss(void *) {
       // gone. Satellite time is the most trustworthy source this box
       // has; the first status-A sentence puts the clock back.
       if (!rtc_time_valid() && f.time_valid) {
+        TimeStamp before;
+        time_now(&before);
         if (time_set(&f.utc, TimeSource::Gnss, false)) {
+          // Recorded in the trip, so records stamped before this can be
+          // re-timed against the clock that was wrong, not trusted.
+          trip_note_time_set(TimeSource::Gnss,
+                             before.quality == TimeSource::None
+                                 ? 0 : (uint32_t)(before.utc_ms / 1000));
           printf("[gnss] clock set from satellite time\n");
           fflush(stdout);
         }
@@ -279,6 +296,7 @@ void task_power(void *) {
     power_read(&ps);
     g_power = ps;
     chargeled_update(ps);
+    trip_note_power(ps);
 
     // Kicked on its own clock, not once per read loop: the charger
     // gives about forty seconds and the sampling period may grow a
@@ -298,6 +316,42 @@ void task_power(void *) {
 }
 
 // ---- console ---------------------------------------------------------
+
+// ---- trip -------------------------------------------------------------
+//
+// Wakes on a door edge or once a second: the door is settled and
+// recorded, time-based alarms are checked, and a sample is written when
+// one is due. The first sample goes in at once -- on a new trip, and
+// after a resume, where it marks the far side of the gap the reset made.
+
+void task_trip(void *) {
+  door_notify_task(xTaskGetCurrentTaskHandle());
+  bool was_active = false;
+  uint32_t next_sample = 0;
+  for (;;) {
+    beat(Job::Trip);
+    if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000))) {
+      DoorState s;
+      uint32_t lasted = 0;
+      if (door_settle(&s, &lasted)) {
+        printf("[door] %s (was the other way for %lu ms)\n",
+               door_state_name(s), (unsigned long)lasted);
+        fflush(stdout);
+        trip_note_door(s, lasted);
+      }
+    }
+    trip_tick();
+
+    TripStatus st;
+    trip_status(&st);
+    const uint32_t t = now_ms();
+    if (st.active && (!was_active || (int32_t)(t - next_sample) >= 0)) {
+      trip_sample();
+      next_sample = t + (uint32_t)config().sample_period_s * 1000;
+    }
+    was_active = st.active;
+  }
+}
 
 void print_health(void) {
   printf("\n  %-9s %-9s %7s %7s %10s\n", "device", "state", "ok", "fail",
@@ -352,6 +406,8 @@ void print_health(void) {
     printf("  charger      %s, input %s, power-good %d\n",
            charge_state_name(p.charge), vbus_type_name(p.vbus), p.power_good);
     printf("  side light   %s\n", chargeled_name(chargeled_mode()));
+    printf("  door         %s (GPIO7 closed level %ld)\n",
+           door_state_name(door_state()), (long)config().door_closed_lvl);
     if (p.watchdog_expired) {
       printf("               WATCHDOG expired: the charger reset its own"
              " registers\n");
@@ -584,6 +640,165 @@ void log_bench_read(void) {
          (unsigned long)(now_ms() - t0));
 }
 
+// ---- trip console ------------------------------------------------------
+
+void print_trip(void) {
+  TripStatus s;
+  trip_status(&s);
+  if (!s.active) {
+    printf("\n  no trip running");
+    if (s.id) printf("; last was %08lX", (unsigned long)s.id);
+    printf("\n  deleted to make room since new: %lu\n\n",
+           (unsigned long)s.lost_trips);
+    return;
+  }
+  const TripParams &p = s.params;
+  printf("\n  trip       %08lX, running\n", (unsigned long)s.id);
+  printf("  alarms at  below %.1f C or above %.1f C, after %u s,"
+         " clear %.1f C inside\n",
+         p.low_c10 / 10.0, p.high_c10 / 10.0, p.dwell_s, p.hyst_c10 / 10.0);
+  printf("             door open over %u s%s\n", p.door_alarm_s,
+         p.door_alarm_s ? "" : " (off)");
+  printf("  samples    %lu, one per %ld s\n", (unsigned long)s.samples,
+         (long)config().sample_period_s);
+  if (s.have_temp) {
+    printf("  range      %.2f .. %.2f C\n", s.min_c100 / 100.0, s.max_c100 / 100.0);
+  }
+  printf("  door       opened %u times     motion %lu events\n", s.door_opens,
+         (unsigned long)s.motion_events);
+  printf("  alarms     %u raised", s.alarms_raised);
+  if (s.alarms_active) {
+    printf(", active:");
+    for (int a = 0; a < AL_COUNT; a++) {
+      if (s.alarms_active & (1u << a)) printf(" [%s]", alarm_name((uint8_t)a));
+    }
+    printf("%s", s.acked ? " (acknowledged)" : "");
+  }
+  printf("\n\n");
+}
+
+// One record per line, decoded per record.h.
+bool dump_visit(const LogRecord &r, void *) {
+  Reader rd(r.payload, r.len);
+  const uint32_t utc = rd.u32();
+  const uint8_t q = rd.u8();
+  const uint16_t boot = rd.u16();
+  const uint32_t tick = rd.u32();
+  char when[24] = "no time";
+  if (q) {
+    const time_t s = (time_t)utc;
+    struct tm tm;
+    gmtime_r(&s, &tm);
+    strftime(when, sizeof(when), "%m-%d %H:%M:%S", &tm);
+  }
+  printf("  %5lu  %-14s b%u+%lus  ", (unsigned long)r.seq, when, boot,
+         (unsigned long)(tick / 1000));
+  switch (r.type) {
+    case REC_TRIP_START: {
+      rd.u8();
+      rd.u32();
+      const int16_t lo = rd.i16(), hi = rd.i16();
+      printf("START   alarms %.1f..%.1f C", lo / 10.0, hi / 10.0);
+      break;
+    }
+    case REC_SAMPLE: {
+      const uint8_t st = rd.u8();
+      rd.u16();
+      const int16_t c = rd.i16();
+      const uint8_t door = rd.u8();
+      rd.u16();
+      const uint16_t motion = rd.u16();
+      rd.n = 30;
+      const uint16_t age = rd.u16();
+      rd.n = 36;
+      const uint8_t soc = rd.u8();
+      rd.n = 40;
+      const uint16_t alarms = rd.u16();
+      if (st == 0 && c != I16_NONE) printf("SAMPLE  %6.2f C", c / 100.0);
+      else printf("SAMPLE  temp -- (%s)", temp_status_name((TempStatus)st));
+      printf("  door %s  motion %u  fix %s  soc %s%u  alarms %04X",
+             door_state_name((DoorState)door), motion,
+             age == U16_NONE ? "none" : "aged", soc == 0xFF ? "-" : "",
+             soc == 0xFF ? 0 : soc, alarms);
+      break;
+    }
+    case REC_EVENT: {
+      const uint8_t code = rd.u8();
+      static const char *const NAMES[] = {
+          "?", "RESUMED", "DOOR OPEN", "DOOR CLOSE", "MOTION", "PROBE FAULT",
+          "PROBE OK", "ALARM", "ALARM CLEAR", "ALARM ACK", "TIME SET", "LOSS"};
+      printf("EVENT   %s", code < sizeof(NAMES) / sizeof(NAMES[0]) ? NAMES[code] : "?");
+      if (code == EV_ALARM_RAISE || code == EV_ALARM_CLEAR) {
+        printf(" %s", alarm_name(rd.u8()));
+      } else if (code == EV_DOOR_CLOSE) {
+        printf(" after %lu ms", (unsigned long)rd.u32());
+      } else if (code == EV_RESUMED) {
+        printf(" (reset reason %u)", rd.u8());
+      }
+      break;
+    }
+    case REC_TRIP_STOP: {
+      rd.u8();
+      printf("STOP    %lu samples", (unsigned long)rd.u32());
+      break;
+    }
+    default:
+      printf("type %02X, %u bytes", r.type, r.len);
+  }
+  printf("\n");
+  return true;
+}
+
+void trip_dump(int n) {
+  const uint32_t id = trip_last_id();
+  uint32_t last;
+  if (!id || !flashlog_last_seq(id, &last)) {
+    printf("  no trip records\n");
+    return;
+  }
+  if (n < 1) n = 15;
+  const uint32_t from = last + 1 > (uint32_t)n ? last + 1 - (uint32_t)n : 0;
+  printf("\n  trip %08lX, records %lu..%lu\n", (unsigned long)id,
+         (unsigned long)from, (unsigned long)last);
+  flashlog_read(id, from, dump_visit, nullptr, nullptr);
+  printf("\n");
+}
+
+void trip_command(const char *args) {
+  if (!*args) {
+    print_trip();
+  } else if (!strncmp(args, "start", 5)) {
+    // trip start LOW HIGH [HYST DWELL DOOR], in C and seconds.
+    float lo = 2, hi = 8, hyst = 0.5f;
+    int dwell = 300, door = 300;
+    const int k = sscanf(args + 5, "%f %f %f %d %d", &lo, &hi, &hyst, &dwell, &door);
+    if (k != 0 && k < 2) {
+      printf("  trip start LOW HIGH [HYST DWELL_S DOOR_S]   e.g. trip start 2 8\n");
+      return;
+    }
+    TripParams p = {(int16_t)lroundf(lo * 10), (int16_t)lroundf(hi * 10),
+                    (uint16_t)lroundf(hyst * 10), (uint16_t)dwell, (uint16_t)door};
+    uint32_t id = 0;
+    const TripErr e = trip_start(p, &id);
+    if (e == TripErr::Ok) {
+      printf("  trip %08lX started: alarms below %.1f or above %.1f C\n",
+             (unsigned long)id, lo, hi);
+    } else {
+      printf("  not started: %s\n", trip_err_name(e));
+    }
+  } else if (!strcmp(args, "stop")) {
+    const TripErr e = trip_stop(1);
+    printf("  %s\n", e == TripErr::Ok ? "trip stopped" : trip_err_name(e));
+  } else if (!strcmp(args, "ack")) {
+    trip_ack_alarms();
+    printf("  alarms acknowledged (they stay in the log)\n");
+  } else if (!strncmp(args, "dump", 4)) {
+    trip_dump(atoi(args + 4));
+  } else {
+    printf("  trip | trip start LOW HIGH | trip stop | trip ack | trip dump [N]\n");
+  }
+}
+
 void print_help(void) {
   printf("\n  health          every device, its state, and the readings\n");
   printf("  tasks           heartbeats and heap\n");
@@ -604,7 +819,12 @@ void print_help(void) {
   printf("  logtest         power-cut tests against a RAM image\n");
   printf("  log write N     append N records to the bench trip\n");
   printf("  log read        check the bench trip's records\n");
-  printf("  log erase       delete the bench trip\n\n");
+  printf("  log erase       delete the bench trip\n");
+  printf("  trip            the running trip: alarms, samples, counts\n");
+  printf("  trip start L H  start a trip, alarms below L / above H (C)\n");
+  printf("  trip stop       end it, with a summary record\n");
+  printf("  trip ack        acknowledge alarms (history is kept)\n");
+  printf("  trip dump [N]   the last N records, decoded\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
@@ -647,6 +867,8 @@ void run_command(char *line) {
   else if (!strcmp(line, "nfc write")) nfc_write_sn();
   else if (!strcmp(line, "help")) print_help();
   else if (!strcmp(line, "log")) print_log();
+  else if (!strcmp(line, "trip")) trip_command("");
+  else if (!strncmp(line, "trip ", 5)) trip_command(line + 5);
   else if (!strcmp(line, "logtest")) {
     printf("\n");
     const int f = flashlog_selftest();
@@ -766,10 +988,16 @@ extern "C" void app_main(void) {
   buzzer_init();
   chargeled_start();
   config_init();
+  door_init();
   rtc_begin();
   time_init();
   log_start();
   power_init();
+  {
+    char sn[16];
+    device_sn(sn, sizeof(sn));
+    trip_init(sn);     // resumes a trip a reset interrupted
+  }
 
   // Armed here, not by a console command: opening and closing the
   // serial port resets the board, so anything a command switches on is
@@ -794,6 +1022,7 @@ extern "C" void app_main(void) {
   xTaskCreatePinnedToCore(task_power, "power", 4096, nullptr, 4, nullptr, 1);
   xTaskCreatePinnedToCore(task_gnss, "gnss", 4096, nullptr, 3, nullptr, 1);
   xTaskCreatePinnedToCore(task_nfc, "nfc", 3072, nullptr, 3, nullptr, 0);
+  xTaskCreatePinnedToCore(task_trip, "trip", 4096, nullptr, 4, nullptr, 1);
   xTaskCreatePinnedToCore(task_console, "console", 6144, nullptr, 2, nullptr, 0);
   xTaskCreatePinnedToCore(task_supervisor, "super", 3072, nullptr, 6, nullptr, 0);
 
