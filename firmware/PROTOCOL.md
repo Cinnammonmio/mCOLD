@@ -147,7 +147,7 @@ Errors:
 | `NOT_SUPPORTED` | defined, but not in this firmware yet |
 
 Units: temperatures in °C as numbers, times as Unix seconds UTC with a
-separate quality (`none`, `rtc`, `gnss`, `host`), durations in seconds.
+separate quality (`none`, `rtc`, `gnss`, `host`, `ntp`), durations in seconds.
 A value the device does not have is **absent or `null`, never 0**.
 
 ## 4. Commands
