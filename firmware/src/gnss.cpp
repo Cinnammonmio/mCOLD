@@ -27,6 +27,7 @@ bool g_have_fix = false;
 uint32_t g_last_sentence = 0;
 uint32_t g_on_at = 0;
 GnssStats g_stats = {};
+volatile uint32_t g_echo_until = 0;   // 0: no raw echo
 portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 
 uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
@@ -205,6 +206,9 @@ bool handle_line(const char *s, int n) {
     return false;
   }
   g_stats.sentences++;
+  // Raw echo for diagnosis: what the module actually said, not this
+  // driver's reading of it.
+  if (g_echo_until && (int32_t)(g_echo_until - now_ms()) > 0) printf("  %s\n", s);
   const uint32_t t = now_ms();
   g_last_sentence = t;
 
@@ -343,3 +347,5 @@ void gnss_sky(GnssSky *out) {
   k.at_ms = g_sky_at;
   *out = k;
 }
+
+void gnss_echo(uint32_t ms) { g_echo_until = ms ? now_ms() + ms : 0; }

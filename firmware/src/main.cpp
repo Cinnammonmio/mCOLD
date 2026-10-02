@@ -105,8 +105,30 @@ const uint32_t BUZZER_BLANK_MS = 250;
 // bench, and nothing here is yet the sampling policy of a trip (P3).
 const uint32_t SENSOR_PASS_MS = 5000;
 const uint32_t GNSS_SESSION_MS = 120000;   // give up on a fix after this
+// Until the first fix since power-up: a module starting cold, with no
+// almanac, needs minutes of open sky, more than a routine session gives.
+const uint32_t GNSS_COLD_SESSION_MS = 600000;
 const uint32_t GNSS_PERIOD_MS = 600000;    // between sessions
 const int GNSS_FIXES_WANTED = 5;
+// Console "gnss hold N": keep the module on for N minutes, for an antenna
+// test by a window. A cold start can need longer than one session.
+volatile uint32_t g_gnss_hold_until = 0;
+
+// The best GNSS heard in a boot, in RTC memory: it survives a
+// reset (opening the USB console is one) though not a power loss. So a
+// box taken to a window on battery can be plugged back in and asked what
+// it heard there.
+struct GnssMemo {
+  uint32_t magic;
+  uint32_t boot;            // the boot it was recorded in
+  uint32_t seconds;         // how long the module was on, that boot
+  uint8_t in_view, heard, best_snr, sats;
+  bool fix;
+  double lat, lon;
+};
+const uint32_t GNSS_MEMO_MAGIC = 0x474E5353;   // "GNSS"
+RTC_NOINIT_ATTR GnssMemo g_gnss_memo;
+GnssMemo g_gnss_before = {};   // the memo as found at boot: before the reset
 const uint32_t NFC_POLL_MS = 300;
 const uint32_t FIRST_SAMPLE_WAIT_MS = 10000;   // uptime limit, see task_trip
 
@@ -213,10 +235,37 @@ void task_gnss(void *) {
     fflush(stdout);
 
     const uint32_t start = now_ms();
+    GnssStats gs;
+    gnss_stats(&gs);
+    const uint32_t limit = gs.fixes ? GNSS_SESSION_MS : GNSS_COLD_SESSION_MS;
     int fixes = 0;
-    while (now_ms() - start < GNSS_SESSION_MS) {
+    while (now_ms() - start < limit ||
+           (int32_t)(g_gnss_hold_until - now_ms()) > 0) {
       beat(Job::Gnss);
       gnss_pump(1000);
+      {
+        GnssSky k;
+        gnss_sky(&k);
+        GnssMemo &m = g_gnss_memo;
+        // The best of the whole boot, not of the latest session: a box
+        // carried to a window and back must still say what it heard there.
+        if (m.magic != GNSS_MEMO_MAGIC || m.boot != time_boot_count()) {
+          m = {};
+          m.magic = GNSS_MEMO_MAGIC;
+          m.boot = time_boot_count();
+        }
+        m.seconds++;            // one pump per second: seconds of GNSS on
+        if (k.in_view > m.in_view) m.in_view = k.in_view;
+        if (k.heard > m.heard) m.heard = k.heard;
+        if (k.best_snr > m.best_snr) m.best_snr = k.best_snr;
+        GnssFix gf;
+        if (gnss_last_fix(&gf) && gf.valid && now_ms() - gf.at_ms < 3000) {
+          m.fix = true;
+          m.lat = gf.lat_deg;
+          m.lon = gf.lon_deg;
+          if (gf.sats > m.sats) m.sats = gf.sats;
+        }
+      }
 
       GnssFix f;
       if (!gnss_last_fix(&f) || !f.valid || now_ms() - f.at_ms > 2000) continue;
@@ -240,7 +289,7 @@ void task_gnss(void *) {
       }
       // A few consecutive fixes rather than the first: the first one
       // out of a cold start is the least accurate the module produces.
-      if (fixes >= GNSS_FIXES_WANTED) break;
+      if (fixes >= GNSS_FIXES_WANTED && (int32_t)(g_gnss_hold_until - now_ms()) <= 0) break;
     }
     gnss_power_off();
 
@@ -262,6 +311,7 @@ void task_gnss(void *) {
 
     for (uint32_t waited = 0; waited < GNSS_PERIOD_MS; waited += 5000) {
       beat(Job::Gnss);
+      if ((int32_t)(g_gnss_hold_until - now_ms()) > 0) break;   // held: go now
       vTaskDelay(pdMS_TO_TICKS(5000));
     }
   }
@@ -517,6 +567,15 @@ void print_gnss(void) {
          (unsigned long)st.bad_checksum);
   if (st.bad_checksum > st.sentences) {
     printf("             more bad than good: suspect the baud rate\n");
+  }
+  for (int i = 0; i < 2; i++) {
+    const GnssMemo &m = i ? g_gnss_memo : g_gnss_before;
+    if (m.magic != GNSS_MEMO_MAGIC || (i == 0 && m.boot == time_boot_count())) continue;
+    printf("  %s %lu s, best %u in view, %u heard, SNR %u dB-Hz",
+           i ? "this boot   " : "before reset", (unsigned long)m.seconds,
+           m.in_view, m.heard, m.best_snr);
+    if (m.fix) printf(", FIX %.6f, %.6f, %u sats", m.lat, m.lon, m.sats);
+    printf("\n");
   }
   GnssSky k;
   gnss_sky(&k);
@@ -965,6 +1024,17 @@ void run_command(char *line) {
   else if (!strcmp(line, "version")) print_version();
   else if (!strcmp(line, "accel")) print_accel();
   else if (!strcmp(line, "gnss")) print_gnss();
+  else if (!strncmp(line, "gnss hold", 9)) {
+    const int m = atoi(line + 9);
+    const int mins = m > 0 && m <= 60 ? m : 10;
+    g_gnss_hold_until = now_ms() + (uint32_t)mins * 60000;
+    printf("  GNSS kept on for %d min (gnss to see the sky)\n", mins);
+  } else if (!strncmp(line, "gnss raw", 8)) {
+    const int s = atoi(line + 8);
+    gnss_echo((uint32_t)(s > 0 && s <= 120 ? s : 5) * 1000);
+    printf("  raw NMEA for %d s%s\n", s > 0 && s <= 120 ? s : 5,
+           gnss_is_on() ? "" : " (module is off between sessions: nothing will come)");
+  }
   else if (!strcmp(line, "nfc")) print_nfc();
   else if (!strcmp(line, "help")) print_help();
   else if (!strcmp(line, "log")) print_log();
@@ -1090,6 +1160,8 @@ extern "C" void app_main(void) {
   usb_serial_jtag_driver_install(&ucfg);
   vTaskDelay(pdMS_TO_TICKS(300));
 
+  // Before any session can overwrite it: what GNSS heard before the reset.
+  if (g_gnss_memo.magic == GNSS_MEMO_MAGIC) g_gnss_before = g_gnss_memo;
   health_init();
   rails_init();
   bus_init();
