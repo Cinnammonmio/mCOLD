@@ -50,6 +50,7 @@ constexpr Field FIELDS[] = {
     F(cal_date, 0, 0x7FFFFFFF, 0, "unix s"),
     F(accel_wake_ths, 1, 63, 2, "x31 mg"),
     F(led_bright_pct, 1, 100, 20, "%"),
+    F(tz_offset_min, -720, 840, 420, "min"),
     F(buzzer_enabled, 0, 1, 1, ""),
 };
 #undef F

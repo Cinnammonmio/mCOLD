@@ -55,6 +55,11 @@ static const int LED_DEVICE = 1;   // LED1, front right
 static const int LED_ALIVE = 2;    // LED2, front middle
 static const int LED_CARGO = 3;    // LED3, front left
 
-// 20% of full scale: docs/led-design.md, configurable later.
+// Cap on every channel, as a percentage of full scale. Colours are
+// scaled to it when staged, so it applies from the next leds_set() on.
+// Default 20 %: docs/led-design.md; config led_bright_pct.
+void leds_set_brightness(int pct);
+
+// 20% of full scale: the default until config is applied.
 static const uint8_t LEDS_BRIGHTNESS_CAP = 51;
 static const uint32_t LEDS_PULSE_MAX_MS = 2000;

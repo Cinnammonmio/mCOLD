@@ -33,7 +33,9 @@ esp_timer_handle_t g_pulse_timer = nullptr;
 uint8_t g_rgb[LED_COUNT][3];
 bool g_rail_held = false;
 
-uint8_t scale(uint8_t v) { return (uint8_t)((v * LEDS_BRIGHTNESS_CAP + 127) / 255); }
+volatile uint8_t g_cap = LEDS_BRIGHTNESS_CAP;
+
+uint8_t scale(uint8_t v) { return (uint8_t)((v * g_cap + 127) / 255); }
 
 bool any_lit(void) {
   for (int i = 0; i < LED_COUNT; i++) {
@@ -175,3 +177,9 @@ void leds_pulse(int i, uint8_t r, uint8_t g, uint8_t b, uint32_t ms) {
 }
 
 bool leds_pulse_active(int index) { return g_pulse_idx == index; }
+
+void leds_set_brightness(int pct) {
+  if (pct < 1) pct = 1;
+  if (pct > 100) pct = 100;
+  g_cap = (uint8_t)((pct * 255 + 50) / 100);
+}

@@ -67,6 +67,9 @@ struct TripStatus {
   uint32_t motion_events;
   bool have_temp;
   bool temp_read_since_boot;   // any attempt has completed since power-up
+  bool temp_ok;                // the latest reading is a reading, and fresh
+  float temp_c;                // calibrated; meaningless unless temp_ok
+  bool out_of_band;            // outside the thresholds now, alarm or not
   int16_t min_c100, max_c100;
   uint32_t lost_trips;      // deleted to make room, since the device was new
 };
