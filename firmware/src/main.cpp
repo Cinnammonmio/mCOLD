@@ -42,6 +42,7 @@
 #include "epd.h"
 #include "screens.h"
 #include "display.h"
+#include "rpc.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -304,6 +305,7 @@ void task_power(void *) {
     chargeled_update(ps);
     trip_note_power(ps);
     display_note_power(ps);
+    rpc_note_power(ps);
 
     // Kicked on its own clock, not once per read loop: the charger
     // gives about forty seconds and the sampling period may grow a
@@ -789,6 +791,24 @@ void trip_dump(int n) {
   printf("\n");
 }
 
+// Settings that take effect the moment they are stored, from the console
+// or the app alike; the rest are read where they are used.
+void config_changed(const char *key, int32_t v) {
+  if (!strcmp(key, "accel_wake_ths") && g_accel_up) {
+    accel_set_threshold((uint8_t)v);
+  } else if (!strcmp(key, "led_bright_pct")) {
+    leds_set_brightness((int)v);
+  }
+}
+
+// The protocol from the console: whoever has the cable has the box, so
+// the request runs as authorized.
+void rpc_command(const char *json) {
+  char *resp = rpc_handle(json, strlen(json), true);
+  printf("  %s\n", resp);
+  free(resp);
+}
+
 // ---- display bench ------------------------------------------------------
 
 Canvas g_canvas;      // demo pages; the live display has its own
@@ -930,6 +950,7 @@ void run_command(char *line) {
   else if (!strcmp(line, "nfc write")) nfc_write_sn();
   else if (!strcmp(line, "help")) print_help();
   else if (!strcmp(line, "log")) print_log();
+  else if (!strncmp(line, "rpc ", 4)) rpc_command(line + 4);
   else if (!strcmp(line, "screen")) screen_command("");
   else if (!strncmp(line, "screen ", 7)) screen_command(line + 7);
   else if (!strcmp(line, "trip")) trip_command("");
@@ -960,12 +981,6 @@ void run_command(char *line) {
       printf("  refused: unknown key or out of range (see 'config')\n");
     } else {
       printf("  %s = %ld, stored\n", key, v);
-      // Settings that take effect at once; the rest are read where used.
-      if (!strcmp(key, "accel_wake_ths") && g_accel_up) {
-        accel_set_threshold((uint8_t)v);
-      } else if (!strcmp(key, "led_bright_pct")) {
-        leds_set_brightness((int)v);
-      }
     }
   } else if (!strncmp(line, "ledtest", 7)) {
     int hold = 4, rounds = 1;
@@ -988,7 +1003,7 @@ void run_command(char *line) {
 }
 
 void task_console(void *) {
-  char line[64];
+  char line[256];   // room for an rpc request typed or pasted in one line
   int n = 0;
   char prev = 0;
   uint8_t c;
@@ -1068,6 +1083,8 @@ extern "C" void app_main(void) {
     device_sn(sn, sizeof(sn));
     trip_init(sn);     // resumes a trip a reset interrupted
     display_start(sn); // like indicate: reads state, owns none
+    rpc_init(sn);
+    config_on_change(config_changed);
   }
   indicate_start();    // boot sweep, then status; reads state, owns no state
 
