@@ -59,5 +59,16 @@ void config_print(void);
 // Back to defaults: every key erased.
 void config_reset(void);
 
+// Every setting in table order, for anything that lists them (the app).
+int config_count(void);
+bool config_at(int i, const char **key, int32_t *value, int32_t *min,
+               int32_t *max);
+
+// Called after a setting is stored, from wherever it was changed --
+// console or app -- so that settings which act at once (accelerometer
+// threshold, LED brightness) act the same way from both.
+typedef void (*ConfigHook)(const char *key, int32_t value);
+void config_on_change(ConfigHook hook);
+
 // Settings that were out of range when loaded, since boot.
 int config_rejected(void);

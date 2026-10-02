@@ -86,6 +86,9 @@ uint32_t gnss_last_sentence_ms(void);
 
 void gnss_stats(GnssStats *out);
 
+// Print every good sentence to the console for `ms` (diagnosis).
+void gnss_echo(uint32_t ms);
+
 static const uint32_t GNSS_BAUD = 115200;
 
 // How long after power-up a working module must have produced a

@@ -56,9 +56,5 @@ bool nfc_write_ndef(const uint8_t *ndef, size_t n);
 
 bool nfc_read_user(uint16_t offset, uint8_t *buf, size_t n);
 
-// Builds one NFC Forum Text record ("en") into `out`. Returns its
-// length, or 0 if it does not fit.
-size_t ndef_text_record(const char *text, uint8_t *out, size_t cap);
-
 // The 04KC has 512 bytes of user memory.
 static const size_t NFC_USER_BYTES = 512;

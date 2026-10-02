@@ -60,6 +60,7 @@ const int N = sizeof(FIELDS) / sizeof(FIELDS[0]);
 Config g_cfg;
 uint32_t g_schema = 0;
 int g_rejected = 0;
+ConfigHook g_hook = nullptr;
 bool g_stored[sizeof(FIELDS) / sizeof(FIELDS[0])];
 
 int32_t *slot(const Field &f) {
@@ -149,6 +150,7 @@ bool config_set(const char *key, int32_t value) {
   if (ok) {
     *slot(*f) = value;
     g_stored[f - FIELDS] = true;
+    if (g_hook) g_hook(f->key, value);
   }
   return ok;
 }
@@ -179,3 +181,18 @@ void config_reset(void) {
   g_rejected = 0;
   load();
 }
+
+int config_count(void) { return N; }
+
+bool config_at(int i, const char **key, int32_t *value, int32_t *min,
+               int32_t *max) {
+  if (i < 0 || i >= N) return false;
+  const Field &f = FIELDS[i];
+  if (key) *key = f.key;
+  if (value) *value = *slot(f);
+  if (min) *min = f.min;
+  if (max) *max = f.max;
+  return true;
+}
+
+void config_on_change(ConfigHook hook) { g_hook = hook; }

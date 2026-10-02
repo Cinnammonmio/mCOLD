@@ -104,6 +104,7 @@ void build(const TripStatus &s, const char *clock) {
   portEXIT_CRITICAL(&g_mux);
   const Foot f = footer_state(s, p, have_p);
 
+
   char temp[12];
   if (s.temp_ok) snprintf(temp, sizeof(temp), "%.1f", s.temp_c);
   else snprintf(temp, sizeof(temp), "--");    // never 0.0 for no reading
@@ -256,3 +257,4 @@ void display_set_rotation(int r) {
 int display_rotation(void) { return g_rot; }
 
 bool display_show(const Canvas &c) { return g_epd ? show(c) : false; }
+

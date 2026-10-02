@@ -42,6 +42,9 @@
 #include "epd.h"
 #include "screens.h"
 #include "display.h"
+#include "rpc.h"
+#include "ble.h"
+#include "auth.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -102,8 +105,30 @@ const uint32_t BUZZER_BLANK_MS = 250;
 // bench, and nothing here is yet the sampling policy of a trip (P3).
 const uint32_t SENSOR_PASS_MS = 5000;
 const uint32_t GNSS_SESSION_MS = 120000;   // give up on a fix after this
+// Until the first fix since power-up: a module starting cold, with no
+// almanac, needs minutes of open sky, more than a routine session gives.
+const uint32_t GNSS_COLD_SESSION_MS = 600000;
 const uint32_t GNSS_PERIOD_MS = 600000;    // between sessions
 const int GNSS_FIXES_WANTED = 5;
+// Console "gnss hold N": keep the module on for N minutes, for an antenna
+// test by a window. A cold start can need longer than one session.
+volatile uint32_t g_gnss_hold_until = 0;
+
+// The best GNSS heard in a boot, in RTC memory: it survives a
+// reset (opening the USB console is one) though not a power loss. So a
+// box taken to a window on battery can be plugged back in and asked what
+// it heard there.
+struct GnssMemo {
+  uint32_t magic;
+  uint32_t boot;            // the boot it was recorded in
+  uint32_t seconds;         // how long the module was on, that boot
+  uint8_t in_view, heard, best_snr, sats;
+  bool fix;
+  double lat, lon;
+};
+const uint32_t GNSS_MEMO_MAGIC = 0x474E5353;   // "GNSS"
+RTC_NOINIT_ATTR GnssMemo g_gnss_memo;
+GnssMemo g_gnss_before = {};   // the memo as found at boot: before the reset
 const uint32_t NFC_POLL_MS = 300;
 const uint32_t FIRST_SAMPLE_WAIT_MS = 10000;   // uptime limit, see task_trip
 
@@ -210,10 +235,37 @@ void task_gnss(void *) {
     fflush(stdout);
 
     const uint32_t start = now_ms();
+    GnssStats gs;
+    gnss_stats(&gs);
+    const uint32_t limit = gs.fixes ? GNSS_SESSION_MS : GNSS_COLD_SESSION_MS;
     int fixes = 0;
-    while (now_ms() - start < GNSS_SESSION_MS) {
+    while (now_ms() - start < limit ||
+           (int32_t)(g_gnss_hold_until - now_ms()) > 0) {
       beat(Job::Gnss);
       gnss_pump(1000);
+      {
+        GnssSky k;
+        gnss_sky(&k);
+        GnssMemo &m = g_gnss_memo;
+        // The best of the whole boot, not of the latest session: a box
+        // carried to a window and back must still say what it heard there.
+        if (m.magic != GNSS_MEMO_MAGIC || m.boot != time_boot_count()) {
+          m = {};
+          m.magic = GNSS_MEMO_MAGIC;
+          m.boot = time_boot_count();
+        }
+        m.seconds++;            // one pump per second: seconds of GNSS on
+        if (k.in_view > m.in_view) m.in_view = k.in_view;
+        if (k.heard > m.heard) m.heard = k.heard;
+        if (k.best_snr > m.best_snr) m.best_snr = k.best_snr;
+        GnssFix gf;
+        if (gnss_last_fix(&gf) && gf.valid && now_ms() - gf.at_ms < 3000) {
+          m.fix = true;
+          m.lat = gf.lat_deg;
+          m.lon = gf.lon_deg;
+          if (gf.sats > m.sats) m.sats = gf.sats;
+        }
+      }
 
       GnssFix f;
       if (!gnss_last_fix(&f) || !f.valid || now_ms() - f.at_ms > 2000) continue;
@@ -237,7 +289,7 @@ void task_gnss(void *) {
       }
       // A few consecutive fixes rather than the first: the first one
       // out of a cold start is the least accurate the module produces.
-      if (fixes >= GNSS_FIXES_WANTED) break;
+      if (fixes >= GNSS_FIXES_WANTED && (int32_t)(g_gnss_hold_until - now_ms()) <= 0) break;
     }
     gnss_power_off();
 
@@ -259,6 +311,7 @@ void task_gnss(void *) {
 
     for (uint32_t waited = 0; waited < GNSS_PERIOD_MS; waited += 5000) {
       beat(Job::Gnss);
+      if ((int32_t)(g_gnss_hold_until - now_ms()) > 0) break;   // held: go now
       vTaskDelay(pdMS_TO_TICKS(5000));
     }
   }
@@ -281,8 +334,20 @@ void task_nfc(void *) {
                p.field == NfcField::RfBusy ? "I2C refused" : "field",
                (unsigned long)nfc_tap_count());
         fflush(stdout);
-        // "This is the box you tapped." BLE comes up here in P5.
+        // "This is the box you tapped."
         indicate_cue(Cue::NfcTap);
+        // The tap is how a phone asks for the box: open BLE for it.
+        ble_window(BLE_TAP_WINDOW_MS);
+      }
+      // The key goes on the tag when it is due and nothing is reading
+      // it: a phone on the antenna holds the tag's RF side and the write
+      // would only be refused. Not more than every few seconds either.
+      static uint32_t last_try = 0;
+      if (p.field == NfcField::Absent && auth_needs_publish() &&
+          (!last_try || t - last_try > 5000)) {
+        last_try = t ? t : 1;
+        printf("[nfc] %s\n", auth_publish() ? "new key on the tag" : "key write refused, will retry");
+        fflush(stdout);
       }
     }
     // Edges latch in the tag, so a slow poll still catches a quick tap.
@@ -304,6 +369,7 @@ void task_power(void *) {
     chargeled_update(ps);
     trip_note_power(ps);
     display_note_power(ps);
+    rpc_note_power(ps);
 
     // Kicked on its own clock, not once per read loop: the charger
     // gives about forty seconds and the sampling period may grow a
@@ -502,6 +568,15 @@ void print_gnss(void) {
   if (st.bad_checksum > st.sentences) {
     printf("             more bad than good: suspect the baud rate\n");
   }
+  for (int i = 0; i < 2; i++) {
+    const GnssMemo &m = i ? g_gnss_memo : g_gnss_before;
+    if (m.magic != GNSS_MEMO_MAGIC || (i == 0 && m.boot == time_boot_count())) continue;
+    printf("  %s %lu s, best %u in view, %u heard, SNR %u dB-Hz",
+           i ? "this boot   " : "before reset", (unsigned long)m.seconds,
+           m.in_view, m.heard, m.best_snr);
+    if (m.fix) printf(", FIX %.6f, %.6f, %u sats", m.lat, m.lon, m.sats);
+    printf("\n");
+  }
   GnssSky k;
   gnss_sky(&k);
   if (k.at_ms) {
@@ -541,28 +616,17 @@ void print_nfc(void) {
   for (int i = 0; i < 8; i++) printf("%02X", uid[i]);
   printf("   IC_REF 0x%02X\n", nfc_ic_ref());
   printf("  taps       %lu since boot\n", (unsigned long)nfc_tap_count());
-  uint8_t b[48];
+  // The whole record, so what a phone will read can be checked here.
+  uint8_t b[128];
   if (nfc_read_user(0, b, sizeof(b))) {
-    printf("  memory     ");
-    for (size_t i = 0; i < sizeof(b); i++) {
-      printf("%c", b[i] >= 32 && b[i] < 127 ? (char)b[i] : '.');
+    printf("  record     ");
+    for (size_t i = 0; i < sizeof(b) && b[i] != 0xFE; i++) {
+      if (b[i] >= 32 && b[i] < 127) putchar((char)b[i]);
     }
     printf("\n");
   }
-  printf("\n");
-}
-
-void nfc_write_sn(void) {
-  char sn[24];
-  device_sn(sn, sizeof(sn));
-  uint8_t rec[64];
-  const size_t n = ndef_text_record(sn, rec, sizeof(rec));
-  if (n && nfc_write_ndef(rec, n)) {
-    printf("  wrote and verified a Text record \"%s\"\n", sn);
-  } else {
-    printf("  write FAILED at a block that did not verify; the tag may now"
-           " hold a partial record\n");
-  }
+  printf("  key        %s\n\n", auth_published() ? "on the tag, in force"
+                                                 : "not yet on the tag: AUTH will refuse");
 }
 
 // ---- trip log ----------------------------------------------------------
@@ -789,6 +853,39 @@ void trip_dump(int n) {
   printf("\n");
 }
 
+// Settings that take effect the moment they are stored, from the console
+// or the app alike; the rest are read where they are used.
+void config_changed(const char *key, int32_t v) {
+  if (!strcmp(key, "accel_wake_ths") && g_accel_up) {
+    accel_set_threshold((uint8_t)v);
+  } else if (!strcmp(key, "led_bright_pct")) {
+    leds_set_brightness((int)v);
+  }
+}
+
+void print_ble(void) {
+  BleStatus b;
+  ble_status(&b);
+  printf("\n  BLE        %s, %s\n", b.enabled ? "enabled" : "off",
+         b.connected ? "connected" : b.advertising ? "advertising" : "quiet");
+  if (b.connected) {
+    printf("  session    %s, MTU %u\n",
+           b.authorized ? "authorized (AUTH with the tag's key)" : "read-only, no AUTH yet",
+           b.mtu);
+  }
+  printf("  requests   %lu over BLE since boot\n\n", (unsigned long)b.requests);
+}
+
+// The protocol from the console: whoever has the cable has the box, so
+// the request runs as authorized.
+void rpc_command(const char *json) {
+  RpcSession console = {};
+  console.authorized = true;
+  char *resp = rpc_handle(json, strlen(json), &console);
+  printf("  %s\n", resp);
+  free(resp);
+}
+
 // ---- display bench ------------------------------------------------------
 
 Canvas g_canvas;      // demo pages; the live display has its own
@@ -864,7 +961,6 @@ void print_help(void) {
   printf("  accel           XYZ now, and the motion event count\n");
   printf("  gnss            receiver statistics and last fix\n");
   printf("  nfc             tag identity, taps, first bytes of memory\n");
-  printf("  nfc write       write the SN as an NDEF Text record\n");
   printf("  led I R G B     light pixel I (0-3) for a second\n");
   printf("  ledtest [S] [N] side red, left green, middle blue, right white;\n");
   printf("                  S seconds each (4), N rounds (1)\n");
@@ -887,7 +983,9 @@ void print_help(void) {
   printf("  trip dump [N]   the last N records, decoded\n");
   printf("  screen          redraw the e-paper now (live view)\n");
   printf("  screen N        design demo page N (0-13); 'screen' to go back\n");
-  printf("  screen rot 1|3  the two landscape orientations\n\n");
+  printf("  screen rot 1|3  the two landscape orientations\n");
+  printf("  rpc {json}      a protocol request (PROTOCOL.md), as authorized\n");
+  printf("  ble [on|off]    BLE state; 'on' advertises for 60 s\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
@@ -926,10 +1024,30 @@ void run_command(char *line) {
   else if (!strcmp(line, "version")) print_version();
   else if (!strcmp(line, "accel")) print_accel();
   else if (!strcmp(line, "gnss")) print_gnss();
+  else if (!strncmp(line, "gnss hold", 9)) {
+    const int m = atoi(line + 9);
+    const int mins = m > 0 && m <= 60 ? m : 10;
+    g_gnss_hold_until = now_ms() + (uint32_t)mins * 60000;
+    printf("  GNSS kept on for %d min (gnss to see the sky)\n", mins);
+  } else if (!strncmp(line, "gnss raw", 8)) {
+    const int s = atoi(line + 8);
+    gnss_echo((uint32_t)(s > 0 && s <= 120 ? s : 5) * 1000);
+    printf("  raw NMEA for %d s%s\n", s > 0 && s <= 120 ? s : 5,
+           gnss_is_on() ? "" : " (module is off between sessions: nothing will come)");
+  }
   else if (!strcmp(line, "nfc")) print_nfc();
-  else if (!strcmp(line, "nfc write")) nfc_write_sn();
   else if (!strcmp(line, "help")) print_help();
   else if (!strcmp(line, "log")) print_log();
+  else if (!strncmp(line, "rpc ", 4)) rpc_command(line + 4);
+  else if (!strcmp(line, "ble")) print_ble();
+  else if (!strcmp(line, "ble on")) {
+    ble_enable(true);
+    ble_window(BLE_TAP_WINDOW_MS);
+    printf("  BLE on, advertising for %lu s\n", (unsigned long)(BLE_TAP_WINDOW_MS / 1000));
+  } else if (!strcmp(line, "ble off")) {
+    ble_enable(false);
+    printf("  BLE off\n");
+  }
   else if (!strcmp(line, "screen")) screen_command("");
   else if (!strncmp(line, "screen ", 7)) screen_command(line + 7);
   else if (!strcmp(line, "trip")) trip_command("");
@@ -960,12 +1078,6 @@ void run_command(char *line) {
       printf("  refused: unknown key or out of range (see 'config')\n");
     } else {
       printf("  %s = %ld, stored\n", key, v);
-      // Settings that take effect at once; the rest are read where used.
-      if (!strcmp(key, "accel_wake_ths") && g_accel_up) {
-        accel_set_threshold((uint8_t)v);
-      } else if (!strcmp(key, "led_bright_pct")) {
-        leds_set_brightness((int)v);
-      }
     }
   } else if (!strncmp(line, "ledtest", 7)) {
     int hold = 4, rounds = 1;
@@ -988,7 +1100,7 @@ void run_command(char *line) {
 }
 
 void task_console(void *) {
-  char line[64];
+  char line[256];   // room for an rpc request typed or pasted in one line
   int n = 0;
   char prev = 0;
   uint8_t c;
@@ -1048,6 +1160,8 @@ extern "C" void app_main(void) {
   usb_serial_jtag_driver_install(&ucfg);
   vTaskDelay(pdMS_TO_TICKS(300));
 
+  // Before any session can overwrite it: what GNSS heard before the reset.
+  if (g_gnss_memo.magic == GNSS_MEMO_MAGIC) g_gnss_before = g_gnss_memo;
   health_init();
   rails_init();
   bus_init();
@@ -1068,6 +1182,10 @@ extern "C" void app_main(void) {
     device_sn(sn, sizeof(sn));
     trip_init(sn);     // resumes a trip a reset interrupted
     display_start(sn); // like indicate: reads state, owns none
+    rpc_init(sn);
+    auth_init(sn);     // a new key; the NFC task puts it on the tag
+    ble_start(sn);     // after NVS (bonds) and rpc (what it carries)
+    config_on_change(config_changed);
   }
   indicate_start();    // boot sweep, then status; reads state, owns no state
 
