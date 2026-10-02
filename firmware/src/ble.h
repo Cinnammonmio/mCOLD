@@ -2,9 +2,9 @@
 //
 // One GATT service: INFO and STATUS to read, COMMAND to write requests,
 // RESPONSE, STATUS and EVENT notified back, every message cut into
-// fragments that fit whatever MTU the phone negotiated. COMMAND needs an
-// encrypted, authenticated link, so the phone's first write starts
-// pairing, and the passkey it asks for is on the e-paper.
+// fragments that fit whatever MTU the phone negotiated. No pairing: a
+// connection becomes authorized with AUTH, proving it read the key from
+// the NFC tag (auth.h), and stays so until it closes.
 //
 // The radio advertises only while it has a reason to: for a window after
 // a phone taps the NFC tag, and while the box is on external power. It
@@ -29,8 +29,7 @@ struct BleStatus {
   bool enabled;
   bool advertising;
   bool connected;
-  bool encrypted;
-  bool authenticated;
+  bool authorized;      // this connection passed AUTH
   uint16_t mtu;
   uint32_t requests;
 };

@@ -14,6 +14,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "auth.h"
 #include "config.h"
 #include "flashlog.h"
 #include "gnss.h"
@@ -117,7 +118,16 @@ bool get_num(const cJSON *req, const char *k, double *out) {
 
 // ---- commands ----------------------------------------------------------
 
-cJSON *c_info(uint32_t id, const cJSON *, bool) {
+void hex(const uint8_t *b, size_t n, char *out) {
+  static const char H[] = "0123456789abcdef";
+  for (size_t i = 0; i < n; i++) {
+    out[2 * i] = H[b[i] >> 4];
+    out[2 * i + 1] = H[b[i] & 15];
+  }
+  out[2 * n] = 0;
+}
+
+cJSON *c_info(uint32_t id, const cJSON *, RpcSession *s) {
   cJSON *o = ok(id);
   cJSON_AddNumberToObject(o, "proto", RPC_PROTO);
   cJSON_AddStringToObject(o, "sn", g_sn);
@@ -126,10 +136,32 @@ cJSON *c_info(uint32_t id, const cJSON *, bool) {
   cJSON_AddStringToObject(o, "idf", esp_app_get_description()->idf_ver);
   cJSON_AddNumberToObject(o, "boot", time_boot_count());
   cJSON_AddNumberToObject(o, "uptime_s", now_ms() / 1000);
+  // This connection's challenge for AUTH. Fresh per connection, so a
+  // proof overheard on one is worthless on the next.
+  if (s && s->has_nonce) {
+    char n[33];
+    hex(s->nonce, 16, n);
+    cJSON_AddStringToObject(o, "nonce", n);
+  }
+  cJSON_AddBoolToObject(o, "authorized", s && s->authorized);
   return o;
 }
 
-cJSON *c_status(uint32_t id, const cJSON *, bool) {
+cJSON *c_auth(uint32_t id, const cJSON *req, RpcSession *s) {
+  const cJSON *p = cJSON_GetObjectItemCaseSensitive(req, "proof");
+  if (!s || !s->has_nonce) {
+    return fail(id, "BAD_REQUEST", "this link needs no AUTH");
+  }
+  if (!cJSON_IsString(p) || !auth_check(s->nonce, p->valuestring)) {
+    // No hint which part was wrong. The key may simply be spent: it is
+    // replaced after every session and at every reset.
+    return fail(id, "NOT_AUTHORIZED", "tap the box again and retry");
+  }
+  s->authorized = true;
+  return ok(id);
+}
+
+cJSON *c_status(uint32_t id, const cJSON *, RpcSession *) {
   cJSON *o = ok(id);
 
   TimeStamp t;
@@ -192,7 +224,7 @@ cJSON *c_status(uint32_t id, const cJSON *, bool) {
   return o;
 }
 
-cJSON *c_get_config(uint32_t id, const cJSON *, bool) {
+cJSON *c_get_config(uint32_t id, const cJSON *, RpcSession *) {
   cJSON *o = ok(id);
   cJSON *c = cJSON_AddObjectToObject(o, "config");
   for (int i = 0; i < config_count(); i++) {
@@ -204,7 +236,7 @@ cJSON *c_get_config(uint32_t id, const cJSON *, bool) {
   return o;
 }
 
-cJSON *c_set_config(uint32_t id, const cJSON *req, bool) {
+cJSON *c_set_config(uint32_t id, const cJSON *req, RpcSession *) {
   const cJSON *k = cJSON_GetObjectItemCaseSensitive(req, "key");
   double v;
   if (!cJSON_IsString(k) || !get_num(req, "value", &v) || v != floor(v)) {
@@ -216,7 +248,7 @@ cJSON *c_set_config(uint32_t id, const cJSON *req, bool) {
   return ok(id);
 }
 
-cJSON *c_set_time(uint32_t id, const cJSON *req, bool) {
+cJSON *c_set_time(uint32_t id, const cJSON *req, RpcSession *) {
   double utc;
   // Not before 2024, not after 2100: a phone with a broken clock must not
   // be able to stamp a trip with 1970.
@@ -242,7 +274,7 @@ cJSON *c_set_time(uint32_t id, const cJSON *req, bool) {
   return o;
 }
 
-cJSON *c_start(uint32_t id, const cJSON *req, bool) {
+cJSON *c_start(uint32_t id, const cJSON *req, RpcSession *) {
   // A START retried after the device reset: the stored id says which
   // trip it already started.
   nvs_handle_t h;
@@ -285,7 +317,7 @@ cJSON *c_start(uint32_t id, const cJSON *req, bool) {
   return o;
 }
 
-cJSON *c_stop(uint32_t id, const cJSON *, bool) {
+cJSON *c_stop(uint32_t id, const cJSON *, RpcSession *) {
   TripStatus s;
   trip_status(&s);
   const TripErr e = trip_stop(2);   // reason 2: the app
@@ -295,7 +327,7 @@ cJSON *c_stop(uint32_t id, const cJSON *, bool) {
   return o;
 }
 
-cJSON *c_ack(uint32_t id, const cJSON *, bool) {
+cJSON *c_ack(uint32_t id, const cJSON *, RpcSession *) {
   trip_ack_alarms();
   TripStatus s;
   trip_status(&s);
@@ -304,7 +336,7 @@ cJSON *c_ack(uint32_t id, const cJSON *, bool) {
   return o;
 }
 
-cJSON *c_list_trips(uint32_t id, const cJSON *, bool) {
+cJSON *c_list_trips(uint32_t id, const cJSON *, RpcSession *) {
   uint32_t t[64];
   const int n = flashlog_trips(t, 64);
   cJSON *o = ok(id);
@@ -364,7 +396,7 @@ bool summary_visit(const LogRecord &r, void *ctx) {
   return true;
 }
 
-cJSON *c_summary(uint32_t id, const cJSON *req, bool) {
+cJSON *c_summary(uint32_t id, const cJSON *req, RpcSession *) {
   double trip;
   if (!get_num(req, "trip", &trip) || trip < 1 || trip > TRIP_ID_REAL_MAX) {
     return fail(id, "BAD_ARGS", "trip");
@@ -415,7 +447,7 @@ bool chunk_visit(const LogRecord &r, void *ctx) {
   return true;
 }
 
-cJSON *c_read_log(uint32_t id, const cJSON *req, bool) {
+cJSON *c_read_log(uint32_t id, const cJSON *req, RpcSession *) {
   double trip, from = 0, max = 8;
   if (!get_num(req, "trip", &trip) || trip < 1) return fail(id, "BAD_ARGS", "trip");
   get_num(req, "from", &from);
@@ -428,7 +460,7 @@ cJSON *c_read_log(uint32_t id, const cJSON *req, bool) {
   return o;
 }
 
-cJSON *c_storage(uint32_t id, const cJSON *, bool) {
+cJSON *c_storage(uint32_t id, const cJSON *, RpcSession *) {
   LogStats s;
   flashlog_stats(&s);
   cJSON *o = ok(id);
@@ -442,7 +474,7 @@ cJSON *c_storage(uint32_t id, const cJSON *, bool) {
   return o;
 }
 
-cJSON *c_self_test(uint32_t id, const cJSON *, bool) {
+cJSON *c_self_test(uint32_t id, const cJSON *, RpcSession *) {
   cJSON *o = ok(id);
   cJSON *h = cJSON_AddObjectToObject(o, "health");
   for (int i = 0; i < (int)Dev::Count; i++) {
@@ -454,7 +486,7 @@ cJSON *c_self_test(uint32_t id, const cJSON *, bool) {
 
 void do_reboot(void *) { esp_restart(); }
 
-cJSON *c_reboot(uint32_t id, const cJSON *, bool) {
+cJSON *c_reboot(uint32_t id, const cJSON *, RpcSession *) {
   // Answered first; the restart follows once the answer has had time to
   // go out.
   if (!g_reboot) {
@@ -467,18 +499,19 @@ cJSON *c_reboot(uint32_t id, const cJSON *, bool) {
   return ok(id);
 }
 
-cJSON *c_later(uint32_t id, const cJSON *, bool) {
+cJSON *c_later(uint32_t id, const cJSON *, RpcSession *) {
   return fail(id, "NOT_SUPPORTED", "arrives with Wi-Fi and USB (P6)");
 }
 
 struct Cmd {
   const char *name;
   bool changes;     // needs an authorized link; idempotent by id
-  cJSON *(*fn)(uint32_t, const cJSON *, bool);
+  cJSON *(*fn)(uint32_t, const cJSON *, RpcSession *);
 };
 
 const Cmd CMDS[] = {
     {"GET_INFO", false, c_info},
+    {"AUTH", false, c_auth},
     {"GET_STATUS", false, c_status},
     {"GET_CONFIG", false, c_get_config},
     {"SET_CONFIG", true, c_set_config},
@@ -518,7 +551,8 @@ void rpc_note_power(const PowerStatus &ps) {
   portEXIT_CRITICAL(&g_mux);
 }
 
-char *rpc_handle(const char *req, size_t n, bool authorized) {
+char *rpc_handle(const char *req, size_t n, RpcSession *s) {
+  const bool authorized = s && s->authorized;
   cJSON *r = cJSON_ParseWithLength(req, n);
   const cJSON *jid = r ? cJSON_GetObjectItemCaseSensitive(r, "id") : nullptr;
   const cJSON *jcmd = r ? cJSON_GetObjectItemCaseSensitive(r, "cmd") : nullptr;
@@ -546,7 +580,7 @@ char *rpc_handle(const char *req, size_t n, bool authorized) {
   }
   if (c->changes && !authorized) {
     cJSON_Delete(r);
-    return print(fail(id, "NOT_AUTHORIZED", "pair with the device first"));
+    return print(fail(id, "NOT_AUTHORIZED", "tap the box, then AUTH"));
   }
 
   xSemaphoreTake(g_mx, portMAX_DELAY);
@@ -560,7 +594,7 @@ char *rpc_handle(const char *req, size_t n, bool authorized) {
       }
     }
   }
-  char *resp = print(c->fn(id, r, authorized));
+  char *resp = print(c->fn(id, r, s));
   if (c->changes) {
     Cached &slot = g_cache[g_cache_next];
     free(slot.resp);

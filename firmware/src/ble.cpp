@@ -20,8 +20,8 @@ extern "C" {
 void ble_store_config_init(void);
 }
 
+#include "auth.h"
 #include "board.h"
-#include "display.h"
 #include "record.h"
 #include "rpc.h"
 #include "trip.h"
@@ -61,6 +61,10 @@ volatile uint16_t g_mtu = 23;
 volatile uint32_t g_window_until = 0;
 volatile uint32_t g_requests = 0;
 volatile bool g_sub_status = false, g_sub_rsp = false, g_sub_evt = false;
+
+// The one connection's protocol session: its AUTH nonce and whether it
+// has proved it read the key from the NFC tag.
+RpcSession g_session = {};
 
 // Reassembly of one request from COMMAND writes.
 const size_t MSG_MAX = 4096;
@@ -127,11 +131,12 @@ int on_access(uint16_t conn, uint16_t, ble_gatt_access_ctxt *ctxt, void *arg) {
   if (ctxt->op == BLE_GATT_ACCESS_OP_READ_CHR) {
     char *s = nullptr;
     if (which == C_INFO) {
-      s = rpc_handle("{\"id\":1,\"cmd\":\"GET_INFO\"}", 25, false);
+      // With this connection's nonce in it: the AUTH challenge.
+      s = rpc_handle("{\"id\":1,\"cmd\":\"GET_INFO\"}", 25, &g_session);
     } else if (which == C_STATUS) {
       if (!g_status_cache || now_ms() - g_status_at > 1000) {
         free(g_status_cache);
-        g_status_cache = rpc_handle("{\"id\":1,\"cmd\":\"GET_STATUS\"}", 27, false);
+        g_status_cache = rpc_handle("{\"id\":1,\"cmd\":\"GET_STATUS\"}", 27, nullptr);
         g_status_at = now_ms();
       }
       s = strdup(g_status_cache);
@@ -222,6 +227,9 @@ int on_gap(ble_gap_event *ev, void *) {
       if (ev->connect.status == 0) {
         g_conn = ev->connect.conn_handle;
         g_mtu = 23;
+        g_session = {};
+        auth_new_nonce(g_session.nonce);
+        g_session.has_nonce = true;
         printf("[ble] connected\n");
       }
       break;
@@ -233,7 +241,10 @@ int on_gap(ble_gap_event *ev, void *) {
       g_sub_rsp = false;
       g_sub_evt = false;
       g_rx_next = -1;
-      display_passkey_clear();
+      // One tap, one session: a key that authorized a session is
+      // replaced shortly after it ends.
+      if (g_session.authorized) auth_session_ended();
+      g_session = {};
       // A phone that drops off may come straight back: keep the door
       // open a little longer.
       if ((int32_t)(g_window_until - now_ms()) < 30000) g_window_until = now_ms() + 30000;
@@ -253,37 +264,6 @@ int on_gap(ble_gap_event *ev, void *) {
       if (ev->subscribe.attr_handle == h_evt) g_sub_evt = ev->subscribe.cur_notify;
       break;
 
-    case BLE_GAP_EVENT_PASSKEY_ACTION:
-      if (ev->passkey.params.action == BLE_SM_IOACT_DISP) {
-        // The box shows a code, the person types it on the phone: proof
-        // that whoever pairs is holding this box.
-        ble_sm_io pk = {};
-        pk.action = BLE_SM_IOACT_DISP;
-        pk.passkey = esp_random() % 1000000;
-        ble_sm_inject_io(ev->passkey.conn_handle, &pk);
-        display_passkey(pk.passkey);
-        printf("[ble] pairing: passkey %06lu on the display\n", (unsigned long)pk.passkey);
-      }
-      break;
-
-    case BLE_GAP_EVENT_ENC_CHANGE: {
-      display_passkey_clear();
-      ble_gap_conn_desc d;
-      if (ble_gap_conn_find(ev->enc_change.conn_handle, &d) == 0) {
-        printf("[ble] link %s%s\n", d.sec_state.encrypted ? "encrypted" : "NOT encrypted",
-               d.sec_state.authenticated ? ", authenticated" : "");
-      }
-      break;
-    }
-
-    case BLE_GAP_EVENT_REPEAT_PAIRING: {
-      // The phone forgot the bond and pairs again: forget ours too.
-      ble_gap_conn_desc d;
-      if (ble_gap_conn_find(ev->repeat_pairing.conn_handle, &d) == 0) {
-        ble_store_util_delete_peer(&d.peer_id_addr);
-      }
-      return BLE_GAP_REPEAT_PAIRING_RETRY;
-    }
   }
   return 0;
 }
@@ -302,12 +282,6 @@ void on_reset(int reason) {
 void host_task(void *) {
   nimble_port_run();
   nimble_port_freertos_deinit();
-}
-
-bool authorized(uint16_t conn) {
-  ble_gap_conn_desc d;
-  return ble_gap_conn_find(conn, &d) == 0 && d.sec_state.encrypted &&
-         d.sec_state.authenticated;
 }
 
 // ---- the worker: requests, notifications, advertising policy -------------
@@ -340,7 +314,9 @@ void worker(void *) {
         send_framed(m.conn, h_rsp, m.data, strlen(m.data));
       } else {
         g_requests = g_requests + 1;
-        char *resp = rpc_handle(m.data, m.n, authorized(m.conn));
+        // A request from a link that has since closed has no session.
+        RpcSession none = {};
+        char *resp = rpc_handle(m.data, m.n, m.conn == g_conn ? &g_session : &none);
         send_framed(m.conn, h_rsp, resp, strlen(resp));
         free(resp);
       }
@@ -361,7 +337,7 @@ void worker(void *) {
       if (s.acked && !prev.acked) event("ALARM_ACK");
       if (g_sub_status && (s.active != prev.active || s.alarms_active != prev.alarms_active ||
                            s.acked != prev.acked || s.samples != prev.samples)) {
-        char *st = rpc_handle("{\"id\":1,\"cmd\":\"GET_STATUS\"}", 27, false);
+        char *st = rpc_handle("{\"id\":1,\"cmd\":\"GET_STATUS\"}", 27, nullptr);
         send_json(h_status, true, st);
         free(st);
       }
@@ -389,12 +365,13 @@ void ble_start(const char *sn) {
   ble_hs_cfg.sync_cb = on_sync;
   ble_hs_cfg.reset_cb = on_reset;
   ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
-  ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_DISP_ONLY;
-  ble_hs_cfg.sm_bonding = 1;
-  ble_hs_cfg.sm_mitm = 1;
+  // No pairing is asked for: authority comes from the NFC tap (auth.h),
+  // so the phone shows no pairing prompt. If a phone pairs anyway, it
+  // gets LE Secure Connections, Just Works.
+  ble_hs_cfg.sm_io_cap = BLE_SM_IO_CAP_NO_IO;
+  ble_hs_cfg.sm_bonding = 0;
+  ble_hs_cfg.sm_mitm = 0;
   ble_hs_cfg.sm_sc = 1;
-  ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
-  ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
 
   U_SVC = uuid(0x0000);
   U_INFO = uuid(0x0001);
@@ -413,12 +390,11 @@ void ble_start(const char *sn) {
   g_chrs[1].arg = (void *)C_STATUS;
   g_chrs[1].flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY;
   g_chrs[1].val_handle = &h_status;
-  // Writing a command needs an encrypted, authenticated (passkey) link.
+  // Anyone may write a request; what it may do is up to AUTH.
   g_chrs[2].uuid = &U_CMD.u;
   g_chrs[2].access_cb = on_access;
   g_chrs[2].arg = (void *)C_CMD;
-  g_chrs[2].flags = BLE_GATT_CHR_F_WRITE | BLE_GATT_CHR_F_WRITE_ENC |
-                    BLE_GATT_CHR_F_WRITE_AUTHEN;
+  g_chrs[2].flags = BLE_GATT_CHR_F_WRITE;
   g_chrs[3].uuid = &U_RSP.u;
   g_chrs[3].access_cb = on_access;
   g_chrs[3].arg = (void *)C_RSP;
@@ -470,9 +446,5 @@ void ble_status(BleStatus *out) {
   out->connected = g_conn != BLE_HS_CONN_HANDLE_NONE;
   out->mtu = g_mtu;
   out->requests = g_requests;
-  ble_gap_conn_desc d;
-  if (out->connected && ble_gap_conn_find(g_conn, &d) == 0) {
-    out->encrypted = d.sec_state.encrypted;
-    out->authenticated = d.sec_state.authenticated;
-  }
+  out->authorized = out->connected && g_session.authorized;
 }

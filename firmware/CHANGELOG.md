@@ -36,6 +36,31 @@ To cut a release:
 
 ## Unreleased
 
+P5: BLE, NFC, protocol.
+
+- `PROTOCOL.md`: protocol 1, proposed to the iOS team -- GATT service and
+  UUIDs, MTU-independent fragments, JSON requests with ids, errors, the
+  section 13 commands
+- `rpc`: the commands, transport-independent; changing commands need an
+  authorized session and are idempotent by request id (START_TRIP's
+  survives a reset); unknown values are null, never 0
+- `ble`: NimBLE peripheral advertising the SN; only after an NFC tap
+  (60 s) or on external power
+- **Tap to authorize** (decided 2026-10-02, instead of a passkey on the
+  display): the NFC record carries a random key; each BLE connection
+  gets a nonce in INFO and proves the key with AUTH =
+  HMAC-SHA256(key, nonce). No pairing prompt, nothing to type; the key
+  never goes over the air and changes at every reset and 2 min after a
+  session ends. The tag is written only while no phone holds it, and a
+  new key is used only after it reads back from the tag
+- `tools/ble_client.py`: a reference client doing what the app must
+- Checked over real BLE from a PC: command before AUTH refused, wrong
+  proof refused, right proof accepted, a previous connection's proof
+  refused, the old key refused after rotation and the new one accepted,
+  395- and 467-byte answers reassembled from fragments, START_TRIP
+  retried with one id gives one trip. A phone (nRF Connect) connected,
+  read INFO and exchanged a command
+
 ## 0.4.0 — 2026-10-02
 
 P4 complete: lights, sound and the e-paper -- on the mono panel in hand,

@@ -12,11 +12,15 @@ command), and later USB CDC and anything else can carry them unchanged.
 ## 1. Finding the device
 
 1. The app reads the NFC tag: an NDEF record of MIME type
-   `application/json`, `{"sn":"MCOLD-9A74","ble":"28:84:85:27:9A:76"}`.
-   This is the record bring-up wrote and the firmware keeps on the tag
-   (rewritten only when it differs). The app team owns this schema;
-   firmware will add a URI record (for the iOS banner) once there is a
-   URL to put in it.
+   `application/json`:
+   ```json
+   {"sn":"MCOLD-9A74","ble":"28:84:85:27:9A:76","key":"571ab30e58225355ccfc9b010a935f65"}
+   ```
+   `sn` and `ble` are the record bring-up wrote; `key` is this box's
+   current authorization key (section 2, *Authorization*). The device
+   keeps the record up to date itself, rewriting only bytes that
+   change. The app team owns this schema; firmware will add a URI
+   record (for the iOS banner) once there is a URL to put in it.
 2. Tapping the tag also wakes the device's BLE: it advertises for 60 s.
 3. **iOS never sees a BLE MAC.** The app finds the device by its
    advertised name, which is the SN, and filters on the service UUID.
@@ -37,8 +41,8 @@ One primary service. All UUIDs share the base
 | `d2a50000-…` | mCOLD service | | |
 | `d2a50001-…` | INFO | read | open |
 | `d2a50002-…` | STATUS | read, notify | open |
-| `d2a50003-…` | COMMAND | write | **encrypted + authenticated** |
-| `d2a50004-…` | RESPONSE | notify | sent only on an authenticated link |
+| `d2a50003-…` | COMMAND | write | open; what a request may do depends on AUTH |
+| `d2a50004-…` | RESPONSE | notify | open |
 | `d2a50005-…` | EVENT | notify | open |
 
 - **INFO** is the `GET_INFO` result (section 4), so an app can check the
@@ -50,14 +54,40 @@ One primary service. All UUIDs share the base
   `{"ev":"ALARM_RAISE","alarm":"TEMP_HIGH"}`, `ALARM_CLEAR`, `ALARM_ACK`,
   `TRIP_START`, `TRIP_STOP`.
 
-### Pairing
+### Authorization: tap to authorize
 
-LE Secure Connections with MITM protection. The device's IO capability
-is *display only*: when iOS pairs, the device shows a 6-digit passkey
-on its e-paper and the user types it into the iOS prompt. So whoever
-changes the device's settings or starts a trip was holding it. iOS
-starts pairing by itself the first time the app writes COMMAND (the
-write needs an authenticated link). The bond is kept on both sides.
+Decided 2026-10-02, instead of a passkey on the display. **No BLE
+pairing**: the phone shows no system prompt, and nobody types anything.
+
+Anyone in BLE range may read INFO and STATUS. Commands that change
+something (marked ✎ in section 4) need an *authorized session*, and a
+session is authorized by proving the app read the NFC tag -- which works
+only from a few centimetres, so only with the box in hand.
+
+1. Tap: read `key` (16 bytes, hex) from the tag record.
+2. Connect, and read **INFO**. It carries `nonce`: 16 random bytes, hex,
+   new for every connection.
+3. Send `{"id":…,"cmd":"AUTH","proof":"<hex>"}` with
+   `proof = HMAC-SHA256(key, nonce)`, both as raw bytes (not as hex text).
+4. `{"ok":true}`: this connection may now send any command, until it
+   closes. `NOT_AUTHORIZED`: tap again and retry.
+
+The key never travels over BLE; someone listening sees a nonce and a
+proof that are useless on any other connection.
+
+**The key changes** at every reset of the device, and 2 minutes after
+a session that used it closes. So one tap opens one session (and a
+link that drops can come back within 2 minutes on the same tap). The
+device writes the new key to the tag before it starts accepting it, so
+the tag never offers a key the device would refuse.
+
+Example, from the firmware's own test client:
+
+```
+key   7b3066da5096846781a0b5c1d0f6699b
+nonce 951c0f73…  (from INFO)
+proof = HMAC-SHA256(key, nonce) -> {"cmd":"AUTH","proof":"…"} -> ok
+```
 
 ### Fragments
 
@@ -110,7 +140,7 @@ Errors:
 | `BAD_REQUEST` | not JSON, no `id`, or no `cmd` |
 | `UNKNOWN_CMD` | `cmd` is not one this firmware knows |
 | `BAD_ARGS` | an argument missing or out of range |
-| `NOT_AUTHORIZED` | needs an authenticated link |
+| `NOT_AUTHORIZED` | needs an authorized session (AUTH), or AUTH failed |
 | `UNSUPPORTED_PROTO` | `proto` too new |
 | `ALREADY_ACTIVE` / `NOT_ACTIVE` | trip state does not allow it |
 | `LOG_FULL`, `NO_LOG`, `FLASH` | storage could not do it |
@@ -124,7 +154,8 @@ A value the device does not have is **absent or `null`, never 0**.
 
 | Command | ✎ | Arguments | Result |
 |---|---|---|---|
-| `GET_INFO` | | | `proto`, `sn`, `fw`, `hw`, `idf`, `boot`, `uptime_s` |
+| `GET_INFO` | | | `proto`, `sn`, `fw`, `hw`, `idf`, `boot`, `uptime_s`; over BLE also `nonce` and `authorized` |
+| `AUTH` | | `proof` (hex) | authorizes this connection (section 2) |
 | `GET_STATUS` | | | see below |
 | `GET_CONFIG` | | | `config`: every setting with its value |
 | `SET_CONFIG` | ✎ | `key`, `value` | |
@@ -164,8 +195,8 @@ by an older app, only not yet understood.
 ## 5. Open questions for the app team
 
 1. Accept or change the UUIDs, the fragment format and JSON.
-2. Is the passkey on the e-paper the pairing they want? (The display
-   refreshes in about 2.5 s; the four-ink panel will take far longer.)
-3. Should STATUS be readable without pairing? It carries temperature
-   and position.
-4. The NFC record: keep `{"sn","ble"}`, and which URL for the banner?
+2. Tap-to-authorize (section 2): the `key` field in the tag record, AUTH
+   with HMAC-SHA256 over the per-connection nonce.
+3. Should STATUS be readable without AUTH? It carries temperature and
+   position.
+4. The NFC record: keep `{"sn","ble","key"}`, and which URL for the banner?

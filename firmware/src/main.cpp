@@ -44,6 +44,7 @@
 #include "display.h"
 #include "rpc.h"
 #include "ble.h"
+#include "auth.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -283,10 +284,20 @@ void task_nfc(void *) {
                p.field == NfcField::RfBusy ? "I2C refused" : "field",
                (unsigned long)nfc_tap_count());
         fflush(stdout);
-        // "This is the box you tapped." BLE comes up here in P5.
+        // "This is the box you tapped."
         indicate_cue(Cue::NfcTap);
         // The tap is how a phone asks for the box: open BLE for it.
         ble_window(BLE_TAP_WINDOW_MS);
+      }
+      // The key goes on the tag when it is due and nothing is reading
+      // it: a phone on the antenna holds the tag's RF side and the write
+      // would only be refused. Not more than every few seconds either.
+      static uint32_t last_try = 0;
+      if (p.field == NfcField::Absent && auth_needs_publish() &&
+          (!last_try || t - last_try > 5000)) {
+        last_try = t ? t : 1;
+        printf("[nfc] %s\n", auth_publish() ? "new key on the tag" : "key write refused, will retry");
+        fflush(stdout);
       }
     }
     // Edges latch in the tag, so a slow poll still catches a quick tap.
@@ -546,28 +557,17 @@ void print_nfc(void) {
   for (int i = 0; i < 8; i++) printf("%02X", uid[i]);
   printf("   IC_REF 0x%02X\n", nfc_ic_ref());
   printf("  taps       %lu since boot\n", (unsigned long)nfc_tap_count());
-  uint8_t b[48];
+  // The whole record, so what a phone will read can be checked here.
+  uint8_t b[128];
   if (nfc_read_user(0, b, sizeof(b))) {
-    printf("  memory     ");
-    for (size_t i = 0; i < sizeof(b); i++) {
-      printf("%c", b[i] >= 32 && b[i] < 127 ? (char)b[i] : '.');
+    printf("  record     ");
+    for (size_t i = 0; i < sizeof(b) && b[i] != 0xFE; i++) {
+      if (b[i] >= 32 && b[i] < 127) putchar((char)b[i]);
     }
     printf("\n");
   }
-  printf("\n");
-}
-
-void nfc_write_sn(void) {
-  char sn[24];
-  device_sn(sn, sizeof(sn));
-  uint8_t rec[64];
-  const size_t n = ndef_text_record(sn, rec, sizeof(rec));
-  if (n && nfc_write_ndef(rec, n)) {
-    printf("  wrote and verified a Text record \"%s\"\n", sn);
-  } else {
-    printf("  write FAILED at a block that did not verify; the tag may now"
-           " hold a partial record\n");
-  }
+  printf("  key        %s\n\n", auth_published() ? "on the tag, in force"
+                                                 : "not yet on the tag: AUTH will refuse");
 }
 
 // ---- trip log ----------------------------------------------------------
@@ -810,8 +810,9 @@ void print_ble(void) {
   printf("\n  BLE        %s, %s\n", b.enabled ? "enabled" : "off",
          b.connected ? "connected" : b.advertising ? "advertising" : "quiet");
   if (b.connected) {
-    printf("  link       %s%s, MTU %u\n", b.encrypted ? "encrypted" : "not encrypted",
-           b.authenticated ? " + authenticated (paired)" : "", b.mtu);
+    printf("  session    %s, MTU %u\n",
+           b.authorized ? "authorized (AUTH with the tag's key)" : "read-only, no AUTH yet",
+           b.mtu);
   }
   printf("  requests   %lu over BLE since boot\n\n", (unsigned long)b.requests);
 }
@@ -819,7 +820,9 @@ void print_ble(void) {
 // The protocol from the console: whoever has the cable has the box, so
 // the request runs as authorized.
 void rpc_command(const char *json) {
-  char *resp = rpc_handle(json, strlen(json), true);
+  RpcSession console = {};
+  console.authorized = true;
+  char *resp = rpc_handle(json, strlen(json), &console);
   printf("  %s\n", resp);
   free(resp);
 }
@@ -899,7 +902,6 @@ void print_help(void) {
   printf("  accel           XYZ now, and the motion event count\n");
   printf("  gnss            receiver statistics and last fix\n");
   printf("  nfc             tag identity, taps, first bytes of memory\n");
-  printf("  nfc write       write the SN as an NDEF Text record\n");
   printf("  led I R G B     light pixel I (0-3) for a second\n");
   printf("  ledtest [S] [N] side red, left green, middle blue, right white;\n");
   printf("                  S seconds each (4), N rounds (1)\n");
@@ -964,7 +966,6 @@ void run_command(char *line) {
   else if (!strcmp(line, "accel")) print_accel();
   else if (!strcmp(line, "gnss")) print_gnss();
   else if (!strcmp(line, "nfc")) print_nfc();
-  else if (!strcmp(line, "nfc write")) nfc_write_sn();
   else if (!strcmp(line, "help")) print_help();
   else if (!strcmp(line, "log")) print_log();
   else if (!strncmp(line, "rpc ", 4)) rpc_command(line + 4);
@@ -1110,6 +1111,7 @@ extern "C" void app_main(void) {
     trip_init(sn);     // resumes a trip a reset interrupted
     display_start(sn); // like indicate: reads state, owns none
     rpc_init(sn);
+    auth_init(sn);     // a new key; the NFC task puts it on the tag
     ble_start(sn);     // after NVS (bonds) and rpc (what it carries)
     config_on_change(config_changed);
   }

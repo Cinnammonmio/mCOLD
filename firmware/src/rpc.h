@@ -1,11 +1,11 @@
 // The device protocol (PROTOCOL.md): JSON requests in, JSON responses
 // out, the same over every transport.
 //
-// A transport hands over one complete request and says whether the link
-// it came in on is authorized -- for BLE, encrypted and authenticated by
-// pairing with the passkey shown on the e-paper; for the USB console,
-// always, since whoever has the cable has the box. Commands that change
-// anything refuse an unauthorized link.
+// A transport hands over one complete request with the session it came
+// in on. A session is authorized either by the transport -- the USB
+// console always is, since whoever has the cable has the box -- or by
+// AUTH: proof that the client read the key from the NFC tag (auth.h).
+// Commands that change anything refuse a session that is not.
 //
 // Commands that change anything are idempotent by request id: the same
 // id again returns the first answer and does nothing else, so a client
@@ -17,11 +17,21 @@
 
 #include "power.h"
 
+#include <stdint.h>
+
+// One connection's worth of state. The transport creates it when the
+// link opens (with a fresh nonce) and drops it when the link closes.
+struct RpcSession {
+  bool authorized;
+  bool has_nonce;
+  uint8_t nonce[16];
+};
+
 void rpc_init(const char *sn);
 
 // Handles one request. Returns a malloc'd, NUL-terminated JSON response,
-// never null; the caller frees it.
-char *rpc_handle(const char *req, size_t n, bool authorized);
+// never null; the caller frees it. AUTH may set s->authorized.
+char *rpc_handle(const char *req, size_t n, RpcSession *s);
 
 // Latest power reading, from the power task.
 void rpc_note_power(const PowerStatus &ps);

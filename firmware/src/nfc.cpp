@@ -172,19 +172,3 @@ bool nfc_write_ndef(const uint8_t *ndef, size_t n) {
   }
   return true;
 }
-
-size_t ndef_text_record(const char *text, uint8_t *out, size_t cap) {
-  const size_t tl = strlen(text);
-  const size_t payload = 3 + tl;          // status byte, "en", text
-  if (payload > 255 || 4 + payload > cap) return 0;
-  size_t i = 0;
-  out[i++] = 0xD1;     // first and last record, short, well-known type
-  out[i++] = 0x01;     // type length
-  out[i++] = (uint8_t)payload;
-  out[i++] = 'T';
-  out[i++] = 0x02;     // UTF-8, two-letter language code follows
-  out[i++] = 'e';
-  out[i++] = 'n';
-  memcpy(out + i, text, tl);
-  return i + tl;
-}
