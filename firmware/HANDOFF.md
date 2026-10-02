@@ -220,15 +220,25 @@ remove this.
 fault reported anywhere. `rtc_begin()` writes it on every boot. This is
 not a production-time setting.
 
-### The RTC has no backup supply
+### The RTC has no backup supply (as drawn)
 
-`Control_3` reads `0xE0`: battery switch-over disabled, and the VBAT net
-has no cell fitted. When the main rail drops, the time is gone — it was
-found reading 2020-07-02 with the oscillator-stopped flag set.
+The RTC's VDD is 3V3_MAIN, which SW3 cuts; the VBAT_3V net has no cell
+in the schematic, and `Control_3` comes up `0xE0`: switch-over disabled.
+So switching the box off loses the time -- it was found reading
+2020-07-02 with the oscillator-stopped flag set.
 
-So `rtc_time_valid()` exists, and **nothing may stamp a record with a
-time the device cannot vouch for**. Re-sync from GNSS (`$GNRMC` carries
-date and time) or from the app. Do not substitute a default date.
+**This prototype has a CR1220 hand-soldered onto VBAT_3V (2026-10-02)**,
+and `rtc_begin()` now sets `Control_3` to `0x00` on every boot:
+switch-over in standard mode, battery-low detection on. `health` shows
+the cell's state and whether it carried the clock through a power-off.
+The README's suggested rework -- VBAT tied to VSS -- is for a board with
+no backup at all; **do not do it on a board with the cell.** The next
+board revision should have a cell or supercap on VBAT_3V by design.
+
+Either way `rtc_time_valid()` stays the rule: **nothing may stamp a
+record with a time the device cannot vouch for.** Without the cell, the
+time comes back from NTP (seconds after Wi-Fi), GNSS (`$GNRMC`), or the
+app. Never a default date.
 
 ### The BQ25601 silently undoes its own configuration
 

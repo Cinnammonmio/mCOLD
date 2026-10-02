@@ -472,6 +472,10 @@ void print_health(void) {
            tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour,
            tmv.tm_min, tmv.tm_sec, rtc_source_name(rtc_source()),
            rtc_time_valid() ? "" : "  <- NOT USABLE for timestamps");
+    printf("  RTC cell     %s%s (Control_3 was 0x%02X at boot)\n",
+           rtc_backup_low() ? "LOW or absent" : "ok",
+           rtc_ran_on_backup() ? ", carried the clock through a power-off" : "",
+           rtc_control3_at_boot());
   } else {
     printf("  clock        no answer\n");
   }
