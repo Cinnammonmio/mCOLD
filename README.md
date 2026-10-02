@@ -102,8 +102,8 @@ Hardware พิสูจน์แล้วด้วย [`bringup/`](bringup/) ·
 | P2 เวลา/ตั้งค่า/flash log | 0.2.0 | UTC + ความน่าเชื่อถือ · config ใน NVS · log ทนไฟดับ | ✅ |
 | P3 trip + sensing | 0.3.0 | เริ่ม/จบ trip พร้อม alarm ของ trip นั้น · เก็บข้อมูลทุก 5 นาที · event · alarm · กู้ trip หลัง reset · ลบ trip เก่าเมื่อเต็ม · ปิดฟังก์ชันประตู | ✅ |
 | P4 จอ, LED, buzzer | 0.4.0 | จอ e-paper (ใช้จอขาวดำไปก่อน) · pattern ไฟและเสียงตาม `docs/led-design.md` | ✅ · จอ 4 สียังไม่มา |
-| P5 BLE/NFC | 0.5.0 | BLE GATT · ชุดคำสั่ง · NDEF · แตะ NFC แล้วเปิด BLE | กำลังทำ · รอ UUID/NDEF จากทีม iOS |
-| P6 sync, USB, OTA | 0.6.0 | Wi-Fi + MQTT · ACK แล้วคืนพื้นที่ · USB drive + CSV · SD · OTA | รอ topic/ACK/TLS จากทีม server |
+| P5 BLE/NFC | 0.5.0 | BLE GATT · ชุดคำสั่ง · NDEF · แตะ NFC เพื่อยืนยันสิทธิ์ (ไม่ต้อง pair) | ✅ · รอทีม iOS ยืนยัน PROTOCOL.md |
+| P6 sync, USB, OTA | 0.6.0 | Wi-Fi + MQTT · ACK แล้วคืนพื้นที่ · USB drive + CSV · SD · OTA | กำลังทำ · รอ Wi-Fi, topic/ACK/TLS จากทีม server |
 | P7 พลังงาน | 0.7.0 | deep sleep · wake ทุกแหล่ง · charger/PD · วัดจริงให้ได้ 7 วัน | รอ datasheet แบต |
 | P8 พร้อมผลิต | 1.0.0 | watchdog · security · acceptance test §14 · Dock 6 เครื่อง · factory provisioning | — |
 

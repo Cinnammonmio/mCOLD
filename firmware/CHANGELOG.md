@@ -36,7 +36,14 @@ To cut a release:
 
 ## Unreleased
 
-P5: BLE, NFC, protocol.
+## 0.5.0 — 2026-10-02
+
+P5 complete: the app's way in -- NFC to find and authorize, BLE to talk,
+one JSON protocol over both. Proposed to the iOS team; not yet
+confirmed by them.
+
+Not yet checked: a tap opening BLE while the box runs on battery (on
+USB power it advertises all the time, so the bench cannot show it).
 
 - `PROTOCOL.md`: protocol 1, proposed to the iOS team -- GATT service and
   UUIDs, MTU-independent fragments, JSON requests with ids, errors, the
