@@ -231,6 +231,8 @@ So switching the box off loses the time -- it was found reading
 and `rtc_begin()` now sets `Control_3` to `0x00` on every boot:
 switch-over in standard mode, battery-low detection on. `health` shows
 the cell's state and whether it carried the clock through a power-off.
+**Checked 2026-10-02:** SW3 off for a minute or two, then on: `Control_3`
+read `0x08` (BSF: it ran on the cell), source `rtc`, time still right.
 The README's suggested rework -- VBAT tied to VSS -- is for a board with
 no backup at all; **do not do it on a board with the cell.** The next
 board revision should have a cell or supercap on VBAT_3V by design.
