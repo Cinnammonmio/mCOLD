@@ -1,7 +1,7 @@
 #include "indicate.h"
 
 #include <driver/gpio.h>
-#include <esp_timer.h>
+#include <esp_attr.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <string.h>
@@ -11,6 +11,7 @@
 #include "config.h"
 #include "health.h"
 #include "leds.h"
+#include "pm.h"
 #include "record.h"
 #include "timekeep.h"
 #include "trip.h"
@@ -68,11 +69,16 @@ const uint32_t STEP_MS = 10;
 const uint32_t BOOT_DELAY_MS = 3000;   // let every device be tried once first
 
 volatile int g_cue = -1;               // pending cue; a newer one replaces it
-uint32_t g_window_until = 0;
-uint32_t g_windows[INDICATE_WINDOWS_PER_HOUR];
+// The hourly budget is kept through deep sleep: forgetting it at every
+// wake would hand a box shaking in a truck a fresh budget every time.
+RTC_DATA_ATTR uint32_t g_window_until = 0;
+RTC_DATA_ATTR uint32_t g_windows[INDICATE_WINDOWS_PER_HOUR];
+RTC_DATA_ATTR uint32_t g_windows_magic = 0;
+const uint32_t WINDOWS_MAGIC = 0x494E4431;   // "IND1"
 portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// Runs through deep sleep (timekeep.h), so times kept across one compare.
+uint32_t now_ms(void) { return mono_ms(); }
 
 uint32_t length(const Track &t) {
   uint32_t d = t.delay_ms;
@@ -93,8 +99,11 @@ bool lit(const Track &t, uint32_t at) {
 }
 
 // Plays tracks together, each on its own pixel, and leaves them dark.
+bool in_window(void);
+
 void play(const Track *tr, int n) {
   if (n <= 0) return;
+  pm_hold(Hold::Indicate, true);     // a pattern cut off by sleep stays lit
   uint32_t total = 0;
   for (int i = 0; i < n; i++) {
     const uint32_t d = length(tr[i]);
@@ -111,6 +120,7 @@ void play(const Track *tr, int n) {
   }
   for (int i = 0; i < n; i++) leds_set(tr[i].pixel, 0, 0, 0);
   leds_show();
+  pm_hold(Hold::Indicate, in_window());
 }
 
 void play_one(int pixel, Pat p, Rgb c) {
@@ -136,15 +146,15 @@ void sweep(Rgb c) {
 // Three beeps for an alarm. The lights are dark while it sounds.
 void alarm_sound(void) {
   if (!config().buzzer_enabled) return;
+  pm_hold(Hold::Indicate, true);
   for (int i = 0; i < 3; i++) {
     buzzer_beep(150);
     vTaskDelay(pdMS_TO_TICKS(300));
   }
+  pm_hold(Hold::Indicate, in_window());
 }
 
-bool external_power(void) {
-  return gpio_get_level((gpio_num_t)PIN_PG_N) == 0;   // PG# low = power good
-}
+bool external_power(void) { return pm_external_power(); }
 
 bool device_fault(const TripStatus &s) {
   if (s.active && (s.alarms_active & DEVICE_ALARMS)) return true;
@@ -195,17 +205,29 @@ void open_window(bool counted) {
   }
   if (allowed) g_window_until = t + INDICATE_WINDOW_MS;
   portEXIT_CRITICAL(&g_mux);
+  // Someone is looking: the box stays up to show them.
+  if (allowed) pm_hold(Hold::Indicate, true);
 }
 
 bool in_window(void) { return (int32_t)(g_window_until - now_ms()) > 0; }
 
 void task(void *) {
-  vTaskDelay(pdMS_TO_TICKS(BOOT_DELAY_MS));
-  boot_cue();
-
   TripStatus prev;
-  trip_status(&prev);
+  if (!pm_warm()) {
+    vTaskDelay(pdMS_TO_TICKS(BOOT_DELAY_MS));
+    boot_cue();
+    trip_status(&prev);
+  } else {
+    // A wake from sleep is not a boot and gets no boot sweep. It is the
+    // moment the steady status is due (on battery that is once a sample
+    // period, and the box sleeps the rest), shown once the sample that
+    // woke it has been taken -- an alarm it raises shows in this frame.
+    for (int i = 0; i < 50 && !pm_is_done(Duty::Trip); i++) vTaskDelay(pdMS_TO_TICKS(100));
+    trip_status(&prev);
+    play_status(prev);
+  }
   uint32_t last_status = now_ms();
+  pm_done(Duty::Indicate);
 
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(50));
@@ -240,6 +262,7 @@ void task(void *) {
       play_one(LED_CARGO, Pat::Blink, BLUE);           // acknowledged
     }
     prev = s;
+    if (!in_window()) pm_hold(Hold::Indicate, false);
 
     // The steady status, as often as it can be afforded.
     const uint32_t t = now_ms();
@@ -257,7 +280,11 @@ void task(void *) {
 
 void indicate_start(void) {
   leds_set_brightness(config().led_bright_pct);
-  memset(g_windows, 0, sizeof(g_windows));
+  if (!pm_warm() || g_windows_magic != WINDOWS_MAGIC) {
+    memset(g_windows, 0, sizeof(g_windows));
+    g_window_until = 0;
+    g_windows_magic = WINDOWS_MAGIC;
+  }
   xTaskCreatePinnedToCore(task, "indicate", 3072, nullptr, 2, nullptr, 0);
 }
 

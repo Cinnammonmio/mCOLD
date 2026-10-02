@@ -54,6 +54,8 @@ struct PowerStatus {
 };
 
 void power_init(void);
+// Before deep sleep: parts that would otherwise draw current for nothing.
+void power_sleep(void);
 
 // Reads all three. Fields whose device did not answer are left invalid
 // rather than zeroed, so a failure cannot be mistaken for a reading.

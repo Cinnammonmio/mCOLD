@@ -23,6 +23,15 @@
 //   mcold/<sn>/online   device -> server   "1" / "0" (last will), retained
 //
 // Broker and login are in NVS (namespace "mqtt"), never in the image.
+//
+// On USB power the connection stays up. On battery (P7) it is a session:
+// when records are waiting and upload_period_s has passed, Wi-Fi comes
+// up, the status and as many batches as the server ACKs within the
+// session go out, "0" is published on the online topic, and the radio
+// goes off again until the next one. A session that gets no ACK --
+// broker out of reach, or a server that does not answer -- doubles the
+// wait before the next, up to four hours, so the battery is not spent
+// on a conversation that is not happening.
 #pragma once
 
 #include <stdbool.h>
@@ -55,7 +64,11 @@ struct UplinkStatus {
   uint32_t acks;           // application ACKs accepted
   uint32_t acks_rejected;  // malformed, unknown trip, or beyond the log
   uint32_t records_pending;
-  uint32_t last_ack_ms;    // 0: never
+  uint32_t last_ack_ms;    // mono_ms(); 0: never
+  // Battery sessions
+  uint32_t sessions;
+  bool last_session_ok;    // reached the broker
+  uint32_t next_session_ms;   // mono_ms() the next is due; 0: none planned
 };
 void uplink_status(UplinkStatus *out);
 

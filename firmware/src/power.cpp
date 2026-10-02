@@ -14,6 +14,12 @@ const uint8_t MAX_SOC = 0x04;       // high byte percent, low byte /256
 const uint8_t MAX_CRATE = 0x16;     // signed, 0.208 %/hr per count
 
 // INA226 across R15
+const uint8_t INA_CONFIG = 0x00;
+// 16 averages of 1.1 ms shunt and bus conversions, continuous: a reading
+// every 35 ms that is not one instant of a current that pulses with the
+// radio. MODE 000 is power-down.
+const uint16_t INA_RUN = 0x4000 | (2 << 9) | (4 << 6) | (4 << 3) | 7;
+const uint16_t INA_OFF = INA_RUN & ~7;
 const uint8_t INA_SHUNT = 0x01;     // signed, 2.5 uV per count
 const uint8_t INA_BUS = 0x02;       // 1.25 mV per count
 const float SHUNT_OHMS = 0.010f;
@@ -34,11 +40,26 @@ bool read16(Dev d, uint8_t addr, uint8_t reg, uint16_t *v) {
 
 }  // namespace
 
+bool write16(Dev d, uint8_t addr, uint8_t reg, uint16_t v) {
+  const uint8_t b[3] = {reg, (uint8_t)(v >> 8), (uint8_t)v};
+  return i2c_write(d, addr, b, 3) == BusErr::Ok;
+}
+
 void power_init(void) {
-  // Nothing is configured here on purpose. The charger's limits depend
-  // on a battery datasheet that is still listed as unconfirmed, and
-  // writing a charge current chosen from a guess is worse than leaving
-  // the part at the defaults it was designed to be safe at.
+  // The charger is not configured here on purpose. Its limits depend on
+  // a battery datasheet that is still listed as unconfirmed, and writing
+  // a charge current chosen from a guess is worse than leaving the part
+  // at the defaults it was designed to be safe at.
+  //
+  // The current monitor is: it comes out of power-down (power_sleep).
+  write16(Dev::Current, ADDR_INA226, INA_CONFIG, INA_RUN);
+}
+
+void power_sleep(void) {
+  // Left converting, the INA226 draws 330 uA -- about 5 % of the whole
+  // 7-day budget, spent measuring a current nobody reads while the chip
+  // sleeps. Power-down is 0.5 uA.
+  write16(Dev::Current, ADDR_INA226, INA_CONFIG, INA_OFF);
 }
 
 void power_read(PowerStatus *out) {

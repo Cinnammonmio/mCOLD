@@ -52,6 +52,11 @@ constexpr Field FIELDS[] = {
     F(led_bright_pct, 1, 100, 20, "%"),
     F(tz_offset_min, -720, 840, 420, "min"),
     F(buzzer_enabled, 0, 1, 1, ""),
+    F(sleep_en, 0, 1, 1, ""),
+    F(idle_wake_s, 300, 86400, 3600, "s"),
+    F(gnss_period_s, 300, 86400, 1800, "s"),
+    F(upload_period_s, 60, 86400, 300, "s"),
+    F(sleep_usb, 0, 1, 0, ""),
 };
 #undef F
 

@@ -20,6 +20,7 @@
 #include "screens.h"
 #include "timekeep.h"
 #include "net.h"
+#include "pm.h"
 #include "trip.h"
 #include "uplink.h"
 
@@ -51,20 +52,24 @@ PowerStatus g_pwr = {};
 bool g_have_pwr = false;
 portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 
-// What is on the glass now, and the state that put it there.
-uint32_t g_shown_hash = 0;
-uint32_t g_shown_at = 0;              // 0: nothing drawn since boot
-bool g_shown_active = false;
-uint16_t g_shown_alarms = 0;
-bool g_shown_acked = false;
-uint8_t g_shown_icons = 0xFF;      // footer-left icons + USB power, as bits
-uint32_t g_icons_drawn_at = 0;
+// What is on the glass now, and the state that put it there. Kept
+// through deep sleep -- the panel keeps its picture with no power, and
+// a box that forgot what it showed would redraw on every wake, seconds
+// of panel current every five minutes for nothing.
+RTC_DATA_ATTR uint32_t g_shown_hash = 0;
+RTC_DATA_ATTR uint32_t g_shown_at = 0;        // 0: nothing drawn since boot
+RTC_DATA_ATTR bool g_shown_active = false;
+RTC_DATA_ATTR uint16_t g_shown_alarms = 0;
+RTC_DATA_ATTR bool g_shown_acked = false;
+RTC_DATA_ATTR uint8_t g_shown_icons = 0xFF;   // footer-left icons + USB power, as bits
+RTC_DATA_ATTR uint32_t g_icons_drawn_at = 0;
 
 // The trip that just ended, for its summary page.
-TripStatus g_closed = {};
-uint32_t g_closed_at = 0;
+RTC_DATA_ATTR TripStatus g_closed = {};
+RTC_DATA_ATTR uint32_t g_closed_at = 0;
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// Runs through deep sleep (timekeep.h), so times kept across one compare.
+uint32_t now_ms(void) { return mono_ms(); }
 
 void clock_str(char *out, size_t n) {
   TimeStamp t;
@@ -86,14 +91,22 @@ Foot footer_state(const TripStatus &s, const PowerStatus &p, bool have_p) {
   f.trip = s.active;
   NetStatus ns;
   net_status(&ns);
-  f.wifi = ns.connected;
+  // On battery Wi-Fi is up only for a moment each upload period, and the
+  // picture is drawn after that moment: there the icon means "the last
+  // session got through", or it would never show.
+  const uint32_t recent_ms = 2 * (uint32_t)config().upload_period_s * 1000 + 60000;
+  const bool wifi_recent = !pm_external_power() && ns.last_up_ms &&
+                           now_ms() - ns.last_up_ms < recent_ms;
+  f.wifi = ns.connected || wifi_recent;
   // The cloud means the SERVER has the data, not that the broker is up
   // (§9.1: online means a server that confirms receipt). So: broker
-  // connected, and either nothing waiting or an ACK in the last 10 min.
+  // reached, and either nothing waiting or an ACK in the last 10 min.
   UplinkStatus us;
   uplink_status(&us);
-  f.cloud = us.connected && (us.records_pending == 0 ||
-                             (us.last_ack_ms && now_ms() - us.last_ack_ms < CLOUD_FRESH_MS));
+  const uint32_t fresh_ms = wifi_recent ? recent_ms : CLOUD_FRESH_MS;
+  f.cloud = (us.connected || (wifi_recent && us.last_session_ok)) &&
+            (us.records_pending == 0 ||
+             (us.last_ack_ms && now_ms() - us.last_ack_ms < fresh_ms));
   GnssFix fix;
   f.gnss = gnss_last_fix(&fix) && fix.valid && now_ms() - fix.at_ms < GNSS_FRESH_MS;
   f.shock = false;     // no shock alarm until a threshold is set
@@ -222,7 +235,15 @@ bool show(const Canvas &c) {
 }
 
 void task(void *) {
-  vTaskDelay(pdMS_TO_TICKS(FIRST_DRAW_MS));
+  if (!pm_warm()) {
+    vTaskDelay(pdMS_TO_TICKS(FIRST_DRAW_MS));
+  } else {
+    // After a wake: once this wake's sample and upload are done, so the
+    // picture shows them -- and no later, the chip is waiting to sleep.
+    for (int i = 0; i < 300 && !(pm_is_done(Duty::Trip) && pm_is_done(Duty::Uplink)); i++) {
+      vTaskDelay(pdMS_TO_TICKS(100));
+    }
+  }
   TripStatus prev;
   trip_status(&prev);
 
@@ -246,8 +267,13 @@ void task(void *) {
       // cable plugged in redraws even if nothing visible changed -- the
       // person who plugged it is looking for an answer.
       const uint8_t icons = icons_now(s);
+      // The gap is for a link flapping at the edge of range, which only
+      // happens while Wi-Fi stays up -- on USB power. On battery each wake
+      // decides once and then sleeps; a change held back here would wait
+      // a whole sample period.
       const bool icons_due = icons != g_shown_icons &&
-                             (!g_icons_drawn_at || now_ms() - g_icons_drawn_at >= ICON_REDRAW_GAP_MS);
+                             (!g_icons_drawn_at || !pm_external_power() ||
+                              now_ms() - g_icons_drawn_at >= ICON_REDRAW_GAP_MS);
       const bool usb_changed = icons_due && ((icons ^ g_shown_icons) & ICON_USB) &&
                                g_shown_icons != 0xFF;
       const bool urgent = s.active != g_shown_active ||
@@ -259,7 +285,10 @@ void task(void *) {
         char clock[8];
         clock_str(clock, sizeof(clock));
         build(s, clock);
-        if (show(g_draw)) {
+        pm_hold(Hold::Display, true);
+        const bool shown = show(g_draw);
+        pm_hold(Hold::Display, false);
+        if (shown) {
           g_shown_hash = content;
           g_shown_at = now_ms();
           g_shown_active = s.active;
@@ -279,6 +308,7 @@ void task(void *) {
         g_force = false;
       }
     }
+    pm_done(Duty::Display);
     vTaskDelay(pdMS_TO_TICKS(PASS_MS));
   }
 }

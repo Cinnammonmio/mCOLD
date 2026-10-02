@@ -34,6 +34,11 @@ struct Config {
   int32_t led_bright_pct;     // brightness cap, % of full scale
   int32_t buzzer_enabled;     // 0 silences alarm sounds
   int32_t tz_offset_min;      // local time for the display only; records are UTC
+  int32_t sleep_en;           // 0 keeps the box awake on battery (bench, measurement)
+  int32_t idle_wake_s;        // on battery, the longest sleep with nothing due
+  int32_t gnss_period_s;      // on battery, during a trip: one GNSS session this often
+  int32_t upload_period_s;    // on battery: the longest records wait for Wi-Fi
+  int32_t sleep_usb;          // bench: behave as on battery with USB in (pm.h)
 
   // Field names are the NVS keys, 15 characters at most; config.cpp
   // refuses to compile a longer one.

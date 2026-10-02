@@ -45,7 +45,8 @@ const int CACHE = 8;
 Cached g_cache[CACHE];
 int g_cache_next = 0;
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// Runs through deep sleep (timekeep.h), so times kept across one compare.
+uint32_t now_ms(void) { return mono_ms(); }
 
 // ---- building responses ------------------------------------------------
 

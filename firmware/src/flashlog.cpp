@@ -275,15 +275,21 @@ bool flashlog_init(const FlashIf *flash) {
 
   uint32_t max_seq = 0;
   uint8_t h[LOG_HEADER];
+  void *mh = nullptr;
+  const uint8_t *mapped = flash->map ? flash->map(flash->ctx, &mh) : nullptr;
   for (uint32_t i = 0; i < g_count; i++) {
     uint32_t seq = 0, trip = 0;
     Sec st = Sec::Dirty;
-    if (flash->read(flash->ctx, sector_off(i), h, LOG_HEADER)) {
+    if (mapped) {
+      memcpy(h, mapped + sector_off(i), LOG_HEADER);
+      st = classify_header(h, &seq, &trip);
+    } else if (flash->read(flash->ctx, sector_off(i), h, LOG_HEADER)) {
       st = classify_header(h, &seq, &trip);
     }
     g_sec[i] = {seq, trip, st};
     if (st == Sec::Used && seq > max_seq) max_seq = seq;
   }
+  if (mapped) flash->unmap(mh);
   g_next_sector_seq = max_seq + 1;
   g_seq_trip = LOG_TRIP_NONE;
   find_head();
@@ -484,6 +490,19 @@ bool p_write(void *c, uint32_t off, const void *buf, uint32_t n) {
 bool p_erase(void *c, uint32_t off, uint32_t n) {
   return esp_partition_erase_range((const esp_partition_t *)c, off, n) == ESP_OK;
 }
+const uint8_t *p_map(void *c, void **handle) {
+  const esp_partition_t *p = (const esp_partition_t *)c;
+  const void *ptr = nullptr;
+  esp_partition_mmap_handle_t h;
+  if (esp_partition_mmap(p, 0, p->size, ESP_PARTITION_MMAP_DATA, &ptr, &h) != ESP_OK) {
+    return nullptr;
+  }
+  *handle = (void *)(uintptr_t)h;
+  return (const uint8_t *)ptr;
+}
+void p_unmap(void *handle) {
+  esp_partition_munmap((esp_partition_mmap_handle_t)(uintptr_t)handle);
+}
 
 }  // namespace
 
@@ -495,6 +514,8 @@ bool flashlog_partition(FlashIf *out) {
   out->read = p_read;
   out->write = p_write;
   out->erase = p_erase;
+  out->map = p_map;
+  out->unmap = p_unmap;
   out->ctx = (void *)p;
   return true;
 }
