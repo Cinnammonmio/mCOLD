@@ -66,6 +66,7 @@ struct TripStatus {
   uint16_t door_opens;
   uint32_t motion_events;
   bool have_temp;
+  bool temp_read_since_boot;   // any attempt has completed since power-up
   int16_t min_c100, max_c100;
   uint32_t lost_trips;      // deleted to make room, since the device was new
 };

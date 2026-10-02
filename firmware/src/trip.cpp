@@ -106,38 +106,59 @@ void stamp(Writer &w) {
 // loss into the running trip first: if power fails between the two, the
 // log says a trip was lost that is in fact still there, which is the
 // safe way round.
-bool evict_one(void) {
+// A trip deleted to make room, and the notice that says so.
+struct Loss {
+  uint32_t trip;
+  uint32_t records;
+  bool noted;          // the EV_LOSS record is in the log
+};
+
+bool write_loss(const Loss &v) {
+  uint8_t buf[LOG_PAYLOAD_MAX];
+  Writer w(buf, sizeof(buf));
+  stamp(w);
+  w.u8(EV_LOSS);
+  w.u32(v.trip);
+  w.u32(v.records);
+  w.u8(1);   // FLASH_RETENTION_NO_SD: there is no SD path yet
+  return flashlog_append(g_id, REC_EVENT, buf, w.n, nullptr) == LogErr::Ok;
+}
+
+// Deletes the oldest trip that is not this one, to make room.
+//
+// §9.6 wants the loss written before the data goes, and that is the
+// order whenever it is possible: if power fails in between, the log
+// claims a loss that did not happen, which is the safe way round. Two
+// cases cannot: the log is so full that not even the notice fits, and
+// a trip starting, whose header must be its first record. Then the
+// notice follows the deletion (`noted` false), and the caller writes it.
+bool evict_one(bool notice_first, Loss *out) {
   uint32_t trips[16];
   const int n = flashlog_trips(trips, 16);
   for (int i = 0; i < n && i < 16; i++) {
     if (trips[i] == g_id) continue;
-    const uint32_t records = flashlog_read(trips[i], 0, nullptr, nullptr, nullptr);
-    uint8_t buf[LOG_PAYLOAD_MAX];
-    Writer w(buf, sizeof(buf));
-    stamp(w);
-    w.u8(EV_LOSS);
-    w.u32(trips[i]);
-    w.u32(records);
-    w.u8(1);   // FLASH_RETENTION_NO_SD: there is no SD path yet
-    if (flashlog_append(g_id, REC_EVENT, buf, w.n, nullptr) == LogErr::Full) {
-      // Not even room for the notice. The deletion still has to happen;
-      // the count in NVS is the record of it.
-    }
-    if (flashlog_erase_trip(trips[i]) != LogErr::Ok) return false;
+    Loss v = {trips[i], flashlog_read(trips[i], 0, nullptr, nullptr, nullptr),
+              false};
+    if (notice_first) v.noted = write_loss(v);
+    if (flashlog_erase_trip(v.trip) != LogErr::Ok) return false;
     g_lost_trips++;
     nvs_put("lost", g_lost_trips);
     printf("[trip] log full: deleted trip %08lX (%lu records) to make room\n",
-           (unsigned long)trips[i], (unsigned long)records);
+           (unsigned long)v.trip, (unsigned long)v.records);
+    *out = v;
     return true;
   }
   return false;
 }
 
-TripErr put(uint8_t type, const Writer &w) {
+// `starting`: this is the trip's header, which must be record 0.
+TripErr put(uint8_t type, const Writer &w, bool starting = false) {
   if (w.overflow) return TripErr::Flash;
   LogErr e = flashlog_append(g_id, type, w.p, w.n, nullptr);
-  if (e == LogErr::Full && evict_one()) {
+  Loss v;
+  if (e == LogErr::Full && evict_one(!starting, &v)) {
     e = flashlog_append(g_id, type, w.p, w.n, nullptr);
+    if (e == LogErr::Ok && !v.noted) write_loss(v);
   }
   switch (e) {
     case LogErr::Ok:   return TripErr::Ok;
@@ -223,6 +244,8 @@ struct Rebuild {
   bool have_header;
   TripParams p;
   uint16_t door_opens_last;
+  uint16_t alarms;     // active at the last record, replayed from events
+  bool acked;
 };
 
 bool rebuild_visit(const LogRecord &r, void *ctx) {
@@ -258,7 +281,21 @@ bool rebuild_visit(const LogRecord &r, void *ctx) {
     }
     case REC_EVENT: {
       const uint8_t code = rd.u8();
-      if (code == EV_ALARM_RAISE) b->t.alarms_raised++;
+      // Alarm state is replayed, not reset: an alarm that was raised and
+      // acknowledged before the reset is still raised and still
+      // acknowledged after it. Re-raising it would alert someone a second
+      // time for the same excursion and count it twice.
+      if (code == EV_ALARM_RAISE) {
+        b->t.alarms_raised++;
+        const uint8_t a = rd.u8();
+        if (a < AL_COUNT) b->alarms |= (uint16_t)(1u << a);
+        b->acked = false;
+      } else if (code == EV_ALARM_CLEAR) {
+        const uint8_t a = rd.u8();
+        if (a < AL_COUNT) b->alarms &= (uint16_t)~(1u << a);
+      } else if (code == EV_ALARM_ACK) {
+        b->acked = true;
+      }
       if (code == EV_DOOR_OPEN) b->t.door_opens++;
       if (code == EV_DOOR_CLOSE) b->t.door_open_ms += rd.u32();
       break;
@@ -321,9 +358,10 @@ void trip_init(const char *sn) {
   g_last_id = id;
   g_p = b.p;
   g_t = b.t;
-  g_t.door_opens = b.t.door_opens;
   g_active = true;
   reset_inputs();
+  g_alarms = b.alarms;     // after reset_inputs(), which zeroes them
+  g_acked = b.acked;
   event_u8(EV_RESUMED, (uint8_t)esp_reset_reason());
   printf("[trip] resumed trip %08lX after a reset (%lu samples so far)\n",
          (unsigned long)id, (unsigned long)g_t.samples);
@@ -369,7 +407,7 @@ TripErr trip_start(const TripParams &p, uint32_t *id_out) {
   // Header first, then the NVS flag that says a trip is running. A crash
   // between the two leaves a header with no trip running, which reads as
   // a trip that was started and never used -- not as one to resume.
-  const TripErr e = put(REC_TRIP_START, w);
+  const TripErr e = put(REC_TRIP_START, w, true);
   if (e != TripErr::Ok) return e;
   nvs_put("next_id", id + 1);
   nvs_put("last", id);
@@ -594,6 +632,7 @@ void trip_status(TripStatus *out) {
   out->door_opens = g_t.door_opens;
   out->motion_events = g_t.motion;
   out->have_temp = g_t.have_temp;
+  out->temp_read_since_boot = g_temp_at != 0;
   out->min_c100 = g_t.min_c100;
   out->max_c100 = g_t.max_c100;
   out->lost_trips = g_lost_trips;

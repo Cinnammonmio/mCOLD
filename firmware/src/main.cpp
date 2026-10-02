@@ -100,6 +100,7 @@ const uint32_t GNSS_SESSION_MS = 120000;   // give up on a fix after this
 const uint32_t GNSS_PERIOD_MS = 600000;    // between sessions
 const int GNSS_FIXES_WANTED = 5;
 const uint32_t NFC_POLL_MS = 300;
+const uint32_t FIRST_SAMPLE_WAIT_MS = 10000;   // uptime limit, see task_trip
 
 // ---- sensors ---------------------------------------------------------
 
@@ -350,11 +351,21 @@ void task_trip(void *) {
     TripStatus st;
     trip_status(&st);
     const uint32_t t = now_ms();
-    if (st.active && (!was_active || (int32_t)(t - next_sample) >= 0)) {
+    if (st.active && !was_active) {
+      // Just started or resumed: the first sample is due now, but not
+      // before the first temperature reading since boot has come in --
+      // right after a reset that is about a second away, and a sample
+      // written before it would record "no data" for no reason. Ten
+      // seconds is the limit: a probe that never answers must not stop
+      // the sample that says so.
+      if (!st.temp_read_since_boot && t < FIRST_SAMPLE_WAIT_MS) continue;
+      next_sample = t;
+    }
+    was_active = st.active;
+    if (st.active && (int32_t)(t - next_sample) >= 0) {
       trip_sample();
       next_sample = t + (uint32_t)config().sample_period_s * 1000;
     }
-    was_active = st.active;
   }
 }
 

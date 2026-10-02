@@ -36,18 +36,68 @@ To cut a release:
 
 ## Unreleased
 
-P3: trips and sensing.
+## 0.3.0 — 2026-10-02
 
-- Trip: START with that trip's own alarm thresholds, a sample per
-  sample period, events, STOP with a summary; resume after a reset;
-  oldest finished trip deleted whole when the log is full
-- Record format documented byte for byte in `src/record.h`
-- Alarm engine: temperature high/low with dwell and hysteresis, no
-  temperature, battery low; acknowledging keeps the history
-- **Door switched off** (decided 2026-10-02): `MCOLD_DOOR 0` in
+P3 complete: the box runs trips and records them.
+
+### Trips
+
+- START takes that trip's own alarm thresholds (low, high, hysteresis,
+  dwell) and writes a header; then a sample every sample period (5 min),
+  events as they happen, and STOP writes a summary (samples, min/max
+  valid temperature, alarms raised, motion)
+- Started and stopped from the console for now (`trip start`, `trip
+  stop`, `trip ack`, `trip dump`); from the app over BLE in P5
+- **Resume after a reset**: the same trip carries on, an EV_RESUMED
+  event records the reset reason, and totals and alarm state are
+  rebuilt from the log -- an alarm acknowledged before the reset stays
+  raised and acknowledged, never raised a second time
+- The first sample after a start or resume waits (up to 10 s) for the
+  first temperature reading since boot
+- Trip ids come from a counter in NVS, checked against the log so an
+  erased NVS can never reuse an id
+- Records are stamped with UTC only when the clock can vouch for it;
+  otherwise "no time", ordered by boot counter and tick
+
+### Alarms
+
+- Temperature high and low, raised after dwell, cleared only back
+  inside by the hysteresis; no temperature for 60 s; battery under 15 %
+  (clears at 20 %). Acknowledging is an event; it erases nothing
+- Motion is recorded as events (one per burst, at most one a minute)
+  and counted in samples; **no shock alarm** until a threshold is set
+
+### Storage
+
+- Record layout documented byte for byte in `src/record.h`:
+  little-endian, never a C struct, an explicit "none" value for every
+  field that can be unknown
+- **Retention**: when the log is full, the oldest finished trip is
+  deleted whole and a LOSS event records it; the running trip is never
+  touched. A starting trip keeps its header as record 0
+
+### Door
+
+- **Switched off** (decided 2026-10-02): `MCOLD_DOOR 0` in
   `src/features.h` -- no GPIO7 setup, interrupt, setting, event or
   alarm. The record keeps its door fields, written as not fitted.
   Config schema 3 removes `door_closed_lvl`
+
+### Checked on the board
+
+- A trip with 5 s dwell raised the high-temperature alarm (47 C, no
+  probe fitted), the ack was logged, and after two resets the alarm
+  was still raised and acknowledged with no second raise
+- Trips numbered 1, 2, 3, 4 across resets and stops
+- The log filled to 77,376 records; starting a trip deleted trip 1
+  (the oldest finished one) and wrote START, LOSS, SAMPLE in that order;
+  every other trip untouched. `logtest`: 14 of 14 still pass
+
+### Not in this release
+
+- Shock alarm: needs a threshold from the product team
+- `log_meta`: the trip list is rebuilt from the log itself for now;
+  ACK checkpoints and an SD path arrive with P6
 
 ## 0.2.0 — 2026-10-02
 
