@@ -43,6 +43,7 @@
 #include "screens.h"
 #include "display.h"
 #include "rpc.h"
+#include "ble.h"
 #include "gnss.h"
 #include "health.h"
 #include "leds.h"
@@ -284,6 +285,8 @@ void task_nfc(void *) {
         fflush(stdout);
         // "This is the box you tapped." BLE comes up here in P5.
         indicate_cue(Cue::NfcTap);
+        // The tap is how a phone asks for the box: open BLE for it.
+        ble_window(BLE_TAP_WINDOW_MS);
       }
     }
     // Edges latch in the tag, so a slow poll still catches a quick tap.
@@ -801,6 +804,18 @@ void config_changed(const char *key, int32_t v) {
   }
 }
 
+void print_ble(void) {
+  BleStatus b;
+  ble_status(&b);
+  printf("\n  BLE        %s, %s\n", b.enabled ? "enabled" : "off",
+         b.connected ? "connected" : b.advertising ? "advertising" : "quiet");
+  if (b.connected) {
+    printf("  link       %s%s, MTU %u\n", b.encrypted ? "encrypted" : "not encrypted",
+           b.authenticated ? " + authenticated (paired)" : "", b.mtu);
+  }
+  printf("  requests   %lu over BLE since boot\n\n", (unsigned long)b.requests);
+}
+
 // The protocol from the console: whoever has the cable has the box, so
 // the request runs as authorized.
 void rpc_command(const char *json) {
@@ -907,7 +922,9 @@ void print_help(void) {
   printf("  trip dump [N]   the last N records, decoded\n");
   printf("  screen          redraw the e-paper now (live view)\n");
   printf("  screen N        design demo page N (0-13); 'screen' to go back\n");
-  printf("  screen rot 1|3  the two landscape orientations\n\n");
+  printf("  screen rot 1|3  the two landscape orientations\n");
+  printf("  rpc {json}      a protocol request (PROTOCOL.md), as authorized\n");
+  printf("  ble [on|off]    BLE state; 'on' advertises for 60 s\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
@@ -951,6 +968,15 @@ void run_command(char *line) {
   else if (!strcmp(line, "help")) print_help();
   else if (!strcmp(line, "log")) print_log();
   else if (!strncmp(line, "rpc ", 4)) rpc_command(line + 4);
+  else if (!strcmp(line, "ble")) print_ble();
+  else if (!strcmp(line, "ble on")) {
+    ble_enable(true);
+    ble_window(BLE_TAP_WINDOW_MS);
+    printf("  BLE on, advertising for %lu s\n", (unsigned long)(BLE_TAP_WINDOW_MS / 1000));
+  } else if (!strcmp(line, "ble off")) {
+    ble_enable(false);
+    printf("  BLE off\n");
+  }
   else if (!strcmp(line, "screen")) screen_command("");
   else if (!strncmp(line, "screen ", 7)) screen_command(line + 7);
   else if (!strcmp(line, "trip")) trip_command("");
@@ -1084,6 +1110,7 @@ extern "C" void app_main(void) {
     trip_init(sn);     // resumes a trip a reset interrupted
     display_start(sn); // like indicate: reads state, owns none
     rpc_init(sn);
+    ble_start(sn);     // after NVS (bonds) and rpc (what it carries)
     config_on_change(config_changed);
   }
   indicate_start();    // boot sweep, then status; reads state, owns no state

@@ -30,6 +30,11 @@ void display_note_power(const PowerStatus &ps);
 // Redraw now, whatever the policy says (console).
 void display_refresh(void);
 
+// BLE pairing: show the 6-digit passkey the phone must enter, drawn at
+// once, until cleared. Pairing proves the person pairing holds the box.
+void display_passkey(uint32_t code);
+void display_passkey_clear(void);
+
 // Pause the live display, for showing the design's demo pages.
 void display_hold(bool on);
 

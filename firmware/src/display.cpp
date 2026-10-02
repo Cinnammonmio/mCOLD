@@ -35,6 +35,9 @@ char g_sn[16] = "MCOLD";
 volatile int g_rot = 3;
 volatile bool g_force = false;
 volatile bool g_hold = false;
+volatile int32_t g_passkey = -1;      // -1: no pairing in progress
+TaskHandle_t g_task = nullptr;
+int32_t g_shown_passkey = -1;
 
 PowerStatus g_pwr = {};
 bool g_have_pwr = false;
@@ -103,6 +106,17 @@ void build(const TripStatus &s, const char *clock) {
   have_p = g_have_pwr;
   portEXIT_CRITICAL(&g_mux);
   const Foot f = footer_state(s, p, have_p);
+
+  const int32_t pk = g_passkey;
+  if (pk >= 0) {
+    // B3: the code goes in the headline, split in threes like the iOS
+    // prompt shows it. Whoever can read this is holding the box.
+    char code[12];
+    snprintf(code, sizeof(code), "%03ld %03ld", (long)(pk / 1000), (long)(pk % 1000));
+    scr_takeover(g_draw, g_sn, clock, f, code, "Enter this code on the phone.",
+                 "BLUETOOTH PAIRING", false, false);
+    return;
+  }
 
   char temp[12];
   if (s.temp_ok) snprintf(temp, sizeof(temp), "%.1f", s.temp_c);
@@ -194,14 +208,15 @@ void task(void *) {
     if (s.active) g_closed_at = 0;
     prev = s;
 
-    if (!g_hold) {
+    if (!g_hold || g_passkey >= 0) {    // a passkey beats a demo page
       // The picture without its clock decides whether anything changed:
       // the minute ticking over is not news.
       build(s, "     ");
       const uint32_t content = g_draw.hash();
+      const int32_t pk = g_passkey;
       const bool urgent = s.active != g_shown_active ||
                           s.alarms_active != g_shown_alarms ||
-                          s.acked != g_shown_acked;
+                          s.acked != g_shown_acked || pk != g_shown_passkey;
       const bool due = !g_shown_at ||
                        now_ms() - g_shown_at >= DISPLAY_MIN_S * 1000;
       if (g_force || (content != g_shown_hash && (urgent || due))) {
@@ -214,6 +229,7 @@ void task(void *) {
           g_shown_active = s.active;
           g_shown_alarms = s.alarms_active;
           g_shown_acked = s.acked;
+          g_shown_passkey = pk;
           printf("[display] refreshed in %lu ms%s\n",
                  (unsigned long)epd_last_refresh_ms(), urgent ? " (state change)" : "");
         } else {
@@ -223,7 +239,9 @@ void task(void *) {
         g_force = false;
       }
     }
-    vTaskDelay(pdMS_TO_TICKS(PASS_MS));
+    // Woken early by anything that cannot wait a whole pass -- a pairing
+    // passkey, which the phone gives the user 30 seconds to type.
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(PASS_MS));
   }
 }
 
@@ -232,7 +250,7 @@ void task(void *) {
 void display_start(const char *sn) {
   snprintf(g_sn, sizeof(g_sn), "%s", sn ? sn : "MCOLD");
   g_epd = xSemaphoreCreateMutex();
-  xTaskCreatePinnedToCore(task, "display", 4096, nullptr, 1, nullptr, 1);
+  xTaskCreatePinnedToCore(task, "display", 4096, nullptr, 1, &g_task, 1);
 }
 
 void display_note_power(const PowerStatus &ps) {
@@ -256,3 +274,14 @@ void display_set_rotation(int r) {
 int display_rotation(void) { return g_rot; }
 
 bool display_show(const Canvas &c) { return g_epd ? show(c) : false; }
+
+void display_passkey(uint32_t code) {
+  g_passkey = (int32_t)(code % 1000000);
+  if (g_task) xTaskNotifyGive(g_task);
+}
+
+void display_passkey_clear(void) {
+  if (g_passkey < 0) return;
+  g_passkey = -1;
+  if (g_task) xTaskNotifyGive(g_task);
+}
