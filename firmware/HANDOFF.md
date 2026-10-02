@@ -29,16 +29,17 @@ Section numbers below refer to it.
 
 ## 2. State right now
 
-Firmware **0.4.0** released (tag `firmware/v0.4.0`, ELF sha256 `3cee788ad...`).
+Firmware **0.5.0** released (tag `firmware/v0.5.0`).
 Running on the board:
 
 ```
-RAM  12.5% (40,844 B)      Flash 14.9% (467,944 B of a 3 MiB OTA slot)
+RAM  17.8% (58,484 B)      Flash 24.5% (769,192 B of a 3 MiB OTA slot)
 ```
 
-P0 to P4 complete: the box runs trips, records them, and shows them
-on its lights, buzzer and e-paper. Next: **P5**, BLE, NFC and the
-command protocol. The door is switched off (`MCOLD_DOOR 0` in
+P0 to P5 complete: the box runs trips, records them, shows them, and
+talks to a phone over BLE with tap-to-authorize (`PROTOCOL.md`,
+proposed to the iOS team). Next: **P6**, Wi-Fi/MQTT sync, USB drive
+with CSV, OTA. The door is switched off (`MCOLD_DOOR 0` in
 `src/features.h`, decided 2026-10-02). The e-paper runs on the mono
 panel in hand; the four-ink panel is a long way off.
 
@@ -84,7 +85,11 @@ and nowhere else.
 | `canvas.*`, `gfxfont.h`, `fonts_mcold.h` | 250x122 three-ink framebuffer, Adafruit GFX algorithms and fonts |
 | `screens.*` | the design's templates, ported from `display-mock/render.py` |
 | `display.*` | chooses the screen from state, refreshes per display-design.md; rotation 3 |
-| `main.cpp` | 8 tasks + supervisor; console: `help` lists the commands |
+| `rpc.*` | the JSON protocol, transport-independent; sessions; idempotent by request id |
+| `ble.*` | NimBLE GATT transport, MTU-independent fragments; advertises on tap or external power |
+| `auth.*` | tap to authorize: key in the NFC record, AUTH = HMAC-SHA256(key, nonce), rotation |
+| `tools/ble_client.py` | reference client for the app team; runs from a PC with Bluetooth |
+| `main.cpp` | 9 tasks + supervisor; console: `help` lists the commands |
 
 Checked on the board by a person, 2026-10-02: tap → motion event;
 phone → NFC arrival; all four LED colours and positions (`ledtest`);
@@ -104,15 +109,14 @@ side light breathes yellow while charging below 80 %, green above.
 | Trip id `0xBE5C0001` | reserved for the console's bench records; real trip ids must never reach it |
 | Test trips on the board | trips 2, 3, 4 in the log are bench tests from 2026-10-02 |
 
-**Do not run `nfc write` casually.** The tag currently holds a JSON
-NDEF record from bring-up (`{"sn":"MCOLD-9A74","ble...`), possibly the
-one the iOS team tested against. `nfc write` replaces it with a plain
-Text record.
+**The NFC tag is the device's to write.** It keeps the JSON record
+`{"sn","ble","key"}` up to date itself (bring-up's `{"sn","ble"}`
+plus the authorization key) and rewrites only bytes that change.
 
 | Not written yet | |
 |---|---|
 | HUSB238A | answers at 0x42; PD policy is §5.5 |
-| BLE, Wi-Fi, USB MSC, OTA | P5, P6 |
+| Wi-Fi/MQTT, USB MSC, OTA, SD | P6 |
 
 ---
 
@@ -144,6 +148,24 @@ them can wake the chip from deep sleep. The board was laid out correctly
 for the low-power architecture §12 asks for.
 
 ### Unresolved
+
+**GNSS RF path: every DNP part was fitted (2026-10-02).** The board was
+built with all antenna options populated, for easy rework. Two of them
+kill the signal on their own:
+
+- **C_M1 and C_M2, 100 pF shunt to ground** at the onboard antenna's
+  matching network. At 1.575 GHz 100 pF is about 1 ohm -- a short across
+  a 50-ohm line. Those footprints are for matching parts of a few pF,
+  per the antenna's datasheet, or nothing.
+- **R_SET_PCB and R_SET_IPEX both fitted**, so RF_IN also drives the
+  empty u.FL connector: an open stub on the line.
+
+This matches what the firmware saw: 0 satellites in view, not even weak
+ones. Rework decided: **remove C_M1, C_M2 and R_SET_IPEX** (onboard
+antenna U3 GPS1003 in use). For the u.FL instead: remove R_SET_PCB, C_M1,
+C_M2, keep R_SET_IPEX -- and note VCC_RF (pin 14) is not connected, so
+only a passive antenna works there. After rework, `gnss` shows satellites
+heard and best SNR; outdoors a fix wants four or more near 30 dB-Hz.
 
 **An unidentified I2C device at 0x2D.** It acknowledges both a
 zero-length write and a one-byte read, so it is not a scan artefact, but
@@ -352,8 +374,8 @@ README once carried an older 14-step plan; this is the one in use.
 | P2 time/config/storage | 0.2.0 ✅ | UTC with quality + boot counter; NVS config; power-cut-safe trip log | -- |
 | P3 trip and sensing | 0.3.0 ✅ | trip state machine (§8, state axes kept separate); START/STOP with a trip header carrying that trip's alarm thresholds; a sample every 5 min into the log; events (motion, probe fault, alarms, reset/data gap); alarm engine (thresholds, hysteresis, dwell; ack never erases history); resume after a reset mid-trip; retention when full (§9.6). Driven from the console until BLE exists. Door switched off | shock threshold |
 | P4 display, LED, buzzer | 0.4.0 ✅ | e-paper driver and screens from `display-mock`, live from state, on the mono panel in hand; LED and buzzer patterns per `docs/led-design.md` (never together); attention window | the four-ink panel (a driver table entry when it comes) |
-| **P5 BLE/NFC/protocol** | 0.5.0 | NimBLE GATT advertising the SN; the §13 command set with request IDs and idempotency; NDEF record; tap brings BLE up; NFC GPO wake | UUIDs and NDEF schema from the iOS team |
-| P6 sync, USB, OTA | 0.6.0 | Wi-Fi + MQTT to the team's broker; live and backlog upload; application ACK, then reclaim; USB mass storage showing a read-only CSV per trip; optional SD archive; OTA with signed images and rollback | topics, ACK format, TLS on the broker, per-device credentials, a file server for OTA |
+| P5 BLE/NFC/protocol | 0.5.0 ✅ | NimBLE GATT advertising the SN; the §13 command set with request IDs and idempotency; NDEF record; tap brings BLE up; tap to authorize (decided 2026-10-02). NFC GPO wake moves to P7 | the iOS team's answer to PROTOCOL.md |
+| **P6 sync, USB, OTA** | 0.6.0 | Wi-Fi + MQTT to the team's broker; live and backlog upload; application ACK, then reclaim; USB mass storage showing a read-only CSV per trip; optional SD archive; OTA with signed images and rollback | topics, ACK format, TLS on the broker, per-device credentials, a file server for OTA |
 | P7 power | 0.7.0 | deep sleep between samples; every wake source (timer, accel, door, NFC, PG#); GPIO holds; log head kept in RTC memory; charger and PD policy; current measured until 7 days on 1500 mAh is shown | battery datasheet (RCOMP, charge limits) |
 | P8 hardening | 1.0.0 | watchdog and core-dump retrieval; quiet production logging; flash encryption / secure boot decision; the §14 acceptance cases; 31-day offline simulation; 6-device Dock; factory provisioning | -- |
 
