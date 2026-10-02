@@ -97,7 +97,6 @@ side light breathes yellow while charging below 80 %, green above.
 
 | Still unverified | |
 |---|---|
-| **GNSS fix** | never seen on this board. Indoors it reported **0 satellites in view** -- not even a weak one. Either the room is that shielded or the antenna path does not work. Next time outdoors: leave it 10 min and read `gnss` |
 | Side light going out on unplug | follows PG# directly; not yet watched |
 
 | Open from P3 | |
@@ -149,7 +148,7 @@ for the low-power architecture §12 asks for.
 
 ### Unresolved
 
-**GNSS RF path: every DNP part was fitted (2026-10-02).** The board was
+**GNSS RF path: every DNP part was fitted -- FIXED 2026-10-02.** The board was
 built with all antenna options populated, for easy rework. Two of them
 kill the signal on their own:
 
@@ -160,12 +159,20 @@ kill the signal on their own:
 - **R_SET_PCB and R_SET_IPEX both fitted**, so RF_IN also drives the
   empty u.FL connector: an open stub on the line.
 
-This matches what the firmware saw: 0 satellites in view, not even weak
-ones. Rework decided: **remove C_M1, C_M2 and R_SET_IPEX** (onboard
-antenna U3 GPS1003 in use). For the u.FL instead: remove R_SET_PCB, C_M1,
-C_M2, keep R_SET_IPEX -- and note VCC_RF (pin 14) is not connected, so
-only a passive antenna works there. After rework, `gnss` shows satellites
-heard and best SNR; outdoors a fix wants four or more near 30 dB-Hz.
+Before: 0 satellites in view, not even weak ones. **Rework done: C_M1,
+C_M2 and R_SET_IPEX removed** (onboard antenna U3 GPS1003 in use). After,
+by a window: 9 to 17 satellites heard, best SNR 43 dB-Hz, a fix with 6-8
+satellites and HDOP down to 1.7 within minutes, and the RTC set from
+satellite time -- the first fix this board has ever had. **Every board
+built from this BOM needs the same three parts left off.**
+
+For the u.FL instead: remove R_SET_PCB, C_M1, C_M2, keep R_SET_IPEX --
+and VCC_RF (pin 14) is not connected, so only a passive antenna works
+there.
+
+`$GPTXT,…,ANTENNA OPEN` from the module is not a fault here: the
+ATGM336H detects an antenna by DC current into RF_IN, and C_DC blocks DC
+by design. It says OPEN with this working antenna too.
 
 **An unidentified I2C device at 0x2D.** It acknowledges both a
 zero-length write and a one-byte read, so it is not a scan artefact, but
