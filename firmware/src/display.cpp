@@ -30,7 +30,9 @@ const uint16_t CARGO_ALARMS =
 Canvas g_draw;
 SemaphoreHandle_t g_epd = nullptr;   // one refresh at a time
 char g_sn[16] = "MCOLD";
-volatile int g_rot = 1;
+// Checked by eye on 2026-10-02: 3 is upright on this board (bring-up
+// used 1, which shows the frame upside down; the bench also used 3).
+volatile int g_rot = 3;
 volatile bool g_force = false;
 volatile bool g_hold = false;
 
