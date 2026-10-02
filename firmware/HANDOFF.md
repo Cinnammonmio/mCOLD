@@ -332,10 +332,20 @@ like data. No device failure is ever rendered as 0.
 
 ## 7. Phases
 
-P0 skeleton · P1 drivers · P2 time/config/storage ·
-**P3 trip state machine and sensing (next)** · P4 display, LED, buzzer ·
-P5 BLE/NFC/protocol · P6 Wi-Fi sync and USB MSC/CSV ·
-P7 power measurement · P8 hardening
+Each phase ends in a release `0.N.0`, verified on the board. The repo
+README once carried an older 14-step plan; this is the one in use.
+
+| Phase | Release | Scope | Waiting on |
+|---|---|---|---|
+| P0 skeleton | 0.0.1 ✅ | ESP-IDF project, partition table, health registry, rails, guarded buses, tasks + supervisor, console | -- |
+| P1 drivers | 0.1.0 ✅ | every on-board device: MAX6675, PCF8523, power chain, LIS2DW12, GNSS, ST25DV, LEDs, buzzer; side light shows charge state | a GNSS fix has never been seen |
+| P2 time/config/storage | 0.2.0 ✅ | UTC with quality + boot counter; NVS config; power-cut-safe trip log | -- |
+| **P3 trip and sensing** | 0.3.0 | trip state machine (§8, state axes kept separate); START/STOP with a trip header carrying that trip's alarm thresholds; a sample every 5 min into the log; door driver; events (door, motion, probe fault, reset/data gap); alarm engine (thresholds, hysteresis, dwell; ack never erases history); resume after a reset mid-trip; the `log_meta` trip catalog; retention when full (§9.6). Driven from the console until BLE exists | shock threshold; door polarity with a real magnet |
+| P4 display, LED, buzzer | 0.4.0 | e-paper driver behind a feature flag; screens from `display-mock`; LED and buzzer pattern engine per `docs/led-design.md` (never together); attention window | the 4-colour panel |
+| P5 BLE/NFC/protocol | 0.5.0 | NimBLE GATT advertising the SN; the §13 command set with request IDs and idempotency; NDEF record; tap brings BLE up; NFC GPO wake | UUIDs and NDEF schema from the iOS team |
+| P6 sync, USB, OTA | 0.6.0 | Wi-Fi + MQTT to the team's broker; live and backlog upload; application ACK, then reclaim; USB mass storage showing a read-only CSV per trip; optional SD archive; OTA with signed images and rollback | topics, ACK format, TLS on the broker, per-device credentials, a file server for OTA |
+| P7 power | 0.7.0 | deep sleep between samples; every wake source (timer, accel, door, NFC, PG#); GPIO holds; log head kept in RTC memory; charger and PD policy; current measured until 7 days on 1500 mAh is shown | battery datasheet (RCOMP, charge limits) |
+| P8 hardening | 1.0.0 | watchdog and core-dump retrieval; quiet production logging; flash encryption / secure boot decision; the §14 acceptance cases; 31-day offline simulation; 6-device Dock; factory provisioning | -- |
 
 P7 is where power is *measured*, not where it is designed: the event
 loop and rail discipline have to be right from P1 or they get rebuilt.
