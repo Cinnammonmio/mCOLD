@@ -22,7 +22,9 @@
 #include "record.h"
 #include "temp.h"
 #include "timekeep.h"
+#include "net.h"
 #include "trip.h"
+#include "uplink.h"
 
 namespace {
 
@@ -76,6 +78,7 @@ const char *quality_name(TimeSource q) {
     case TimeSource::Rtc:  return "rtc";
     case TimeSource::Gnss: return "gnss";
     case TimeSource::Host: return "host";
+    case TimeSource::Ntp:  return "ntp";
     default:               return "none";
   }
 }
@@ -499,8 +502,60 @@ cJSON *c_reboot(uint32_t id, const cJSON *, RpcSession *) {
   return ok(id);
 }
 
+cJSON *c_sync_status(uint32_t id, const cJSON *, RpcSession *) {
+  NetStatus n;
+  net_status(&n);
+  UplinkStatus u;
+  uplink_status(&u);
+  cJSON *o = ok(id);
+  cJSON *w = cJSON_AddObjectToObject(o, "wifi");
+  cJSON_AddBoolToObject(w, "configured", n.configured);
+  cJSON_AddBoolToObject(w, "connected", n.connected);
+  if (n.connected) cJSON_AddStringToObject(w, "ssid", n.ssid);
+  // The networks it knows, by name only: passwords never leave the box.
+  cJSON *k = cJSON_AddArrayToObject(w, "known");
+  for (int i = 0; i < n.known; i++) {
+    char s[33];
+    if (net_known(i, s, sizeof(s))) cJSON_AddItemToArray(k, cJSON_CreateString(s));
+  }
+  num_or_null(w, "rssi", n.connected, n.rssi);
+  cJSON *m = cJSON_AddObjectToObject(o, "server");
+  cJSON_AddBoolToObject(m, "configured", u.configured);
+  // Connected to the broker; whether the server has the data is
+  // "pending", which only its ACKs move.
+  cJSON_AddBoolToObject(m, "broker", u.connected);
+  cJSON_AddNumberToObject(m, "pending", u.records_pending);
+  num_or_null(m, "last_ack_s", u.last_ack_ms != 0, (now_ms() - u.last_ack_ms) / 1000);
+  return o;
+}
+
+cJSON *c_sync_now(uint32_t id, const cJSON *, RpcSession *) {
+  uplink_kick();
+  return ok(id);
+}
+
+cJSON *c_set_wifi(uint32_t id, const cJSON *req, RpcSession *) {
+  const cJSON *s = cJSON_GetObjectItemCaseSensitive(req, "ssid");
+  const cJSON *p = cJSON_GetObjectItemCaseSensitive(req, "pass");
+  if (!cJSON_IsString(s) || (p && !cJSON_IsString(p)) ||
+      !net_add(s->valuestring, p ? p->valuestring : "")) {
+    return fail(id, "BAD_ARGS", "ssid 1-32 bytes, pass empty or 8-63, at most 5 networks");
+  }
+  cJSON *o = ok(id);
+  cJSON_AddNumberToObject(o, "known", net_count());
+  return o;
+}
+
+cJSON *c_del_wifi(uint32_t id, const cJSON *req, RpcSession *) {
+  const cJSON *s = cJSON_GetObjectItemCaseSensitive(req, "ssid");
+  if (!cJSON_IsString(s) || !net_remove(s->valuestring)) {
+    return fail(id, "BAD_ARGS", "ssid: a known network");
+  }
+  return ok(id);
+}
+
 cJSON *c_later(uint32_t id, const cJSON *, RpcSession *) {
-  return fail(id, "NOT_SUPPORTED", "arrives with Wi-Fi and USB (P6)");
+  return fail(id, "NOT_SUPPORTED", "arrives with the USB drive (P6)");
 }
 
 struct Cmd {
@@ -525,8 +580,10 @@ const Cmd CMDS[] = {
     {"GET_STORAGE_STATUS", false, c_storage},
     {"SELF_TEST", false, c_self_test},
     {"REBOOT", true, c_reboot},
-    {"GET_SYNC_STATUS", false, c_later},
-    {"SYNC_NOW", true, c_later},
+    {"GET_SYNC_STATUS", false, c_sync_status},
+    {"SYNC_NOW", true, c_sync_now},
+    {"SET_WIFI", true, c_set_wifi},
+    {"DEL_WIFI", true, c_del_wifi},
     {"GET_USB_SNAPSHOT_STATUS", false, c_later},
 };
 

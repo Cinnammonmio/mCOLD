@@ -100,6 +100,15 @@ void trip_sample(void);
 // Last trip id used, for the console's record dump.
 uint32_t trip_last_id(void);
 
+// What retention asks the uploader, so a full log gives up trips the
+// server already has before it gives up any it has not (§9.6 step 1).
+// Either may be null: without them, every deletion counts as a loss.
+struct TripRetention {
+  bool (*fully_acked)(uint32_t trip);
+  void (*forget)(uint32_t trip);     // the trip is gone from the log
+};
+void trip_set_retention(const TripRetention &r);
+
 const char *trip_err_name(TripErr e);
 const char *alarm_name(uint8_t a);
 

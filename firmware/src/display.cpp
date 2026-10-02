@@ -1,5 +1,7 @@
 #include "display.h"
 
+#include <driver/gpio.h>
+#include <esp_attr.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -9,6 +11,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "board.h"
 #include "config.h"
 #include "epd.h"
 #include "flashlog.h"
@@ -16,7 +19,9 @@
 #include "record.h"
 #include "screens.h"
 #include "timekeep.h"
+#include "net.h"
 #include "trip.h"
+#include "uplink.h"
 
 namespace {
 
@@ -24,10 +29,16 @@ const uint32_t PASS_MS = 5000;
 const uint32_t FIRST_DRAW_MS = 6000;      // after boot: let readings arrive
 const uint32_t SUMMARY_MS = 3600000;      // a closed trip's summary, this long
 const uint32_t GNSS_FRESH_MS = 30 * 60000;
+const uint32_t CLOUD_FRESH_MS = 10 * 60000;
+// Icon and USB changes redraw at once, but not more often than this: a
+// Wi-Fi link at the edge of range can drop and return every few seconds,
+// and every redraw is seconds of panel current.
+const uint32_t ICON_REDRAW_GAP_MS = 30000;
 const uint16_t CARGO_ALARMS =
     (1u << AL_TEMP_HIGH) | (1u << AL_TEMP_LOW) | (1u << AL_DOOR);
 
-Canvas g_draw;
+// In PSRAM: 7.6 KB that only the CPU touches, and internal RAM is short.
+EXT_RAM_BSS_ATTR Canvas g_draw;
 SemaphoreHandle_t g_epd = nullptr;   // one refresh at a time
 char g_sn[16] = "MCOLD";
 // Checked by eye on 2026-10-02: 3 is upright on this board (bring-up
@@ -46,6 +57,8 @@ uint32_t g_shown_at = 0;              // 0: nothing drawn since boot
 bool g_shown_active = false;
 uint16_t g_shown_alarms = 0;
 bool g_shown_acked = false;
+uint8_t g_shown_icons = 0xFF;      // footer-left icons + USB power, as bits
+uint32_t g_icons_drawn_at = 0;
 
 // The trip that just ended, for its summary page.
 TripStatus g_closed = {};
@@ -71,8 +84,16 @@ void clock_str(char *out, size_t n) {
 Foot footer_state(const TripStatus &s, const PowerStatus &p, bool have_p) {
   Foot f = {};
   f.trip = s.active;
-  f.wifi = false;      // P6
-  f.cloud = false;     // P6
+  NetStatus ns;
+  net_status(&ns);
+  f.wifi = ns.connected;
+  // The cloud means the SERVER has the data, not that the broker is up
+  // (§9.1: online means a server that confirms receipt). So: broker
+  // connected, and either nothing waiting or an ACK in the last 10 min.
+  UplinkStatus us;
+  uplink_status(&us);
+  f.cloud = us.connected && (us.records_pending == 0 ||
+                             (us.last_ack_ms && now_ms() - us.last_ack_ms < CLOUD_FRESH_MS));
   GnssFix fix;
   f.gnss = gnss_last_fix(&fix) && fix.valid && now_ms() - fix.at_ms < GNSS_FRESH_MS;
   f.shock = false;     // no shock alarm until a threshold is set
@@ -83,6 +104,26 @@ Foot footer_state(const TripStatus &s, const PowerStatus &p, bool have_p) {
   flashlog_stats(&ls);
   f.mem = ls.sectors ? (int)((ls.used * 100 + ls.sectors - 1) / ls.sectors) : 0;
   return f;
+}
+
+// The footer's left-hand icons and USB power, one bit each.
+const uint8_t ICON_TRIP = 1, ICON_WIFI = 2, ICON_CLOUD = 4, ICON_GNSS = 8,
+              ICON_SHOCK = 16, ICON_USB = 32;
+
+uint8_t icons_now(const TripStatus &s) {
+  PowerStatus p;
+  bool have;
+  portENTER_CRITICAL(&g_mux);
+  p = g_pwr;
+  have = g_have_pwr;
+  portEXIT_CRITICAL(&g_mux);
+  const Foot f = footer_state(s, p, have);
+  // USB power straight from the charger's PG# pin: the power task reads
+  // the charger only every five seconds.
+  const bool usb = gpio_get_level((gpio_num_t)PIN_PG_N) == 0;
+  return (uint8_t)((f.trip ? ICON_TRIP : 0) | (f.wifi ? ICON_WIFI : 0) |
+                   (f.cloud ? ICON_CLOUD : 0) | (f.gnss ? ICON_GNSS : 0) |
+                   (f.shock ? ICON_SHOCK : 0) | (usb ? ICON_USB : 0));
 }
 
 const char *charge_word(ChargeState c) {
@@ -200,12 +241,21 @@ void task(void *) {
       // the minute ticking over is not news.
       build(s, "     ");
       const uint32_t content = g_draw.hash();
+      // The footer's left icons and USB power: a change in either is
+      // redrawn now (decided 2026-10-02), within ICON_REDRAW_GAP_MS. A
+      // cable plugged in redraws even if nothing visible changed -- the
+      // person who plugged it is looking for an answer.
+      const uint8_t icons = icons_now(s);
+      const bool icons_due = icons != g_shown_icons &&
+                             (!g_icons_drawn_at || now_ms() - g_icons_drawn_at >= ICON_REDRAW_GAP_MS);
+      const bool usb_changed = icons_due && ((icons ^ g_shown_icons) & ICON_USB) &&
+                               g_shown_icons != 0xFF;
       const bool urgent = s.active != g_shown_active ||
                           s.alarms_active != g_shown_alarms ||
-                          s.acked != g_shown_acked;
+                          s.acked != g_shown_acked || icons_due;
       const bool due = !g_shown_at ||
                        now_ms() - g_shown_at >= DISPLAY_MIN_S * 1000;
-      if (g_force || (content != g_shown_hash && (urgent || due))) {
+      if (g_force || usb_changed || (content != g_shown_hash && (urgent || due))) {
         char clock[8];
         clock_str(clock, sizeof(clock));
         build(s, clock);
@@ -215,8 +265,13 @@ void task(void *) {
           g_shown_active = s.active;
           g_shown_alarms = s.alarms_active;
           g_shown_acked = s.acked;
+          if (icons != g_shown_icons) g_icons_drawn_at = now_ms();
+          g_shown_icons = icons;
           printf("[display] refreshed in %lu ms%s\n",
-                 (unsigned long)epd_last_refresh_ms(), urgent ? " (state change)" : "");
+                 (unsigned long)epd_last_refresh_ms(),
+                 usb_changed ? " (USB power changed)"
+                 : icons_due ? " (icons changed)"
+                 : urgent ? " (state change)" : "");
         } else {
           printf("[display] panel did not answer\n");
         }

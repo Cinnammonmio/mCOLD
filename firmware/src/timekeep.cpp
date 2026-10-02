@@ -17,6 +17,7 @@ uint32_t g_boot = 0;
 int rank(TimeSource s) {
   switch (s) {
     case TimeSource::Gnss: return 3;
+    case TimeSource::Ntp:  return 3;   // as good as satellite time, for this purpose
     case TimeSource::Host: return 2;
     case TimeSource::Rtc:  return 1;
     default:               return 0;

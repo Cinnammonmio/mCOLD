@@ -107,10 +107,13 @@ void stamp(Writer &w) {
 // log says a trip was lost that is in fact still there, which is the
 // safe way round.
 // A trip deleted to make room, and the notice that says so.
+TripRetention g_ret = {};
+
 struct Loss {
   uint32_t trip;
   uint32_t records;
   bool noted;          // the EV_LOSS record is in the log
+  bool lost;           // false: the server had it all, nothing was lost
 };
 
 bool write_loss(const Loss &v) {
@@ -135,12 +138,29 @@ bool write_loss(const Loss &v) {
 bool evict_one(bool notice_first, Loss *out) {
   uint32_t trips[16];
   const int n = flashlog_trips(trips, 16);
+
+  // First, a trip the server already has in full (§9.6 step 1): deleting
+  // it gives the space back and loses nothing, so it is no loss event.
+  if (g_ret.fully_acked) {
+    for (int i = 0; i < n && i < 16; i++) {
+      if (trips[i] == g_id || !g_ret.fully_acked(trips[i])) continue;
+      if (flashlog_erase_trip(trips[i]) != LogErr::Ok) return false;
+      if (g_ret.forget) g_ret.forget(trips[i]);
+      printf("[trip] log full: reclaimed trip %08lX, already on the server\n",
+             (unsigned long)trips[i]);
+      *out = {trips[i], 0, true, false};
+      return true;
+    }
+  }
+
+  // Then the oldest finished trip, whole, as a loss.
   for (int i = 0; i < n && i < 16; i++) {
     if (trips[i] == g_id) continue;
     Loss v = {trips[i], flashlog_read(trips[i], 0, nullptr, nullptr, nullptr),
-              false};
+              false, true};
     if (notice_first) v.noted = write_loss(v);
     if (flashlog_erase_trip(v.trip) != LogErr::Ok) return false;
+    if (g_ret.forget) g_ret.forget(v.trip);
     g_lost_trips++;
     nvs_put("lost", g_lost_trips);
     printf("[trip] log full: deleted trip %08lX (%lu records) to make room\n",
@@ -158,7 +178,7 @@ TripErr put(uint8_t type, const Writer &w, bool starting = false) {
   Loss v;
   if (e == LogErr::Full && evict_one(!starting, &v)) {
     e = flashlog_append(g_id, type, w.p, w.n, nullptr);
-    if (e == LogErr::Ok && !v.noted) write_loss(v);
+    if (e == LogErr::Ok && v.lost && !v.noted) write_loss(v);
   }
   switch (e) {
     case LogErr::Ok:   return TripErr::Ok;
@@ -668,3 +688,5 @@ const char *alarm_name(uint8_t a) {
   }
   return "?";
 }
+
+void trip_set_retention(const TripRetention &r) { g_ret = r; }

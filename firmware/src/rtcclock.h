@@ -3,10 +3,13 @@
 //
 // Two facts about this board make that question the important part:
 //
-//   Control_3 reads 0xE0 -- battery switch-over is disabled -- and the
-//   VBAT net has no backup source fitted. When the main rail drops,
-//   the clock stops and the date resets. Bring-up found it reading
-//   2020-07-02 with the oscillator-stopped flag set.
+//   As drawn, the VBAT net has no backup source, and Control_3 comes up
+//   0xE0 -- switch-over disabled. When the main rail drops (SW3 off),
+//   the clock stops and the date resets; bring-up found it reading
+//   2020-07-02 with the oscillator-stopped flag set. This prototype now
+//   has a CR1220 hand-soldered on VBAT_3V, and rtc_begin() turns the
+//   switch-over on, so the time survives power-off. A board without
+//   the cell behaves as before, and the rule below still holds.
 //
 //   CAP_SEL returns to 7 pF on every power loss, while the schematic
 //   calls for 12.5 pF. Set it wrong and the clock still runs, just at
@@ -28,6 +31,7 @@ enum class TimeSource : uint8_t {
   Rtc,         // the clock kept running across this reset
   Gnss,        // from satellite time, the most trustworthy source here
   Host,        // set over BLE, USB or the app
+  Ntp,         // from a time server, once Wi-Fi is up
 };
 
 // Writes CAP_SEL, reads the oscillator-stopped flag and decides whether
@@ -52,5 +56,13 @@ bool rtc_set(const struct tm *t, TimeSource src);
 
 // The oscillator-stopped flag as last read, for diagnostics.
 bool rtc_os_flag(void);
+
+// Backup cell on VBAT (a CR1220 on this prototype; the board as drawn
+// has none). Low: the part's own battery-low detector. Ran on backup:
+// main power went away since the last boot and the cell carried the
+// clock. Control_3 as found at boot, before it was set.
+bool rtc_backup_low(void);
+bool rtc_ran_on_backup(void);
+uint8_t rtc_control3_at_boot(void);
 
 const char *rtc_source_name(TimeSource s);

@@ -29,17 +29,21 @@ Section numbers below refer to it.
 
 ## 2. State right now
 
-Firmware **0.5.0** released (tag `firmware/v0.5.0`).
+Firmware **0.6.0** released (tag `firmware/v0.6.0`, ELF sha256 `87a009c0a...`).
 Running on the board:
 
 ```
-RAM  17.8% (58,484 B)      Flash 24.5% (769,192 B of a 3 MiB OTA slot)
+RAM  13.8% (45,220 B)      Flash 41.8% (1,314,472 B of a 3 MiB OTA slot)
 ```
 
-P0 to P5 complete: the box runs trips, records them, shows them, and
-talks to a phone over BLE with tap-to-authorize (`PROTOCOL.md`,
-proposed to the iOS team). Next: **P6**, Wi-Fi/MQTT sync, USB drive
-with CSV, OTA. The door is switched off (`MCOLD_DOOR 0` in
+P0 to P5 complete, P6 in part: the box runs trips, records them, shows
+them, talks to a phone over BLE with tap-to-authorize, and uploads to
+the team's MQTT broker over Wi-Fi with application ACKs. **OTA and the
+USB drive are deferred.** Next: **P7**, power.
+
+Bench state: Wi-Fi networks `mio` and `Mio_2.4G` and the broker login
+are in this board's NVS (set over USB, never in git). The server does
+not ACK yet, so nothing is reclaimed (`sync` shows what is pending). The door is switched off (`MCOLD_DOOR 0` in
 `src/features.h`, decided 2026-10-02). The e-paper runs on the mono
 panel in hand; the four-ink panel is a long way off.
 
@@ -89,6 +93,8 @@ and nowhere else.
 | `ble.*` | NimBLE GATT transport, MTU-independent fragments; advertises on tap or external power |
 | `auth.*` | tap to authorize: key in the NFC record, AUTH = HMAC-SHA256(key, nonce), rotation |
 | `tools/ble_client.py` | reference client for the app team; runs from a PC with Bluetooth |
+| `net.*` | Wi-Fi: up to 5 networks, joins the strongest; SNTP sets the clock |
+| `uplink.*` | MQTT: record batches out, application ACKs in (PROTOCOL.md section 6) |
 | `main.cpp` | 9 tasks + supervisor; console: `help` lists the commands |
 
 Checked on the board by a person, 2026-10-02: tap → motion event;
@@ -97,7 +103,6 @@ side light breathes yellow while charging below 80 %, green above.
 
 | Still unverified | |
 |---|---|
-| **GNSS fix** | never seen on this board. Indoors it reported **0 satellites in view** -- not even a weak one. Either the room is that shielded or the antenna path does not work. Next time outdoors: leave it 10 min and read `gnss` |
 | Side light going out on unplug | follows PG# directly; not yet watched |
 
 | Open from P3 | |
@@ -116,7 +121,7 @@ plus the authorization key) and rewrites only bytes that change.
 | Not written yet | |
 |---|---|
 | HUSB238A | answers at 0x42; PD policy is §5.5 |
-| Wi-Fi/MQTT, USB MSC, OTA, SD | P6 |
+| USB MSC, OTA, SD | deferred from P6 |
 
 ---
 
@@ -149,7 +154,7 @@ for the low-power architecture §12 asks for.
 
 ### Unresolved
 
-**GNSS RF path: every DNP part was fitted (2026-10-02).** The board was
+**GNSS RF path: every DNP part was fitted -- FIXED 2026-10-02.** The board was
 built with all antenna options populated, for easy rework. Two of them
 kill the signal on their own:
 
@@ -160,12 +165,20 @@ kill the signal on their own:
 - **R_SET_PCB and R_SET_IPEX both fitted**, so RF_IN also drives the
   empty u.FL connector: an open stub on the line.
 
-This matches what the firmware saw: 0 satellites in view, not even weak
-ones. Rework decided: **remove C_M1, C_M2 and R_SET_IPEX** (onboard
-antenna U3 GPS1003 in use). For the u.FL instead: remove R_SET_PCB, C_M1,
-C_M2, keep R_SET_IPEX -- and note VCC_RF (pin 14) is not connected, so
-only a passive antenna works there. After rework, `gnss` shows satellites
-heard and best SNR; outdoors a fix wants four or more near 30 dB-Hz.
+Before: 0 satellites in view, not even weak ones. **Rework done: C_M1,
+C_M2 and R_SET_IPEX removed** (onboard antenna U3 GPS1003 in use). After,
+by a window: 9 to 17 satellites heard, best SNR 43 dB-Hz, a fix with 6-8
+satellites and HDOP down to 1.7 within minutes, and the RTC set from
+satellite time -- the first fix this board has ever had. **Every board
+built from this BOM needs the same three parts left off.**
+
+For the u.FL instead: remove R_SET_PCB, C_M1, C_M2, keep R_SET_IPEX --
+and VCC_RF (pin 14) is not connected, so only a passive antenna works
+there.
+
+`$GPTXT,…,ANTENNA OPEN` from the module is not a fault here: the
+ATGM336H detects an antenna by DC current into RF_IN, and C_DC blocks DC
+by design. It says OPEN with this working antenna too.
 
 **An unidentified I2C device at 0x2D.** It acknowledges both a
 zero-length write and a one-byte read, so it is not a scan artefact, but
@@ -213,15 +226,27 @@ remove this.
 fault reported anywhere. `rtc_begin()` writes it on every boot. This is
 not a production-time setting.
 
-### The RTC has no backup supply
+### The RTC has no backup supply (as drawn)
 
-`Control_3` reads `0xE0`: battery switch-over disabled, and the VBAT net
-has no cell fitted. When the main rail drops, the time is gone — it was
-found reading 2020-07-02 with the oscillator-stopped flag set.
+The RTC's VDD is 3V3_MAIN, which SW3 cuts; the VBAT_3V net has no cell
+in the schematic, and `Control_3` comes up `0xE0`: switch-over disabled.
+So switching the box off loses the time -- it was found reading
+2020-07-02 with the oscillator-stopped flag set.
 
-So `rtc_time_valid()` exists, and **nothing may stamp a record with a
-time the device cannot vouch for**. Re-sync from GNSS (`$GNRMC` carries
-date and time) or from the app. Do not substitute a default date.
+**This prototype has a CR1220 hand-soldered onto VBAT_3V (2026-10-02)**,
+and `rtc_begin()` now sets `Control_3` to `0x00` on every boot:
+switch-over in standard mode, battery-low detection on. `health` shows
+the cell's state and whether it carried the clock through a power-off.
+**Checked 2026-10-02:** SW3 off for a minute or two, then on: `Control_3`
+read `0x08` (BSF: it ran on the cell), source `rtc`, time still right.
+The README's suggested rework -- VBAT tied to VSS -- is for a board with
+no backup at all; **do not do it on a board with the cell.** The next
+board revision should have a cell or supercap on VBAT_3V by design.
+
+Either way `rtc_time_valid()` stays the rule: **nothing may stamp a
+record with a time the device cannot vouch for.** Without the cell, the
+time comes back from NTP (seconds after Wi-Fi), GNSS (`$GNRMC`), or the
+app. Never a default date.
 
 ### The BQ25601 silently undoes its own configuration
 
@@ -375,8 +400,8 @@ README once carried an older 14-step plan; this is the one in use.
 | P3 trip and sensing | 0.3.0 ✅ | trip state machine (§8, state axes kept separate); START/STOP with a trip header carrying that trip's alarm thresholds; a sample every 5 min into the log; events (motion, probe fault, alarms, reset/data gap); alarm engine (thresholds, hysteresis, dwell; ack never erases history); resume after a reset mid-trip; retention when full (§9.6). Driven from the console until BLE exists. Door switched off | shock threshold |
 | P4 display, LED, buzzer | 0.4.0 ✅ | e-paper driver and screens from `display-mock`, live from state, on the mono panel in hand; LED and buzzer patterns per `docs/led-design.md` (never together); attention window | the four-ink panel (a driver table entry when it comes) |
 | P5 BLE/NFC/protocol | 0.5.0 ✅ | NimBLE GATT advertising the SN; the §13 command set with request IDs and idempotency; NDEF record; tap brings BLE up; tap to authorize (decided 2026-10-02). NFC GPO wake moves to P7 | the iOS team's answer to PROTOCOL.md |
-| **P6 sync, USB, OTA** | 0.6.0 | Wi-Fi + MQTT to the team's broker; live and backlog upload; application ACK, then reclaim; USB mass storage showing a read-only CSV per trip; optional SD archive; OTA with signed images and rollback | topics, ACK format, TLS on the broker, per-device credentials, a file server for OTA |
-| P7 power | 0.7.0 | deep sleep between samples; every wake source (timer, accel, door, NFC, PG#); GPIO holds; log head kept in RTC memory; charger and PD policy; current measured until 7 days on 1500 mAh is shown | battery datasheet (RCOMP, charge limits) |
+| P6 sync, USB, OTA | 0.6.0 ✅ in part | Done: Wi-Fi (5 networks), NTP, MQTT to the team's broker, live and backlog upload, application ACK then reclaim. Deferred: USB mass storage with CSV, SD archive, OTA (signed, rollback) | the server team: ACK, TLS, per-device logins; a file server for OTA |
+| **P7 power** | 0.7.0 | deep sleep between samples; every wake source (timer, accel, door, NFC, PG#); GPIO holds; log head kept in RTC memory; charger and PD policy; current measured until 7 days on 1500 mAh is shown | battery datasheet (RCOMP, charge limits) |
 | P8 hardening | 1.0.0 | watchdog and core-dump retrieval; quiet production logging; flash encryption / secure boot decision; the §14 acceptance cases; 31-day offline simulation; 6-device Dock; factory provisioning | -- |
 
 P7 is where power is *measured*, not where it is designed: the event

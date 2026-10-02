@@ -23,8 +23,16 @@ const uint8_t CAP_SEL_12PF = 0x80;
 // how a dead crystal announces itself.
 const uint8_t OS_FLAG = 0x80;
 
+// Control_3: PM[2:0] in bits 7..5, BSF bit 3 (switched to the backup
+// since cleared), BLF bit 2 (backup low; read only).
+const uint8_t C3_SWITCHOVER_STANDARD = 0x00;   // PM 000
+const uint8_t C3_BSF = 0x08;
+const uint8_t C3_BLF = 0x04;
+
 TimeSource g_source = TimeSource::None;
 bool g_os = true;
+bool g_ran_on_backup = false;
+uint8_t g_c3_found = 0;
 
 uint8_t bcd2bin(uint8_t v) { return (uint8_t)((v >> 4) * 10 + (v & 0x0F)); }
 uint8_t bin2bcd(uint8_t v) { return (uint8_t)(((v / 10) << 4) | (v % 10)); }
@@ -40,18 +48,45 @@ bool rtc_begin(void) {
     return false;
   }
 
+  // Backup supply. The board as drawn leaves VBAT_3V floating; this
+  // prototype has a CR1220 hand-soldered onto it (2026-10-02). Control_3
+  // came up 0xE0 -- switch-over disabled, the part running on VDD alone
+  // -- which wastes the cell: with VDD gone the clock stops anyway. So,
+  // every boot: PM = 000, switch-over in standard mode (to VBAT when VDD
+  // falls below VBAT and below 2.5 V) and battery-low detection on.
+  // Writing the byte also clears BSF, after reading whether the part ran
+  // on the cell since the last boot. With no cell fitted this setting is
+  // harmless: VBAT is never above VDD, so it never switches.
+  uint8_t c3 = 0;
+  if (i2c_read_reg(Dev::Rtc, ADDR_PCF8523, REG_CONTROL_3, &c3, 1) == BusErr::Ok) {
+    g_ran_on_backup = (c3 & C3_BSF) != 0;
+    g_c3_found = c3;
+  }
+  i2c_write_reg(Dev::Rtc, ADDR_PCF8523, REG_CONTROL_3, C3_SWITCHOVER_STANDARD);
+
   uint8_t sec = 0;
   if (i2c_read_reg(Dev::Rtc, ADDR_PCF8523, REG_SECONDS, &sec, 1) != BusErr::Ok) {
     return false;
   }
   g_os = (sec & OS_FLAG) != 0;
 
-  // With no backup cell on VBAT, the oscillator only survives a reset
-  // if the main rail never dropped. So a clear flag here really does
-  // mean the time was carried across, and a set one means it was not.
+  // The oscillator-stopped flag is the verdict, with or without a cell:
+  // clear means the time was carried across (on the cell, or because
+  // VDD never dropped); set means it was not, and the time is unknown.
   g_source = g_os ? TimeSource::None : TimeSource::Rtc;
   return true;
 }
+
+bool rtc_backup_low(void) {
+  uint8_t c3 = 0;
+  if (i2c_read_reg(Dev::Rtc, ADDR_PCF8523, REG_CONTROL_3, &c3, 1) != BusErr::Ok) {
+    return false;
+  }
+  return (c3 & C3_BLF) != 0;
+}
+
+bool rtc_ran_on_backup(void) { return g_ran_on_backup; }
+uint8_t rtc_control3_at_boot(void) { return g_c3_found; }
 
 bool rtc_time_valid(void) { return g_source != TimeSource::None; }
 TimeSource rtc_source(void) { return g_source; }
@@ -127,6 +162,7 @@ const char *rtc_source_name(TimeSource s) {
     case TimeSource::Rtc:  return "rtc";
     case TimeSource::Gnss: return "gnss";
     case TimeSource::Host: return "host";
+    case TimeSource::Ntp:  return "ntp";
   }
   return "?";
 }
