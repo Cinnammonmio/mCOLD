@@ -29,15 +29,16 @@ Section numbers below refer to it.
 
 ## 2. State right now
 
-Firmware **0.2.0** released (tag `firmware/v0.2.0`, ELF sha256 `9f5ca65c3...`).
+Firmware **0.3.0** released (tag `firmware/v0.3.0`, ELF sha256 `756942ed9...`).
 Running on the board:
 
 ```
-RAM   6.5% (21,212 B)      Flash 13.6% (427,364 B of a 3 MiB OTA slot)
+RAM   6.5% (21,380 B)      Flash 14.1% (442,252 B of a 3 MiB OTA slot)
 ```
 
-P0, P1 and P2 complete. Next: **P3**, the trip state machine and
-sensing -- which is where the trip log first gets real records.
+P0 to P3 complete: the box runs trips and records them. Next: **P4**,
+display, LED and buzzer patterns. The door is switched off
+(`MCOLD_DOOR 0` in `src/features.h`, decided 2026-10-02).
 
 **Git.** The firmware lives in the shared mCOLD repo under `firmware/`,
 with its full history (imported 2026-10-02; until then it was a repo of
@@ -71,9 +72,12 @@ and nowhere else.
 | `buzzer.*` | MLT-8530, LEDC 2.7 kHz, self-terminating, 3 s cap |
 | `chargeled.*` | side light shows charge state (table in CHANGELOG 0.1.0), only on external power |
 | `timekeep.*` | UTC + quality, boot counter in NVS, per-boot tick; system clock follows the RTC |
-| `config.*` | NVS settings from one table of ranges and defaults; schema 2; over-long keys fail the build |
+| `config.*` | NVS settings from one table of ranges and defaults; schema 3; over-long keys fail the build |
 | `flashlog.*` | the trip log: CRC'd 128-byte frames, one trip per sector, power-cut safe; `logtest` runs 14 power-cut tests on the device |
-| `main.cpp` | 7 tasks + supervisor; console: `help` lists the commands |
+| `record.h` | the byte layout of every trip record, with its "none" values |
+| `trip.*` | trips: start/stop, samples, events, alarm engine, resume after reset, retention when full |
+| `door.*` | GPIO7 door contact, compiled but **off** (`features.h`) |
+| `main.cpp` | 8 tasks + supervisor; console: `help` lists the commands |
 
 Checked on the board by a person, 2026-10-02: tap → motion event;
 phone → NFC arrival; all four LED colours and positions (`ledtest`);
@@ -84,13 +88,14 @@ side light breathes yellow while charging below 80 %, green above.
 | **GNSS fix** | never seen on this board. Indoors it reported **0 satellites in view** -- not even a weak one. Either the room is that shielded or the antenna path does not work. Next time outdoors: leave it 10 min and read `gnss` |
 | Side light going out on unplug | follows PG# directly; not yet watched |
 
-| For P3 to pick up from the trip log | |
+| Open from P3 | |
 |---|---|
-| When a trip may be deleted | the log only erases on request. Policy (§9.6): after server ACK, or oldest completed trip first when full, with a loss record first. Never the active trip |
-| `log_meta` partition | still unused. Planned: trip table, ACK checkpoints, loss records -- a journal that can be rebuilt from `trip_log` |
-| Sample record schema | frame payload is 112 bytes, little-endian fields, never a C struct (§9.4) |
-| **Boot scan per wake** | the scan takes 168 ms. Once the box deep-sleeps between 5-minute samples, rescanning every wake costs ~5 mAh/day (~3 % of the budget). Keep the head position in RTC memory across sleep instead |
+| Shock alarm | motion is logged as events and counted per sample; no alarm until a threshold is chosen |
+| Deleting after server ACK | only "oldest finished trip when full" exists. ACK-driven reclaim is P6 |
+| `log_meta` partition | still unused: the trip list is rebuilt from `trip_log`. ACK checkpoints and loss records can live there in P6 |
+| **Boot scan per wake** | the scan takes 168 ms. Once the box deep-sleeps between 5-minute samples, rescanning every wake costs ~5 mAh/day (~3 % of the budget). Keep the head position in RTC memory across sleep (P7) |
 | Trip id `0xBE5C0001` | reserved for the console's bench records; real trip ids must never reach it |
+| Test trips on the board | trips 2, 3, 4 in the log are bench tests from 2026-10-02 |
 
 **Do not run `nfc write` casually.** The tag currently holds a JSON
 NDEF record from bring-up (`{"sn":"MCOLD-9A74","ble...`), possibly the
@@ -99,10 +104,9 @@ Text record.
 
 | Not written yet | |
 |---|---|
-| Door sensor (GPIO7) | trivial GPIO; belongs with the trip logic in P3 |
 | HUSB238A | answers at 0x42; PD policy is §5.5 |
 | Display | blocked: see §5 |
-| Storage, trip state machine, BLE, Wi-Fi, USB MSC | phases 2 onward |
+| BLE, Wi-Fi, USB MSC, OTA | P5, P6 |
 
 ---
 
@@ -332,10 +336,20 @@ like data. No device failure is ever rendered as 0.
 
 ## 7. Phases
 
-P0 skeleton · P1 drivers · P2 time/config/storage ·
-**P3 trip state machine and sensing (next)** · P4 display, LED, buzzer ·
-P5 BLE/NFC/protocol · P6 Wi-Fi sync and USB MSC/CSV ·
-P7 power measurement · P8 hardening
+Each phase ends in a release `0.N.0`, verified on the board. The repo
+README once carried an older 14-step plan; this is the one in use.
+
+| Phase | Release | Scope | Waiting on |
+|---|---|---|---|
+| P0 skeleton | 0.0.1 ✅ | ESP-IDF project, partition table, health registry, rails, guarded buses, tasks + supervisor, console | -- |
+| P1 drivers | 0.1.0 ✅ | every on-board device: MAX6675, PCF8523, power chain, LIS2DW12, GNSS, ST25DV, LEDs, buzzer; side light shows charge state | a GNSS fix has never been seen |
+| P2 time/config/storage | 0.2.0 ✅ | UTC with quality + boot counter; NVS config; power-cut-safe trip log | -- |
+| P3 trip and sensing | 0.3.0 ✅ | trip state machine (§8, state axes kept separate); START/STOP with a trip header carrying that trip's alarm thresholds; a sample every 5 min into the log; events (motion, probe fault, alarms, reset/data gap); alarm engine (thresholds, hysteresis, dwell; ack never erases history); resume after a reset mid-trip; retention when full (§9.6). Driven from the console until BLE exists. Door switched off | shock threshold |
+| **P4 display, LED, buzzer** | 0.4.0 | e-paper driver behind a feature flag; screens from `display-mock`; LED and buzzer pattern engine per `docs/led-design.md` (never together); attention window | the 4-colour panel |
+| P5 BLE/NFC/protocol | 0.5.0 | NimBLE GATT advertising the SN; the §13 command set with request IDs and idempotency; NDEF record; tap brings BLE up; NFC GPO wake | UUIDs and NDEF schema from the iOS team |
+| P6 sync, USB, OTA | 0.6.0 | Wi-Fi + MQTT to the team's broker; live and backlog upload; application ACK, then reclaim; USB mass storage showing a read-only CSV per trip; optional SD archive; OTA with signed images and rollback | topics, ACK format, TLS on the broker, per-device credentials, a file server for OTA |
+| P7 power | 0.7.0 | deep sleep between samples; every wake source (timer, accel, door, NFC, PG#); GPIO holds; log head kept in RTC memory; charger and PD policy; current measured until 7 days on 1500 mAh is shown | battery datasheet (RCOMP, charge limits) |
+| P8 hardening | 1.0.0 | watchdog and core-dump retrieval; quiet production logging; flash encryption / secure boot decision; the §14 acceptance cases; 31-day offline simulation; 6-device Dock; factory provisioning | -- |
 
 P7 is where power is *measured*, not where it is designed: the event
 loop and rail discipline have to be right from P1 or they get rebuilt.
