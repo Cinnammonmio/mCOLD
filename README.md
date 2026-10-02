@@ -91,24 +91,21 @@ footer แถวสถานะ (wifi, cloud, trip, shock, charge, แบต, �
 
 ## แผนพัฒนา firmware
 
-เฟส 0 คือ bring-up firmware แยกจาก production code สำหรับทดสอบทีละโมดูลเมื่อได้ PCB
+Hardware พิสูจน์แล้วด้วย [`bringup/`](bringup/) · product firmware อยู่ที่ [`firmware/`](firmware/)
+แต่ละเฟสจบด้วย release `firmware/v0.N.0` ที่ทดสอบบนบอร์ดจริงแล้ว
+รายละเอียดเต็มอยู่ใน [`firmware/HANDOFF.md`](firmware/HANDOFF.md) §7
 
-| เฟส | เนื้อหา |
-|---|---|
-| 0 | Hardware bring-up / self-test: rail, GPIO, I²C scan, sensor, PD/charge, e-paper (ทำท้ายสุด) |
-| 1 | Board support + bus drivers (I²C/SPI/UART, rail manager แบบ ref-count) |
-| 2 | Sensor drivers: MAX6675, door, LIS2DW12, GNSS, RTC |
-| 3 | Flash storage: partition, record framing 128 B + CRC, power-cut recovery |
-| 4 | Trip state machine + alarm engine |
-| 5 | Power management: sleep/wake, 7 power profiles, วัดกระแสจริง |
-| 6 | Charger/PD policy (9 V ปิดไว้) |
-| 7 | e-Paper driver + LED/buzzer |
-| 8 | USB MSC virtual FAT/CSV |
-| 9 | BLE GATT + NFC NDEF |
-| 10 | Wi-Fi sync + ACK/idempotency |
-| 11 | SD archive + retention |
-| 12 | OTA/diagnostics |
-| 13 | Integration + acceptance test |
+| เฟส | Release | เนื้อหา | สถานะ |
+|---|---|---|---|
+| P0 โครงระบบ | 0.0.1 | ESP-IDF, partition, health registry, rail, bus, task + supervisor | ✅ |
+| P1 drivers | 0.1.0 | อุปกรณ์บนบอร์ดครบทุกตัว · ไฟข้างเครื่องบอกสถานะชาร์จ | ✅ (GNSS ยังไม่เคย fix) |
+| P2 เวลา/ตั้งค่า/flash log | 0.2.0 | UTC + ความน่าเชื่อถือ · config ใน NVS · log ทนไฟดับ | ✅ |
+| P3 trip + sensing | 0.3.0 | เริ่ม/จบ trip พร้อม alarm ของ trip นั้น · เก็บข้อมูลทุก 5 นาที · event · alarm · กู้ trip หลัง reset · ลบ trip เก่าเมื่อเต็ม · ปิดฟังก์ชันประตู | ✅ |
+| P4 จอ, LED, buzzer | 0.4.0 | จอ e-paper · pattern ไฟและเสียงตาม `docs/led-design.md` | กำลังทำ · จอรอจอ 4 สี |
+| P5 BLE/NFC | 0.5.0 | BLE GATT · ชุดคำสั่ง · NDEF · แตะ NFC แล้วเปิด BLE | รอ UUID/NDEF จากทีม iOS |
+| P6 sync, USB, OTA | 0.6.0 | Wi-Fi + MQTT · ACK แล้วคืนพื้นที่ · USB drive + CSV · SD · OTA | รอ topic/ACK/TLS จากทีม server |
+| P7 พลังงาน | 0.7.0 | deep sleep · wake ทุกแหล่ง · charger/PD · วัดจริงให้ได้ 7 วัน | รอ datasheet แบต |
+| P8 พร้อมผลิต | 1.0.0 | watchdog · security · acceptance test §14 · Dock 6 เครื่อง · factory provisioning | — |
 
 ## เรื่องที่ยังรอ
 
