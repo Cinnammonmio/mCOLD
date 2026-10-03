@@ -1,7 +1,11 @@
 #include "timekeep.h"
 
-#include <esp_timer.h>
+#include <esp_attr.h>
+#include <esp_system.h>
 #include <nvs.h>
+// esp_hw_support/include/soc/esp32s3/rtc.h, which "soc/rtc.h" does not
+// reach (the soc component has a header of the same name).
+extern "C" uint64_t esp_rtc_get_time_us(void);
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +14,17 @@
 namespace {
 
 uint32_t g_boot = 0;
+
+// Carried through deep sleep, which keeps RTC memory and nothing else.
+// RTC_DATA is reloaded on any other kind of reset, so after one of
+// those the magic is gone and the counter comes from NVS again.
+struct Kept {
+  uint32_t magic;
+  uint32_t boot;
+  TimeSource synced_by;
+};
+const uint32_t KEPT_MAGIC = 0x544B5031;   // "TKP1"
+RTC_DATA_ATTR Kept g_kept;
 
 // Satellite time outranks the app's, which outranks the RTC carrying
 // on from before the reset: the RTC's crystal is the thing being
@@ -48,8 +63,12 @@ void time_init(void) {
   setenv("TZ", "UTC0", 1);
   tzset();
 
+  const bool warm = esp_reset_reason() == ESP_RST_DEEPSLEEP && g_kept.magic == KEPT_MAGIC;
   nvs_handle_t h;
-  if (nvs_open("sys", NVS_READWRITE, &h) == ESP_OK) {
+  if (warm) {
+    g_boot = g_kept.boot;
+    g_synced_by = g_kept.synced_by;
+  } else if (nvs_open("sys", NVS_READWRITE, &h) == ESP_OK) {
     uint32_t b = 0;
     nvs_get_u32(h, "boots", &b);
     g_boot = b + 1;
@@ -57,13 +76,21 @@ void time_init(void) {
     nvs_commit(h);
     nvs_close(h);
   }
+  g_kept.magic = KEPT_MAGIC;
+  g_kept.boot = g_boot;
 
+  // Every wake, not only after a reset: the system clock ran through the
+  // sleep on the chip's RC oscillator, which drifts by a percent or more
+  // with temperature. The RTC's crystal is the better clock.
   struct tm t;
   if (rtc_time_valid() && rtc_get(&t) && rtc_time_valid()) {
     set_system(&t);
-    g_synced_by = TimeSource::Rtc;
+    if (!warm) g_synced_by = TimeSource::Rtc;
   }
+  g_kept.synced_by = g_synced_by;
 }
+
+uint32_t mono_ms(void) { return (uint32_t)(esp_rtc_get_time_us() / 1000); }
 
 void time_now(TimeStamp *out) {
   if (!out) return;
@@ -74,7 +101,7 @@ void time_now(TimeStamp *out) {
   // boot, rtc_source() has already dropped to None.
   out->quality = rtc_time_valid() ? rtc_source() : TimeSource::None;
   out->boot = g_boot;
-  out->tick_ms = (uint32_t)(esp_timer_get_time() / 1000);
+  out->tick_ms = mono_ms();
 }
 
 bool time_valid(void) { return rtc_time_valid(); }
@@ -89,6 +116,7 @@ bool time_set(const struct tm *utc, TimeSource src, bool force) {
   if (!rtc_set(utc, src)) return false;
   set_system(utc);
   g_synced_by = src;
+  g_kept.synced_by = src;
   return true;
 }
 

@@ -22,6 +22,7 @@ void ble_store_config_init(void);
 
 #include "auth.h"
 #include "board.h"
+#include "pm.h"
 #include "record.h"
 #include "rpc.h"
 #include "trip.h"
@@ -54,6 +55,7 @@ uint16_t h_status, h_rsp, h_evt;
 char g_sn[16] = "";
 uint8_t g_own_addr = 0;
 volatile bool g_synced = false;
+bool g_up = false;              // the NimBLE stack has been started
 volatile bool g_enabled = true;
 volatile bool g_adv = false;
 volatile uint16_t g_conn = BLE_HS_CONN_HANDLE_NONE;
@@ -88,7 +90,7 @@ const uint8_t F_FIRST = 0x80, F_LAST = 0x40, F_INDEX = 0x3F;
 
 uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
-bool external_power(void) { return gpio_get_level((gpio_num_t)PIN_PG_N) == 0; }
+bool external_power(void) { return pm_external_power(); }
 
 // ---- sending: every notification is a framed message --------------------
 
@@ -304,12 +306,20 @@ void event(const char *ev, const char *alarm = nullptr) {
   send_json(h_evt, g_sub_evt, s);
 }
 
+bool stack_up(void);
+
+bool window_open(void) { return (int32_t)(g_window_until - now_ms()) > 0; }
+
 void worker(void *) {
   TripStatus prev;
   trip_status(&prev);
   for (;;) {
+    // The stack starts the first time there is a reason to advertise.
+    // Most wakes from sleep have none, and skip its start-up and its RAM.
+    if (!g_up && g_enabled && (external_power() || window_open())) g_up = stack_up();
+
     Msg m;
-    if (xQueueReceive(g_q, &m, pdMS_TO_TICKS(1000)) == pdTRUE) {
+    if (xQueueReceive(g_q, &m, pdMS_TO_TICKS(250)) == pdTRUE) {
       if (m.n == 0) {     // a ready-made error
         send_framed(m.conn, h_rsp, m.data, strlen(m.data));
       } else {
@@ -345,10 +355,13 @@ void worker(void *) {
     prev = s;
 
     // Advertise only with a reason: a tap's window, or external power.
-    const bool want = g_enabled && g_conn == BLE_HS_CONN_HANDLE_NONE &&
-                      (external_power() || (int32_t)(g_window_until - now_ms()) > 0);
+    const bool want = g_up && g_enabled && g_conn == BLE_HS_CONN_HANDLE_NONE &&
+                      (external_power() || window_open());
     if (want) advertise();
     else if (g_adv) stop_advertising();
+    // Asleep, the radio is off and no phone can reach the box.
+    pm_hold(Hold::Ble, g_adv || g_conn != BLE_HS_CONN_HANDLE_NONE ||
+                           (g_enabled && window_open()));
   }
 }
 
@@ -357,10 +370,15 @@ void worker(void *) {
 void ble_start(const char *sn) {
   snprintf(g_sn, sizeof(g_sn), "%s", sn ? sn : "MCOLD");
   g_q = xQueueCreate(4, sizeof(Msg));
+  xTaskCreatePinnedToCore(worker, "ble", 6144, nullptr, 3, nullptr, 0);
+}
 
+namespace {
+
+bool stack_up(void) {
   if (nimble_port_init() != ESP_OK) {
     printf("[ble] controller did not start\n");
-    return;
+    return false;
   }
   ble_hs_cfg.sync_cb = on_sync;
   ble_hs_cfg.reset_cb = on_reset;
@@ -415,17 +433,23 @@ void ble_start(const char *sn) {
   ble_svc_gatt_init();
   if (ble_gatts_count_cfg(g_svcs) || ble_gatts_add_svcs(g_svcs)) {
     printf("[ble] GATT table rejected\n");
-    return;
+    return false;
   }
   ble_svc_gap_device_name_set(g_sn);
   ble_store_config_init();
   nimble_port_freertos_init(host_task);
-  xTaskCreatePinnedToCore(worker, "ble", 6144, nullptr, 3, nullptr, 0);
+  return true;
 }
+
+}  // namespace
 
 void ble_window(uint32_t ms) {
   const uint32_t until = now_ms() + ms;
   if ((int32_t)(until - g_window_until) > 0) g_window_until = until;
+  // At once, not at the worker's next pass: the tap that opened the
+  // window may be the last duty of a wake, and the chip would be asleep
+  // before the worker looked.
+  if (g_enabled) pm_hold(Hold::Ble, true);
 }
 
 void ble_enable(bool on) {

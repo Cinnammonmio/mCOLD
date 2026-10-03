@@ -36,6 +36,76 @@ To cut a release:
 
 ## Unreleased
 
+P7, power: in progress.
+
+- **Deep sleep between jobs on battery** (`pm.*`). Each wake runs as a
+  short boot: every module does one pass and reports (`duties`), anything
+  a person or a session is doing keeps the chip up (`holds`), and it
+  sleeps until the earliest time any module asked for. USB power keeps
+  it awake. Wake sources: timer; motion (accelerometer INT1, EXT0; one
+  motion wake a minute); NFC GPO and PG# (EXT1, any low, each armed only
+  while high).
+- Pins held through sleep at safe levels: rails off, LED rail high, data
+  and select lines low so nothing feeds an unpowered part.
+- `mono_ms()`, a clock that runs through sleep. The boot counter now
+  counts real resets only (a wake is the same boot carrying on), and the
+  record stamp's tick uses this clock.
+- Kept in RTC memory across a sleep: the trip's dwell timers and motion
+  count, the sample schedule (samples stay on a fixed grid), the last
+  GNSS fix and the GNSS plan, the display's last picture, the NFC auth
+  key, the LED attention budget, the last Wi-Fi network, the upload plan.
+- A wake is not a resume: no `RESUMED` event, no boot sweep, no
+  rotation of the auth key, no redraw unless something changed.
+- Wi-Fi only while wanted. On battery, one upload session per
+  `upload_period_s`: join the last network directly (no scan), send,
+  `"0"` on `online`, radio off. A session without an ACK backs off,
+  doubling up to 4 hours. PROTOCOL.md section 6 updated for the server.
+- BLE stack started on first need (a tap or USB power), not every boot.
+- GNSS on battery: only during a trip (or with no valid time), every
+  `gnss_period_s` (1800 s), 90 s with a recent fix and 180 s without,
+  stretching x2/x4/x8 while sessions fail.
+- INA226 powered down while asleep (330 µA otherwise, ~5 % of the
+  budget); 16-sample averaging while awake.
+- Flash log boot scan through a memory map: 168 ms → 18 ms.
+- Faster boot: no PSRAM memory test, no image re-hash after deep sleep,
+  bootloader logs at warning level, no 300 ms console wait after a wake.
+- New settings: `sleep_en`, `idle_wake_s`, `gnss_period_s`,
+  `upload_period_s`, and `sleep_usb` (bench: behave as on battery with
+  the cable in). Console: `sleep`, `sleep clear`, `sleep test S`.
+
+Measured on the bench (USB power, `sleep_usb 1`): a timer wake is 0.13 s
+of ROM and bootloader plus 1.2 s of firmware; 3.6 s with a panel
+refresh; an upload session ~15 s while the server sends no ACK.
+
+After the first night on battery (~12 mA average, 2026-10-03):
+
+- **VDD_SPI kept on in deep sleep.** GPIO47/48 are in its domain; with it
+  off GPIO48 fell to 0 V and turned the LED rail on all night. Asleep:
+  5.75 mA → ≤ 0.25 mA.
+- Sleep entry: rails off, pins held, 40 ms settle, then the accelerometer
+  latch is cleared before the motion wake is armed.
+- Attention window 2 s on battery (30 s on USB).
+- GNSS on battery gives up after 60 s with nothing heard; backoff to ×16.
+- Upload sessions that get no ACK back off too, not only unreachable ones.
+- **Low battery:** `batt_trip_mv` (3550) refuses START_TRIP with
+  `BATTERY_LOW`; `batt_off_mv` (3400) logs `POWER_OFF`, draws BATTERY
+  EMPTY and switches the box off through the charger's ship mode until
+  USB is plugged in. Console `poweroff` runs the same path.
+- Front lights on their own cap, `led_front_pct` (2 %); the alive blink on
+  battery every `led_status_s` (900 s); a cargo alarm still at every wake.
+- Fuel gauge: SOC clamped to 100 %; "no battery" above 4.28 V, with a
+  quick start when a cell is connected.
+- BATTERY EMPTY title in capitals (the title font has no lower case);
+  `trip dump` names POWER OFF.
+- `platformio.ini`: monitor DTR/RTS low (no reset on open), CRLF.
+- ESP-IDF power management built in (`CONFIG_PM_ENABLE`, tickless idle);
+  nothing uses it by default yet.
+- Bench: `amps`, `hiz`, `cpu`, `pin`, `sleep_meas` (sleep current in the
+  wake record), `sleep` shows the last sleep's current.
+
+Measured with the charger in HIZ: asleep ≤ 0.25 mA; awake ~130 mA
+(~40 mA floor; the rest not found yet); BLE stack +25 mA; GNSS ~173 mA.
+
 ## 0.6.0 — 2026-10-02
 
 P6 in part: the box reaches the server. **OTA and the USB drive are

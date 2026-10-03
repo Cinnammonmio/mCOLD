@@ -219,7 +219,7 @@ broker and login set in its NVS. All topics are under `mcold/<sn>/`:
 | `mcold/<sn>/rec` | device → server | 1 | no | a batch of records |
 | `mcold/<sn>/ack` | **server → device** | 1 | no | `{"trip":T,"upto":S}` |
 | `mcold/<sn>/status` | device → server | 0 | yes | `GET_STATUS` result (section 4) |
-| `mcold/<sn>/online` | device → server | 1 | yes | `"1"`; the broker publishes `"0"` (last will) if the device drops |
+| `mcold/<sn>/online` | device → server | 1 | yes | `"1"` while connected; `"0"` when a battery session ends, or from the broker (last will) if the device drops |
 
 Subscribing to `mcold/+/rec` gets every device's records.
 
@@ -258,10 +258,39 @@ trip it does not have, or past the last record it holds; a rejected ACK
 marks nothing. The mark only ever moves forward, so a late or repeated
 ACK is harmless.
 
-Timing: after a batch the device waits 15 s for the ACK, then resends,
-doubling the wait up to 5 minutes while the server stays silent, and
-going back to 15 s at the next ACK. While a trip is running, every other
-batch is its newest records, so live data is not stuck behind backlog.
+Timing on USB power (always connected): after a batch the device waits
+15 s for the ACK, then resends, doubling the wait up to 5 minutes while
+the server stays silent, and going back to 15 s at the next ACK. While a
+trip is running, every other batch is its newest records, so live data
+is not stuck behind backlog.
+
+### On battery: sessions, not a connection
+
+On battery the box sleeps between samples and Wi-Fi is off. When records
+are waiting it connects for a **session** once per `upload_period_s`
+(default 300 s, one sample period): Wi-Fi up, broker connect, `status`,
+batches, then `"0"` on `online` and a clean disconnect. Inside a session
+it waits **10 s** for each ACK; an ACK later than that is too late for
+the session, and the batch goes again next time. A session that gets no
+ACK at all doubles the wait before the next one (10, 20, 40 ... minutes,
+up to 4 hours) -- a server that is not answering would otherwise cost a
+session of radio every five minutes.
+
+So, for the server:
+
+- **ACK fast.** Each second the server takes is a second of radio on
+  every box, every session; an ACK within one or two seconds of the
+  batch keeps a session around 5 s. No ACK means the box backs off and
+  data arrives hours late.
+- Treat a box as reachable by when its last `status` arrived, not by
+  `online`: a sleeping box is `"0"` most of the time and is fine.
+- An ACK published after the session has ended is lost (the box
+  connects with a clean session); the box sends that batch again next
+  time, and the server, keyed on (sn, trip, seq), simply ACKs it again.
+
+`tick` in the record stamp is milliseconds on a clock that runs through
+sleep, restarted only by a real reset (which also increments `boot`);
+together they order every record of a device.
 
 When the log fills, the device first deletes trips the server has
 acknowledged in full -- no data lost. Only if there are none does it

@@ -15,6 +15,11 @@
 //                event this device ever logs, even across a reset, even
 //                when UTC is later corrected backwards (§4.5).
 //
+// A wake from deep sleep is not a boot. The box sleeps between samples
+// (P7), so counting each wake would spend an NVS write every five
+// minutes and make "boot" mean nothing. The counter moves only on a real
+// reset, and the tick keeps counting through sleep: mono_ms().
+//
 // The ESP32's own clock (gettimeofday) is set from the RTC at boot and
 // from any later sync, so ordinary C time functions agree with the RTC.
 #pragma once
@@ -29,11 +34,19 @@ struct TimeStamp {
   int64_t utc_ms;        // ms since 1970-01-01 UTC; meaningless if quality None
   TimeSource quality;
   uint32_t boot;         // boot counter, from NVS
-  uint32_t tick_ms;      // ms since this boot
+  uint32_t tick_ms;      // mono_ms(): ms since this boot, sleep included
 };
 
-// After rtc_begin() and nvs init. Counts this boot and, if the RTC's
-// time survived, puts it on the system clock.
+// Milliseconds since the last real boot, counting through deep sleep
+// (the RTC timer runs on while the chip sleeps). For anything that has
+// to measure an interval across a sleep: dwell times, schedules, ages.
+// esp_timer restarts at zero on every wake and cannot do that.
+// Wraps after 49 days, so compare with subtraction, never with <.
+uint32_t mono_ms(void);
+
+// After rtc_begin() and nvs init. Counts this boot -- unless it is a
+// wake from deep sleep, which is the same boot carrying on -- and, if
+// the RTC's time survived, puts it on the system clock.
 void time_init(void);
 
 void time_now(TimeStamp *out);

@@ -1,5 +1,6 @@
 #include "net.h"
 
+#include <esp_attr.h>
 #include <esp_event.h>
 #include <esp_netif.h>
 #include <esp_netif_sntp.h>
@@ -40,10 +41,26 @@ volatile uint32_t g_reconnects = 0;
 volatile uint32_t g_retry_at = 1;   // due at once
 uint32_t g_backoff_ms = 2000;
 char g_ip[16] = "";
+volatile bool g_want = false;
+bool g_inited = false;          // driver, netif and SNTP set up
+
+// The network last joined, through deep sleep: joined again directly on
+// its channel and BSSID, with no scan. Forgotten the moment it refuses.
+struct Fast {
+  uint32_t magic;
+  char ssid[33];
+  uint8_t bssid[6];
+  uint8_t channel;
+  uint32_t last_up;             // mono_ms() it last gave an address
+};
+const uint32_t FAST_MAGIC = 0x4E465331;   // "NFS1"
+RTC_DATA_ATTR Fast g_fast;
+bool g_fast_tried = false;      // this session
 
 const uint32_t CONNECT_TIMEOUT_MS = 20000;
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// Runs through deep sleep (timekeep.h), so times kept across one compare.
+uint32_t now_ms(void) { return mono_ms(); }
 
 struct Lock {
   Lock() { xSemaphoreTake(g_mx, portMAX_DELAY); }
@@ -124,6 +141,27 @@ void schedule_retry(void) {
   if (g_backoff_ms < 60000) g_backoff_ms *= 2;
 }
 
+void join(const Known &k, const uint8_t *bssid, uint8_t channel) {
+  wifi_config_t wc = {};
+  memcpy(wc.sta.ssid, k.ssid, strlen(k.ssid));
+  memcpy(wc.sta.password, k.pass, strlen(k.pass));
+  // An open network only if it was stored without a password; WPA2 at
+  // least otherwise, so a look-alike open access point cannot take the box.
+  wc.sta.threshold.authmode = k.pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
+  wc.sta.pmf_cfg.capable = true;
+  if (bssid) {
+    wc.sta.bssid_set = true;
+    memcpy(wc.sta.bssid, bssid, 6);
+    wc.sta.channel = channel;
+  }
+  esp_wifi_set_config(WIFI_IF_STA, &wc);
+  snprintf(g_cur, sizeof(g_cur), "%s", k.ssid);
+  g_connecting = true;
+  g_connect_at = now_ms();
+  g_reconnects = g_reconnects + 1;
+  esp_wifi_connect();
+}
+
 // Scan, then join the strongest known network in range -- unless it is
 // the one that just refused us and there is another to try.
 void attempt(void) {
@@ -135,6 +173,17 @@ void attempt(void) {
     memcpy(list, g_nets, sizeof(list));
   }
   if (!n) return;
+
+  // First the network that worked last time, straight to it.
+  if (!g_fast_tried && g_fast.magic == FAST_MAGIC) {
+    g_fast_tried = true;
+    for (int i = 0; i < n; i++) {
+      if (strcmp(list[i].ssid, g_fast.ssid)) continue;
+      printf("[net] joining %s directly (channel %u)\n", g_fast.ssid, g_fast.channel);
+      join(list[i], g_fast.bssid, g_fast.channel);
+      return;
+    }
+  }
 
   wifi_scan_config_t sc = {};
   if (esp_wifi_scan_start(&sc, true) != ESP_OK) {
@@ -177,22 +226,9 @@ void attempt(void) {
   }
   int pick = best;
   if (second >= 0 && !strcmp(list[best].ssid, g_failed)) pick = second;
-  const Known &k = list[pick];
-
-  wifi_config_t wc = {};
-  memcpy(wc.sta.ssid, k.ssid, strlen(k.ssid));
-  memcpy(wc.sta.password, k.pass, strlen(k.pass));
-  // An open network only if it was stored without a password; WPA2 at
-  // least otherwise, so a look-alike open access point cannot take the box.
-  wc.sta.threshold.authmode = k.pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
-  wc.sta.pmf_cfg.capable = true;
-  esp_wifi_set_config(WIFI_IF_STA, &wc);
-  snprintf(g_cur, sizeof(g_cur), "%s", k.ssid);
-  g_connecting = true;
-  g_connect_at = now_ms();
-  g_reconnects = g_reconnects + 1;
-  printf("[net] joining %s (%d dBm)\n", k.ssid, pick == best ? best_rssi : second_rssi);
-  esp_wifi_connect();
+  printf("[net] joining %s (%d dBm)\n", list[pick].ssid,
+         pick == best ? best_rssi : second_rssi);
+  join(list[pick], nullptr, 0);
 }
 
 void on_event(void *, esp_event_base_t base, int32_t id, void *data) {
@@ -206,13 +242,17 @@ void on_event(void *, esp_event_base_t base, int32_t id, void *data) {
     // found, 15/204 handshake (password), 2/200 beacon lost, 205 the
     // connection itself failed.
     const wifi_event_sta_disconnected_t *e = (const wifi_event_sta_disconnected_t *)data;
+    if (!g_want) return;            // we hung up ourselves
     if (was) {
       printf("[net] disconnected from %s, reason %u\n", g_cur, e->reason);
     } else {
       printf("[net] %s refused, reason %u\n", g_cur, e->reason);
       snprintf(g_failed, sizeof(g_failed), "%s", g_cur);   // try another next
+      g_fast.magic = 0;             // and not directly again
     }
-    schedule_retry();
+    // A direct join that failed is retried at once, with a scan.
+    if (!was && g_fast_tried && g_backoff_ms == 2000) g_retry_at = 1;
+    else schedule_retry();
   } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
     const ip_event_got_ip_t *e = (const ip_event_got_ip_t *)data;
     snprintf(g_ip, sizeof(g_ip), IPSTR, IP2STR(&e->ip_info.ip));
@@ -221,6 +261,14 @@ void on_event(void *, esp_event_base_t base, int32_t id, void *data) {
     g_up_since = now_ms();
     g_backoff_ms = 2000;
     g_failed[0] = 0;
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+      g_fast.magic = FAST_MAGIC;
+      snprintf(g_fast.ssid, sizeof(g_fast.ssid), "%s", g_cur);
+      memcpy(g_fast.bssid, ap.bssid, 6);
+      g_fast.channel = ap.primary;
+    }
+    g_fast.last_up = g_up_since ? g_up_since : 1;
     printf("[net] connected to %s, %s\n", g_cur, g_ip);
   }
 }
@@ -258,9 +306,33 @@ void apply_ntp(void) {
   }
 }
 
+bool bring_up(void) {
+  esp_netif_init();
+  esp_event_loop_create_default();
+  esp_netif_create_default_wifi_sta();
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  if (esp_wifi_init(&cfg) != ESP_OK) {
+    printf("[net] Wi-Fi did not start\n");
+    return false;
+  }
+  // The credentials are ours to keep, in our own NVS keys; the driver is
+  // not to store its own copy.
+  esp_wifi_set_storage(WIFI_STORAGE_RAM);
+  esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, on_event, nullptr);
+  esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, nullptr);
+  esp_wifi_set_mode(WIFI_MODE_STA);
+  // Time from the network once it is up; SNTP waits for an address by
+  // itself and re-syncs every hour.
+  esp_sntp_config_t sc = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+  sc.sync_cb = on_sntp;
+  esp_netif_sntp_init(&sc);
+  g_inited = true;
+  return true;
+}
+
 void task(void *) {
   for (;;) {
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    vTaskDelay(pdMS_TO_TICKS(g_connecting ? 200 : 1000));
     if (g_ntp_pending) {
       g_ntp_pending = false;
       apply_ntp();
@@ -270,10 +342,17 @@ void task(void *) {
       Lock l;
       n = g_n;
     }
-    if (!n) continue;
+    if (!n || !g_want) {
+      if (g_started) net_stop();
+      continue;
+    }
+    if (!g_inited && !bring_up()) continue;
     if (!g_started) {
       esp_wifi_start();
       g_started = true;
+      g_fast_tried = false;
+      g_retry_at = 1;
+      g_backoff_ms = 2000;
       vTaskDelay(pdMS_TO_TICKS(200));
     }
     if (g_connecting && now_ms() - g_connect_at > CONNECT_TIMEOUT_MS) {
@@ -302,26 +381,22 @@ void net_start(void) {
   g_mx = xSemaphoreCreateMutex();
   load();
   migrate();
-  esp_netif_init();
-  esp_event_loop_create_default();
-  esp_netif_create_default_wifi_sta();
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  if (esp_wifi_init(&cfg) != ESP_OK) {
-    printf("[net] Wi-Fi did not start\n");
-    return;
-  }
-  // The credentials are ours to keep, in our own NVS keys; the driver is
-  // not to store its own copy.
-  esp_wifi_set_storage(WIFI_STORAGE_RAM);
-  esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, on_event, nullptr);
-  esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, nullptr);
-  esp_wifi_set_mode(WIFI_MODE_STA);
-  // Time from the network once it is up; SNTP waits for an address by
-  // itself and re-syncs every hour.
-  esp_sntp_config_t sc = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
-  sc.sync_cb = on_sntp;
-  esp_netif_sntp_init(&sc);
+  if (g_fast.magic != FAST_MAGIC) memset(&g_fast, 0, sizeof(g_fast));
   xTaskCreatePinnedToCore(task, "net", 6144, nullptr, 2, nullptr, 0);
+}
+
+void net_want(bool on) { g_want = on; }
+
+void net_stop(void) {
+  g_want = false;
+  if (!g_started) return;
+  esp_wifi_disconnect();
+  esp_wifi_stop();
+  g_started = false;
+  g_connected = false;
+  g_connecting = false;
+  g_up_since = 0;
+  g_ip[0] = 0;
 }
 
 bool net_add(const char *ssid, const char *pass) {
@@ -384,6 +459,7 @@ void net_status(NetStatus *out) {
   snprintf(out->ip, sizeof(out->ip), "%s", g_ip);
   out->reconnects = g_reconnects;
   out->up_since_ms = g_up_since;
+  out->last_up_ms = g_fast.magic == FAST_MAGIC ? g_fast.last_up : 0;
   wifi_ap_record_t ap;
   if (g_connected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) out->rssi = ap.rssi;
 }

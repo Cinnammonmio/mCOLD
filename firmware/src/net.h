@@ -12,6 +12,14 @@
 //
 // It says plainly what it has: joined and holding an address is not the
 // same as reaching the server, and nothing here pretends otherwise.
+//
+// The radio is up only while someone wants it (net_want). On USB power
+// that is always; on battery it is the uplink, for one short session per
+// upload period (P7). The driver itself is not even initialised until
+// the first time it is wanted, so a wake with nothing to send costs no
+// Wi-Fi at all. The network last joined is remembered through deep
+// sleep and joined directly, without a scan: two seconds of radio saved
+// on every session.
 #pragma once
 
 #include <stdbool.h>
@@ -20,6 +28,11 @@
 static const int NET_MAX = 5;
 
 void net_start(void);
+
+// Radio on (join a known network) or off. Safe to call every pass.
+void net_want(bool on);
+// Before deep sleep: the radio off cleanly.
+void net_stop(void);
 
 // Adds a network, or changes the password of one already known. False
 // if it does not fit (SSID 1-32 bytes, password empty or 8-63) or the
@@ -39,6 +52,7 @@ struct NetStatus {
   int8_t rssi;
   uint32_t reconnects;
   uint32_t up_since_ms;    // 0 while down
+  uint32_t last_up_ms;     // mono_ms() the last session got an address; 0: never
   int known;               // networks in the list
 };
 void net_status(NetStatus *out);

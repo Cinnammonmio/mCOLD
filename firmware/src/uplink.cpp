@@ -1,6 +1,7 @@
 #include "uplink.h"
 
 #include <cJSON.h>
+#include <esp_attr.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -14,6 +15,9 @@
 
 #include "flashlog.h"
 #include "net.h"
+#include "pm.h"
+#include "config.h"
+#include "timekeep.h"
 #include "rpc.h"
 #include "trip.h"
 
@@ -41,10 +45,28 @@ struct Flight {
 Flight g_flight = {};
 bool g_last_was_live = false;
 
-uint32_t g_batches = 0, g_acks = 0, g_rejected = 0, g_last_ack = 0;
+uint32_t g_batches = 0, g_acks = 0, g_rejected = 0;
 uint32_t g_ack_wait = UPLINK_ACK_TIMEOUT_MS;   // grows while the server is silent
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// Battery sessions, planned through deep sleep.
+struct Plan {
+  uint32_t magic;
+  uint32_t next_at;         // mono_ms(); 0: due now
+  uint8_t misses;           // sessions in a row that never reached the broker
+  bool last_ok;
+  uint32_t sessions;
+  uint32_t last_ack;        // mono_ms() of the last ACK accepted
+};
+const uint32_t PLAN_MAGIC = 0x55504C31;   // "UPL1"
+RTC_DATA_ATTR Plan g_plan;
+#define g_last_ack g_plan.last_ack
+
+const uint32_t SESSION_MAX_MS = 45000;    // join, broker, a few batches
+const uint32_t SESSION_ACK_MS = 10000;    // an ACK later than this waits for the next
+const uint32_t SESSION_BACKOFF_MAX_MS = 4 * 3600000;
+
+// Runs through deep sleep (timekeep.h), so times kept across one compare.
+uint32_t now_ms(void) { return mono_ms(); }
 
 // ---- the high-water marks, one NVS key per trip ------------------------
 
@@ -258,11 +280,135 @@ void publish_status(void) {
   free(st);
 }
 
+void stop_client(void) {
+  if (!g_client) return;
+  esp_mqtt_client_stop(g_client);
+  esp_mqtt_client_destroy(g_client);
+  g_client = nullptr;
+  g_mqtt = false;
+  g_started = false;
+  xSemaphoreTake(g_mx, portMAX_DELAY);
+  g_flight.on = false;
+  xSemaphoreGive(g_mx);
+}
+
+uint32_t pending(void) {
+  UplinkStatus us;
+  uplink_status(&us);
+  return us.records_pending;
+}
+
+// ---- on battery: one session, then the radio off -----------------------
+
+struct Session {
+  bool on;
+  uint32_t at;
+  bool reached;             // the broker answered
+  bool status_sent;
+  uint32_t acks_before;     // g_acks when it began
+};
+Session g_ses = {};
+
+void end_session(bool all_sent) {
+  if (g_mqtt) {
+    // Said in words, so the server need not wait for the last will: the
+    // box is asleep, not lost.
+    esp_mqtt_client_publish(g_client, t_online, "0", 1, 1, 1);
+    vTaskDelay(pdMS_TO_TICKS(150));
+  }
+  stop_client();
+  net_want(false);
+  const uint32_t t = now_ms();
+  g_plan.sessions++;
+  // A session that got the server to confirm something -- or had nothing
+  // left to confirm -- is a success. One that reached the broker and
+  // heard nothing back is not: a server that is not answering costs a
+  // whole session of radio every period, so it backs off like a network
+  // that is not there. The records are safe in flash either way.
+  const bool ok = g_ses.reached && (all_sent || g_acks != g_ses.acks_before);
+  g_plan.last_ok = g_ses.reached;
+  g_plan.misses = ok ? 0 : (uint8_t)(g_plan.misses < 8 ? g_plan.misses + 1 : 8);
+  uint64_t wait = (uint64_t)config().upload_period_s * 1000;
+  if (g_plan.misses) wait <<= g_plan.misses;
+  if (wait > SESSION_BACKOFF_MAX_MS) wait = SESSION_BACKOFF_MAX_MS;
+  g_plan.next_at = t + (uint32_t)wait;
+  if (!g_plan.next_at) g_plan.next_at = 1;
+  printf("[uplink] session over after %lu ms: %s; next in %lu s\n",
+         (unsigned long)(t - g_ses.at),
+         !g_ses.reached ? "broker not reached" : all_sent ? "everything acknowledged"
+                                                          : "server has not acknowledged",
+         (unsigned long)(wait / 1000));
+  g_ses = {};
+  pm_hold(Hold::Uplink, false);
+}
+
+void battery_pass(void) {
+  const uint32_t t = now_ms();
+  if (!g_ses.on) {
+    // After this wake's sample, so the record just written goes now and
+    // not one period later. Ten seconds at most: a trip task that never
+    // reports must not stop the upload.
+    if (!pm_is_done(Duty::Trip) && esp_timer_get_time() < 10000000) return;
+    const uint32_t n = g_host[0] && net_configured() ? pending() : 0;
+    const bool due = n && (!g_plan.next_at || (int32_t)(t - g_plan.next_at) >= 0);
+    if (!due) {
+      stop_client();          // left over from USB power
+      net_want(false);
+      pm_next(Duty::Uplink, n ? g_plan.next_at : 0);
+      pm_done(Duty::Uplink);
+      return;
+    }
+    g_ses = {true, t, false, false, g_acks};
+    pm_hold(Hold::Uplink, true);
+    net_want(true);
+    printf("[uplink] session: %lu records waiting\n", (unsigned long)n);
+  }
+
+  NetStatus ns;
+  net_status(&ns);
+  if (!g_started && ns.connected) start_client();
+  if (g_mqtt) {
+    g_ses.reached = true;
+    if (!g_ses.status_sent) {
+      publish_status();
+      g_ses.status_sent = true;
+    }
+    xSemaphoreTake(g_mx, portMAX_DELAY);
+    const Flight f = g_flight;
+    xSemaphoreGive(g_mx);
+    if (f.on && t - f.sent_at >= SESSION_ACK_MS) {
+      end_session(false);
+      return;
+    }
+    if (!f.on) {
+      if (!pending()) {
+        end_session(true);
+        return;
+      }
+      send_batch();
+    }
+  }
+  if (t - g_ses.at >= SESSION_MAX_MS) end_session(false);
+}
+
 void task(void *) {
   TripStatus prev = {};
   uint32_t status_at = 0;
   for (;;) {
-    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(2000));
+    // Quick while this wake is still deciding: the chip waits on it.
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(g_ses.on || !pm_is_done(Duty::Uplink) ? 100 : 1000));
+    if (!pm_external_power()) {
+      battery_pass();
+      continue;
+    }
+    // On USB power: always connected; nothing here keeps the chip up.
+    if (g_ses.on) {
+      g_ses = {};
+      pm_hold(Hold::Uplink, false);
+    }
+    net_want(true);
+    pm_next(Duty::Uplink, 0);
+    pm_done(Duty::Uplink);
     NetStatus ns;
     net_status(&ns);
     if (!g_started && g_host[0] && ns.connected) start_client();
@@ -305,6 +451,7 @@ void uplink_start(const char *sn) {
   snprintf(t_online, sizeof(t_online), "mcold/%s/online", g_sn);
   g_mx = xSemaphoreCreateMutex();
   load();
+  if (!pm_warm() || g_plan.magic != PLAN_MAGIC) g_plan = {PLAN_MAGIC, 0, 0, false, 0, 0};
   xTaskCreatePinnedToCore(task, "uplink", 6144, nullptr, 2, &g_task, 0);
 }
 
@@ -371,6 +518,9 @@ void uplink_status(UplinkStatus *out) {
   out->acks = g_acks;
   out->acks_rejected = g_rejected;
   out->last_ack_ms = g_last_ack;
+  out->sessions = g_plan.sessions;
+  out->last_session_ok = g_plan.last_ok;
+  out->next_session_ms = g_plan.next_at;
   uint32_t trips[64];
   const int n = flashlog_trips(trips, 64);
   for (int i = 0; i < n && i < 64; i++) {

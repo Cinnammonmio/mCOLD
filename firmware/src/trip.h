@@ -53,6 +53,7 @@ enum class TripErr : uint8_t {
   NoLog,          // the trip log is not available: nothing can be recorded
   LogFull,        // full, and nothing that may be deleted to make room
   Flash,
+  BatteryLow,     // below config batt_trip_mv, on battery: charge first
 };
 
 struct TripStatus {
@@ -66,7 +67,7 @@ struct TripStatus {
   uint16_t door_opens;
   uint32_t motion_events;
   bool have_temp;
-  bool temp_read_since_boot;   // any attempt has completed since power-up
+  bool temp_read_since_boot;   // an attempt has completed since this boot or wake
   bool temp_ok;                // the latest reading is a reading, and fresh
   float temp_c;                // calibrated; meaningless unless temp_ok
   bool out_of_band;            // outside the thresholds now, alarm or not
@@ -93,6 +94,18 @@ void trip_note_time_set(TimeSource src, uint32_t utc_before);
 // Time-based alarms (door held open, probe gone). Call about once a
 // second.
 void trip_tick(void);
+
+// The battery is about to be cut off (batt_off_mv): one last event, so
+// the gap that follows in the trip has its reason.
+void trip_note_power_off(uint16_t cell_mv);
+
+// Before deep sleep: keeps what the log does not hold (dwell timers,
+// motion since the last sample) for the wake that follows.
+void trip_before_sleep(void);
+
+// mono_ms() at which an alarm waiting out its dwell time comes due; 0 if
+// none is waiting. The box must be awake then to raise it on time.
+uint32_t trip_next_check(void);
 
 // Writes a sample if a trip is running. The caller decides when.
 void trip_sample(void);

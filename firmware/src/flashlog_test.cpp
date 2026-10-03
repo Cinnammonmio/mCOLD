@@ -404,7 +404,7 @@ int flashlog_selftest(void) {
     printf("    no memory for the test image\n");
     return -1;
   }
-  g_if = {0, r_read, r_write, r_erase, &g_ram};
+  g_if = {0, r_read, r_write, r_erase, &g_ram, nullptr, nullptr};
 
   struct { void (*fn)(void); } tests[] = {
       {t_empty}, {t_roundtrip}, {t_reboot_resumes}, {t_from_seq},

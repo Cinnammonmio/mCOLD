@@ -1,8 +1,8 @@
 #include "trip.h"
 
 #include <esp_app_desc.h>
+#include <esp_attr.h>
 #include <esp_system.h>
-#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <math.h>
@@ -15,6 +15,7 @@
 #include "flashlog.h"
 #include "gnss.h"
 #include "health.h"
+#include "pm.h"
 #include "record.h"
 #include "timekeep.h"
 
@@ -49,6 +50,7 @@ Totals g_t = {};
 TempStatus g_temp_st = TempStatus::NoData;
 float g_temp_c = 0;
 uint32_t g_temp_at = 0;
+bool g_temp_this_wake = false;       // a reading since this boot or wake
 uint32_t g_probe_bad_since = 0;      // 0: probe fine (or never seen bad)
 bool g_probe_fault_logged = false;
 PowerStatus g_pwr = {};
@@ -64,7 +66,29 @@ bool g_acked = false;
 uint32_t g_high_since = 0, g_low_since = 0;
 uint32_t g_lost_trips = 0;
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// The inputs above, carried through deep sleep. The totals and the alarm
+// state come back from the log on every boot, sleep or not; these are the
+// things the log does not hold -- how long the probe has been above the
+// line, motion since the last sample -- and losing them every five
+// minutes would mean a dwell time longer than the sample period could
+// never raise its alarm.
+struct Kept {
+  uint32_t magic;
+  uint32_t id;
+  TempStatus temp_st;
+  float temp_c;
+  uint32_t temp_at, probe_bad_since;
+  bool probe_fault_logged;
+  uint16_t motion_since_sample, motion_burst;
+  uint32_t motion_event_at, door_opened_at;
+  uint32_t high_since, low_since;
+};
+const uint32_t KEPT_MAGIC = 0x54524B31;   // "TRK1"
+RTC_DATA_ATTR Kept g_kept;
+
+// Interval clock: runs through deep sleep, so the times above stay
+// meaningful across one.
+uint32_t now_ms(void) { return mono_ms(); }
 
 struct Lock {
   Lock() { xSemaphoreTake(g_mx, portMAX_DELAY); }
@@ -382,15 +406,73 @@ void trip_init(const char *sn) {
   reset_inputs();
   g_alarms = b.alarms;     // after reset_inputs(), which zeroes them
   g_acked = b.acked;
+  if (pm_warm() && g_kept.magic == KEPT_MAGIC && g_kept.id == id) {
+    // Back from sleep: the same trip carrying on, not a resume. Nothing
+    // was missed, so nothing goes in the log.
+    g_temp_st = g_kept.temp_st;
+    g_temp_c = g_kept.temp_c;
+    g_temp_at = g_kept.temp_at;
+    g_probe_bad_since = g_kept.probe_bad_since;
+    g_probe_fault_logged = g_kept.probe_fault_logged;
+    g_motion_since_sample = g_kept.motion_since_sample;
+    g_motion_burst = g_kept.motion_burst;
+    g_motion_event_at = g_kept.motion_event_at;
+    g_door_opened_at = g_kept.door_opened_at;
+    g_high_since = g_kept.high_since;
+    g_low_since = g_kept.low_since;
+    return;
+  }
   event_u8(EV_RESUMED, (uint8_t)esp_reset_reason());
   printf("[trip] resumed trip %08lX after a reset (%lu samples so far)\n",
          (unsigned long)id, (unsigned long)g_t.samples);
+}
+
+void trip_note_power_off(uint16_t cell_mv) {
+  if (!g_mx) return;
+  Lock l;
+  if (!g_active) return;
+  event(EV_POWER_OFF, [](Writer &w, const void *p) {
+    w.u16(*(const uint16_t *)p);
+  }, &cell_mv);
+}
+
+void trip_before_sleep(void) {
+  if (!g_mx) return;
+  Lock l;
+  g_kept = {KEPT_MAGIC, g_active ? g_id : 0, g_temp_st, g_temp_c, g_temp_at,
+            g_probe_bad_since, g_probe_fault_logged, g_motion_since_sample,
+            g_motion_burst, g_motion_event_at, g_door_opened_at, g_high_since,
+            g_low_since};
+}
+
+uint32_t trip_next_check(void) {
+  if (!g_mx) return 0;
+  Lock l;
+  if (!g_active) return 0;
+  // An alarm waiting out its dwell time is due when the dwell ends, not
+  // at the next sample: the sample period may be longer than the dwell.
+  uint32_t at = 0;
+  auto earliest = [&at](uint32_t since, uint32_t len) {
+    if (!since) return;
+    const uint32_t due = since + len;
+    if (!at || (int32_t)(due - at) < 0) at = due ? due : 1;
+  };
+  if (!(g_alarms & (1u << AL_TEMP_HIGH))) earliest(g_high_since, (uint32_t)g_p.dwell_s * 1000);
+  if (!(g_alarms & (1u << AL_TEMP_LOW))) earliest(g_low_since, (uint32_t)g_p.dwell_s * 1000);
+  if (!(g_alarms & (1u << AL_PROBE))) earliest(g_probe_bad_since, TRIP_PROBE_ALARM_MS);
+  return at;
 }
 
 TripErr trip_start(const TripParams &p, uint32_t *id_out) {
   if (!g_mx) return TripErr::NoLog;
   Lock l;
   if (g_active) return TripErr::AlreadyActive;
+  // Decided 2026-10-03: a trip is not started on a battery that cannot
+  // carry it. Measured, on battery: a box on a charger may start one.
+  if (g_have_pwr && g_pwr.cell_valid && !g_pwr.power_good &&
+      g_pwr.cell_volts * 1000.0f < (float)config().batt_trip_mv) {
+    return TripErr::BatteryLow;
+  }
   if (p.low_c10 >= p.high_c10 || p.low_c10 < -400 || p.high_c10 > 1000 ||
       p.hyst_c10 > 100 || p.dwell_s > 3600) {
     return TripErr::BadParams;
@@ -481,6 +563,7 @@ void trip_note_temp(TempStatus st, float c) {
   Lock l;
   const uint32_t t = now_ms();
   if (st == TempStatus::Busy) return;    // no reading taken: no news
+  g_temp_this_wake = true;
   g_temp_st = st;
   g_temp_c = c;
   g_temp_at = t;
@@ -652,7 +735,7 @@ void trip_status(TripStatus *out) {
   out->door_opens = g_t.door_opens;
   out->motion_events = g_t.motion;
   out->have_temp = g_t.have_temp;
-  out->temp_read_since_boot = g_temp_at != 0;
+  out->temp_read_since_boot = g_temp_this_wake;
   out->temp_ok = g_temp_st == TempStatus::Ok && g_temp_at &&
                  now_ms() - g_temp_at <= 60000;
   out->temp_c = out->temp_ok ? calibrated(g_temp_c) : 0;
@@ -674,6 +757,7 @@ const char *trip_err_name(TripErr e) {
     case TripErr::NoLog:         return "trip log unavailable";
     case TripErr::LogFull:       return "log full and nothing may be deleted";
     case TripErr::Flash:         return "flash error";
+    case TripErr::BatteryLow:    return "battery too low to start a trip: charge first";
   }
   return "?";
 }
