@@ -3,6 +3,7 @@
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
 #include <esp_attr.h>
+#include <esp_pm.h>
 #include <esp_sleep.h>
 #include <esp_system.h>
 #include <esp_timer.h>
@@ -119,6 +120,36 @@ PmHook g_quiet = nullptr;
 // After the rails go off and the pins are held, before anything is
 // armed: long enough for the supply and the accelerometer to settle.
 const uint32_t SETTLE_MS = 40;
+
+esp_pm_lock_handle_t g_ls_lock = nullptr;
+int g_ls_mode = -1;              // light sleep as last configured; -1: not yet
+
+// Every pin this board drives or reads. With CONFIG_PM_SLP_DISABLE_GPIO the
+// chip lets go of all pins in light sleep: a rail enable floating for a
+// nap drops the panel and the probe mid-conversion, and GPIO48 floating
+// lights the LED rail. These keep their normal configuration instead.
+const uint8_t LS_PINS[] = {
+    PIN_EPD_PWR_EN, PIN_SD_PWR_EN, PIN_LED_PWR_EN, PIN_LED_DATA, PIN_BUZZER,
+    PIN_SPI3_SCK,   PIN_SPI3_MOSI, PIN_SPI3_MISO,  PIN_EPD_CS,   PIN_EPD_DC,
+    PIN_EPD_RST,    PIN_EPD_BUSY,  PIN_TC_CS,      PIN_GNSS_TX,  PIN_GNSS_RX,
+    PIN_SDA,        PIN_SCL,       PIN_NFC_GPO,    PIN_ACC_INT1, PIN_PG_N,
+    PIN_PMIC_IRQ_N,
+};
+
+// Light sleep on battery when config asks for it; never on USB power,
+// where the console is, and nothing is being saved anyway.
+void apply_light_sleep(void) {
+  const int want = config().light_sleep && !pm_external_power() ? 1 : 0;
+  if (want == g_ls_mode) return;
+  esp_pm_config_t c = {};
+  c.max_freq_mhz = 160;
+  c.min_freq_mhz = want ? 40 : 160;
+  c.light_sleep_enable = want != 0;
+  if (esp_pm_configure(&c) == ESP_OK) {
+    g_ls_mode = want;
+    printf("[pm] light sleep while awake: %s\n", want ? "on" : "off");
+  }
+}
 
 const char *const DUTY_NAMES[] = {"sensors", "power", "trip",   "display",
                                   "nfc",     "uplink", "gnss", "indicate"};
@@ -284,6 +315,7 @@ void task(void *) {
   uint32_t last_why = 0;
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(100));
+    apply_light_sleep();
     if (pm_external_power() || !config().sleep_en) continue;
     const uint32_t t = mono_ms();
     const uint32_t up = awake_ms();
@@ -328,6 +360,7 @@ void task(void *) {
 void pm_init(void) {
   g_init_mono = mono_ms();
   for (int d = 0; d < (int)Duty::Count; d++) g_next[d] = 0;
+  esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "busy", &g_ls_lock);
 
   g_warm = esp_reset_reason() == ESP_RST_DEEPSLEEP && g_kept.magic == KEPT_MAGIC;
   switch (esp_sleep_get_wakeup_cause()) {
@@ -456,8 +489,16 @@ void pm_on_sleep(PmHook fn) {
 
 void pm_on_quiet(PmHook fn) { g_quiet = fn; }
 
+void pm_no_light_sleep(bool on) {
+  if (!g_ls_lock) return;
+  if (on) esp_pm_lock_acquire(g_ls_lock);
+  else esp_pm_lock_release(g_ls_lock);
+}
+
 void pm_start(void) {
   trace_check();
+  for (uint8_t p : LS_PINS) gpio_sleep_sel_dis((gpio_num_t)p);
+  apply_light_sleep();
   xTaskCreatePinnedToCore(task, "pm", 3072, nullptr, 1, nullptr, 0);
 }
 

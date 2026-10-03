@@ -81,6 +81,14 @@ void pm_hold_until(uint32_t until);
 // When `d` next needs the chip awake, in mono_ms(); 0 for "not for me".
 void pm_next(Duty d, uint32_t at);
 
+// Light sleep while awake (config light_sleep, on battery only): between
+// tasks the chip naps instead of idling, and the CPU clock drops to 40 MHz
+// when nothing needs it. Anything that runs on its own while nobody is
+// looking -- a UART taking GNSS sentences, the buzzer's PWM, Wi-Fi, a
+// panel refresh -- holds the chip out of light sleep with this. Counted:
+// every `true` needs its `false`.
+void pm_no_light_sleep(bool on);
+
 // Battery current seen while awake, for the wake-cost record.
 void pm_note_current(float ma);
 // The mean current of the sleep that ended with this wake (power.h).

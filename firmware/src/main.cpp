@@ -310,6 +310,7 @@ void task_gnss(void *) {
     // The duty is the decision; the session that follows is a hold, and
     // ends on its own clock.
     pm_hold(Hold::Gnss, true);
+    pm_no_light_sleep(true);    // the UART takes sentences while the CPU waits
     pm_done(Duty::Gnss);
     printf("[gnss] %lu ms session start\n", (unsigned long)uptime_ms());
     fflush(stdout);
@@ -387,6 +388,7 @@ void task_gnss(void *) {
     }
     gnss_power_off();
     pm_hold(Hold::Gnss, false);
+    pm_no_light_sleep(false);
 
     GnssFix f;
     const bool have = gnss_last_fix(&f);

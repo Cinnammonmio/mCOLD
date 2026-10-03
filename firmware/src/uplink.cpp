@@ -340,6 +340,7 @@ void end_session(bool all_sent) {
          (unsigned long)(wait / 1000));
   g_ses = {};
   pm_hold(Hold::Uplink, false);
+  pm_no_light_sleep(false);
 }
 
 void battery_pass(void) {
@@ -360,6 +361,7 @@ void battery_pass(void) {
     }
     g_ses = {true, t, false, false, g_acks};
     pm_hold(Hold::Uplink, true);
+    pm_no_light_sleep(true);    // Wi-Fi and the broker, without naps in between
     net_want(true);
     printf("[uplink] session: %lu records waiting\n", (unsigned long)n);
   }
@@ -405,6 +407,7 @@ void task(void *) {
     if (g_ses.on) {
       g_ses = {};
       pm_hold(Hold::Uplink, false);
+      pm_no_light_sleep(false);
     }
     net_want(true);
     pm_next(Duty::Uplink, 0);

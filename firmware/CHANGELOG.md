@@ -119,6 +119,14 @@ Measured with the charger in HIZ: asleep ≤ 0.25 mA; awake ~130 mA
   probe readings, no longer hold the chip awake; pm ignores wake times
   over 30 s in the past; the battery switch-off holds the chip up until
   done; a Wi-Fi refusal after a scan backs off instead of rescanning.
+- **Light sleep while awake (trial, off by default):** config
+  `light_sleep 1` lets the chip nap between tasks on battery and drop to
+  40 MHz when idle (never on USB power). Every pin in use keeps its
+  configuration through a nap (`CONFIG_PM_SLP_DISABLE_GPIO` would let go
+  of them all); a GNSS session, a beep, a Wi-Fi session and a panel
+  refresh hold the chip out of light sleep (`pm_no_light_sleep`). Aimed
+  at the ~130 mA awake current, most of which is waiting. Not yet run on
+  the board.
 
 ## 0.6.0 — 2026-10-02
 

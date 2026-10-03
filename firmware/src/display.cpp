@@ -286,8 +286,10 @@ void task(void *) {
         clock_str(clock, sizeof(clock));
         build(s, clock);
         pm_hold(Hold::Display, true);
+        pm_no_light_sleep(true);    // a refresh is seconds of SPI and BUSY polling
         const bool shown = show(g_draw);
         pm_hold(Hold::Display, false);
+        pm_no_light_sleep(false);
         if (shown) {
           g_shown_hash = content;
           g_shown_at = now_ms();
@@ -363,7 +365,9 @@ void display_battery_off(float cell_volts) {
   scr_takeover(g_draw, g_sn, clock, footer_state(s, p, have), "BATTERY EMPTY",
                "Switched off. Charge to restart.", data, false, true);
   pm_hold(Hold::Display, true);
+  pm_no_light_sleep(true);
   show(g_draw);
   pm_hold(Hold::Display, false);
+  pm_no_light_sleep(false);
 }
 

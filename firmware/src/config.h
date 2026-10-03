@@ -46,6 +46,7 @@ struct Config {
   int32_t upload_period_s;    // on battery: the longest records wait for Wi-Fi
   int32_t sleep_usb;          // bench: behave as on battery with USB in (pm.h)
   int32_t sleep_meas;         // bench: measure each sleep's current (costs 0.33 mA)
+  int32_t light_sleep;        // on battery, light sleep between tasks while awake (trial)
 
   // Field names are the NVS keys, 15 characters at most; config.cpp
   // refuses to compile a longer one.

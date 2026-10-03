@@ -64,6 +64,7 @@ constexpr Field FIELDS[] = {
     F(upload_period_s, 60, 86400, 300, "s"),
     F(sleep_usb, 0, 1, 0, ""),
     F(sleep_meas, 0, 1, 0, ""),
+    F(light_sleep, 0, 1, 0, ""),
 };
 #undef F
 

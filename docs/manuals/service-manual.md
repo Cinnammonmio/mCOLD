@@ -123,6 +123,7 @@ range and whether it is the default.
 | `upload_period_s` | 60–86400 | 300 | On battery: one upload session this often |
 | `sleep_usb` | 0–1 | 0 | Bench: behave as on battery with USB in |
 | `sleep_meas` | 0–1 | 0 | Bench: measure each sleep's current (+0.33 mA) |
+| `light_sleep` | 0–1 | 0 | Trial: light sleep between tasks while awake, on battery |
 
 Wi-Fi and broker credentials are separate (`wifi add`, `mqtt set`) and never
 appear in documents or the repository.

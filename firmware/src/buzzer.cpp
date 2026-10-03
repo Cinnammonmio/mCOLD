@@ -5,6 +5,7 @@
 
 #include "board.h"
 #include "health.h"
+#include "pm.h"
 
 namespace {
 
@@ -63,6 +64,8 @@ void buzzer_beep(uint32_t ms) {
   if (!g_ready || g_muted || ms == 0) return;
   if (ms > BUZZER_MAX_MS) ms = BUZZER_MAX_MS;
   esp_timer_stop(g_timer);
+  // LEDC stops in light sleep: the beep would be cut to a click.
+  if (!g_sounding) pm_no_light_sleep(true);
   // There is no feedback from a buzzer, so "Ok" here only means the
   // peripheral accepted the command. Whether it made a sound is a
   // question for a person standing next to it.
@@ -85,6 +88,7 @@ void buzzer_stop(void) {
   if (g_sounding) {
     g_sounding = false;
     g_stopped_ms = now_ms();
+    pm_no_light_sleep(false);   // the one taken in buzzer_beep()
   }
 }
 
