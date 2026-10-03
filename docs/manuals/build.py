@@ -2,6 +2,7 @@
 
     python docs/manuals/build.py            every manual
     python docs/manuals/build.py quick-guide.md
+    python docs/manuals/build.py docs/briefs/server-mqtt-brief.md   (any path)
 
 Each source starts with a version block (--- name / lang / version /
 status / date / firmware ---). The version goes into the PDF's file name
@@ -10,7 +11,7 @@ Bump `version` in the source when its content changes, then rebuild.
 
 Needs Python 3 and Microsoft Edge (headless print), nothing else: the
 Markdown here is a small subset (headings, paragraphs, lists, tables,
-**bold**, `code`, ---) converted below. Fonts come from mcold-spec/fonts.
+**bold**, `code`, ``` blocks, ---) converted below. Fonts come from mcold-spec/fonts.
 """
 import html
 import pathlib
@@ -20,7 +21,6 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 FONTS = (HERE.parent.parent / "mcold-spec" / "fonts").as_uri()
-OUT = HERE / "pdf"
 EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 SOURCES = ["quick-guide.md", "user-manual-th.md", "user-manual-en.md", "service-manual.md"]
 
@@ -68,6 +68,14 @@ def to_html(md):
         elif s == "---":
             flush()
             out.append("<hr>")
+        elif s.startswith("```"):
+            flush()
+            code = []
+            i += 1
+            while i < len(lines) and not lines[i].strip().startswith("```"):
+                code.append(lines[i].strip())
+                i += 1
+            out.append("<pre>" + html.escape(chr(10).join(code)) + "</pre>")
         elif m := re.match(r"(#{1,3}) (.*)", s):
             flush()
             n = len(m.group(1))
@@ -91,7 +99,8 @@ def to_html(md):
             while i < len(lines) and re.match(r"\s*(- |\d+\. )", lines[i]):
                 item = re.sub(r"\s*(- |\d+\. )", "", lines[i], count=1).strip()
                 i += 1
-                while i < len(lines) and lines[i].startswith("  ") and lines[i].strip():
+                while (i < len(lines) and lines[i].startswith("  ") and lines[i].strip()
+                       and not lines[i].strip().startswith("```")):
                     item += " " + lines[i].strip()   # a wrapped list item
                     i += 1
                 items.append(f"<li>{inline(item)}</li>")
@@ -129,6 +138,9 @@ td:first-child { font-weight: 600; }
 ul, ol { margin: 2px 0 8px; padding-left: 20px; }
 li { margin: 2px 0; }
 code { font-family: Consolas, monospace; font-size: 9pt; background: var(--soft); padding: 0 3px; border-radius: 3px; }
+pre { font-family: Consolas, monospace; font-size: 8.6pt; background: var(--soft);
+  border: 1px solid var(--line); border-radius: 5px; padding: 6px 9px; margin: 4px 0 8px;
+  white-space: pre-wrap; break-inside: avoid; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 18px 0 6px; }
 hr + h2 { color: var(--muted); font-size: 11pt; }
 hr ~ ul, hr ~ ul li { color: var(--muted); font-size: 9pt; }
@@ -136,7 +148,11 @@ hr ~ ul, hr ~ ul li { color: var(--muted); font-size: 9pt; }
 
 
 def build(src):
-    meta, body = front_matter((HERE / src).read_text(encoding="utf-8"))
+    # A name here, or any path: other documents (docs/briefs/...) build the
+    # same way, into a pdf/ folder beside their source.
+    path = HERE / src if (HERE / src).exists() else pathlib.Path(src).resolve()
+    out = path.parent / "pdf"
+    meta, body = front_matter(path.read_text(encoding="utf-8"))
     L = LABELS.get(meta.get("lang", "en"), LABELS["en"])
     ver, status = meta["version"], meta.get("status", "draft")
     title = re.search(r"^# (.*)$", body, re.M).group(1)
@@ -158,10 +174,10 @@ def build(src):
     page = (f"<!doctype html><html lang='{meta.get('lang', 'en')}'><head><meta charset='utf-8'>"
             f"<title>{html.escape(title)}</title><style>{css}</style></head><body>{content}</body></html>")
 
-    OUT.mkdir(exist_ok=True)
-    built = OUT / f"{pathlib.Path(src).stem}.html"
+    out.mkdir(exist_ok=True)
+    built = out / f"{path.stem}.html"
     built.write_text(page, encoding="utf-8")
-    pdf = OUT / f"mCOLD_{meta['name']}_v{ver}.pdf"
+    pdf = out / f"mCOLD_{meta['name']}_v{ver}.pdf"
     cmd = [EDGE, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
            "--allow-file-access-from-files", "--virtual-time-budget=8000",
            f"--print-to-pdf={pdf}", built.as_uri()]
