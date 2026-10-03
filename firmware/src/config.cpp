@@ -50,7 +50,7 @@ constexpr Field FIELDS[] = {
     F(cal_date, 0, 0x7FFFFFFF, 0, "unix s"),
     F(accel_wake_ths, 1, 63, 2, "x31 mg"),
     F(led_bright_pct, 1, 100, 20, "%"),
-    F(led_front_pct, 1, 100, 4, "%"),
+    F(led_front_pct, 1, 100, 2, "%"),
     F(led_status_s, 60, 3600, 900, "s"),
     F(batt_off_mv, 3000, 3700, 3400, "mV"),
     F(batt_trip_mv, 3000, 4100, 3550, "mV"),

@@ -165,6 +165,13 @@ void hold_pins(void) {
     gpio_hold_en((gpio_num_t)h.pin);
   }
   gpio_deep_sleep_hold_en();
+  // GPIO47 and GPIO48 are in the VDD_SPI power domain, which deep sleep
+  // switches off by default -- and a pad with no power holds nothing.
+  // GPIO48 then sits at 0 V, which is LED rail ON through its P-MOS: the
+  // four pixels' idle current, ~5 mA, all night (measured 5.75 mA asleep,
+  // 2026-10-03). Keeping VDD_SPI up costs the flash and PSRAM standby
+  // current, a small fraction of that.
+  esp_sleep_pd_config(ESP_PD_DOMAIN_VDDSDIO, ESP_PD_OPTION_ON);
 }
 
 uint32_t next_wake(uint32_t t, int *who = nullptr);

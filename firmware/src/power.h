@@ -34,9 +34,10 @@ enum class VbusType : uint8_t {
 
 struct PowerStatus {
   // Fuel gauge
-  bool cell_valid;
+  bool cell_valid;          // false too when there is no battery (cell_absent)
+  bool cell_absent;         // the charger is holding the cell node up by itself
   float cell_volts;
-  float soc_percent;
+  float soc_percent;        // 0..100
   float rate_percent_hr;    // signed: negative while discharging
 
   // Current monitor, across the 10 mOhm shunt in the battery branch

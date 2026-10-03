@@ -12,6 +12,13 @@ namespace {
 const uint8_t MAX_VCELL = 0x02;     // 78.125 uV per count
 const uint8_t MAX_SOC = 0x04;       // high byte percent, low byte /256
 const uint8_t MAX_CRATE = 0x16;     // signed, 0.208 %/hr per count
+const uint8_t MAX_MODE = 0x06;
+const uint16_t MAX_QUICK_START = 0x4000;
+// Above this there is no cell: a LiPo charges to 4.2 V, and what the
+// gauge sees higher than that is the charger's output with nothing on
+// it. With the battery unplugged on 2026-10-03 the gauge read 116 %.
+const float CELL_ABSENT_V = 4.28f;
+bool g_was_absent = false;
 
 // INA226 across R15
 const uint8_t INA_CONFIG = 0x00;
@@ -127,6 +134,20 @@ void power_read(PowerStatus *out) {
     out->cell_valid = true;
     if (read16(Dev::Fuel, ADDR_MAX17048, MAX_SOC, &v)) {
       out->soc_percent = (v >> 8) + (v & 0xFF) / 256.0f;
+      // The register runs to 255 %: the model's guess, not a promise.
+      if (out->soc_percent > 100.0f) out->soc_percent = 100.0f;
+    }
+    if (out->cell_volts > CELL_ABSENT_V) {
+      out->cell_absent = true;
+      out->cell_valid = false;     // no battery: nothing here is a reading of one
+      g_was_absent = true;
+    } else if (g_was_absent) {
+      // A battery has just been connected. The gauge spent the time
+      // without one modelling the charger's output as a cell; a quick
+      // start makes it estimate again from this cell's voltage.
+      g_was_absent = false;
+      const uint8_t b[3] = {MAX_MODE, (uint8_t)(MAX_QUICK_START >> 8), (uint8_t)MAX_QUICK_START};
+      i2c_write(Dev::Fuel, ADDR_MAX17048, b, 3);
     }
     if (read16(Dev::Fuel, ADDR_MAX17048, MAX_CRATE, &v)) {
       out->rate_percent_hr = (int16_t)v * 0.208f;

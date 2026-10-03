@@ -658,6 +658,8 @@ void print_health(void) {
   if (p.cell_valid) {
     printf("  cell         %.3f V  %.1f %%  %+.2f %%/hr\n", p.cell_volts,
            p.soc_percent, p.rate_percent_hr);
+  } else if (p.cell_absent) {
+    printf("  cell         no battery (%.3f V is the charger's output)\n", p.cell_volts);
   } else {
     printf("  cell         -- (fuel gauge did not answer)\n");
   }
