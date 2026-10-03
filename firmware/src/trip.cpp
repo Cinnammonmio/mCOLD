@@ -452,9 +452,15 @@ uint32_t trip_next_check(void) {
   // An alarm waiting out its dwell time is due when the dwell ends, not
   // at the next sample: the sample period may be longer than the dwell.
   uint32_t at = 0;
-  auto earliest = [&at](uint32_t since, uint32_t len) {
+  const uint32_t now = now_ms();
+  auto earliest = [&at, now](uint32_t since, uint32_t len) {
     if (!since) return;
     const uint32_t due = since + len;
+    // Already past: decided at the next reading, which the sample
+    // schedule brings. A dwell that ran out while the probe gives no
+    // readings would otherwise stay "due" -- in the past -- and keep the
+    // chip awake waiting for a reading that is not coming.
+    if ((int32_t)(due - now) <= 0) return;
     if (!at || (int32_t)(due - at) < 0) at = due ? due : 1;
   };
   if (!(g_alarms & (1u << AL_TEMP_HIGH))) earliest(g_high_since, (uint32_t)g_p.dwell_s * 1000);

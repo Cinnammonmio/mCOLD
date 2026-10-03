@@ -46,6 +46,8 @@ const uint32_t AWAKE_LIMIT_MS = 10 * 60000;
 // Less than this to the next job and it is cheaper to wait awake than
 // to boot again.
 const uint32_t MIN_SLEEP_MS = 4000;
+// A wake time this far in the past is stale (see next_wake).
+const uint32_t STALE_NEXT_MS = 30000;
 // One motion wake a minute. A box being carried would otherwise boot
 // every few seconds; the accelerometer latches what happens meanwhile
 // and the next wake collects it.
@@ -244,6 +246,10 @@ uint32_t next_wake(uint32_t t, int *who) {
   if (who) *who = -1;
   for (int d = 0; d < (int)Duty::Count; d++) {
     const uint32_t n = g_next[d];
+    // A time long past is a module that asked and then could not act --
+    // a bug, but one that would cost the battery a whole awake limit on
+    // every wake. Ignored; that module's next pass will ask again.
+    if (n && (int32_t)(t - n) > (int32_t)STALE_NEXT_MS) continue;
     if (n && (int32_t)(n - best) < 0) {
       best = n;
       if (who) *who = d;

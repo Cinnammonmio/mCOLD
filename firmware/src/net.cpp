@@ -56,6 +56,7 @@ struct Fast {
 const uint32_t FAST_MAGIC = 0x4E465331;   // "NFS1"
 RTC_DATA_ATTR Fast g_fast;
 bool g_fast_tried = false;      // this session
+bool g_joined_direct = false;   // the join in flight skipped the scan
 
 const uint32_t CONNECT_TIMEOUT_MS = 20000;
 
@@ -149,6 +150,7 @@ void join(const Known &k, const uint8_t *bssid, uint8_t channel) {
   // least otherwise, so a look-alike open access point cannot take the box.
   wc.sta.threshold.authmode = k.pass[0] ? WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
   wc.sta.pmf_cfg.capable = true;
+  g_joined_direct = bssid != nullptr;
   if (bssid) {
     wc.sta.bssid_set = true;
     memcpy(wc.sta.bssid, bssid, 6);
@@ -251,7 +253,9 @@ void on_event(void *, esp_event_base_t base, int32_t id, void *data) {
       g_fast.magic = 0;             // and not directly again
     }
     // A direct join that failed is retried at once, with a scan.
-    if (!was && g_fast_tried && g_backoff_ms == 2000) g_retry_at = 1;
+    // Only the direct one: a refusal after a scan backs off as usual, or
+    // a network that refuses every time would be retried without pause.
+    if (!was && g_joined_direct) g_retry_at = 1;
     else schedule_retry();
   } else if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
     const ip_event_got_ip_t *e = (const ip_event_got_ip_t *)data;

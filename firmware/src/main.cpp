@@ -294,6 +294,14 @@ void task_gnss(void *) {
     const bool due = held || (wanted && (!next || (int32_t)(t0 - next) >= 0));
     pm_next(Duty::Gnss, battery && wanted ? (next ? next : t0) : 0);
     if (!due || !health_should_try(Dev::Gnss, t0) || !gnss_power_on()) {
+      if (due && battery && !held) {
+        // Due, but the module cannot be had (failing, or its health is
+        // backing off): try again a period from now. Left at a time
+        // already past, the plan would keep the chip awake for it.
+        g_gnss_plan.next_at = t0 + (uint32_t)config().gnss_period_s * 1000;
+        if (!g_gnss_plan.next_at) g_gnss_plan.next_at = 1;
+        pm_next(Duty::Gnss, g_gnss_plan.next_at);
+      }
       pm_done(Duty::Gnss);
       vTaskDelay(pdMS_TO_TICKS(5000));
       continue;
@@ -481,6 +489,10 @@ void battery_guard(const PowerStatus &ps) {
 
 // Also the console's "poweroff", to check the whole path on the bench.
 void battery_off(float volts) {
+  // Nothing may put the chip to sleep half way through this: a sleep
+  // between the event and the picture would come back and do it again.
+  // Never released -- this ends in sleep either way.
+  pm_hold(Hold::Display, true);
   const uint16_t mv = (uint16_t)lroundf(volts * 1000.0f);
   fflush(stdout);
   trip_note_power_off(mv);
