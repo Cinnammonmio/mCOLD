@@ -1,6 +1,14 @@
+---
+name: User-Manual_EN
+lang: en
+version: 0.1
+status: draft
+date: 2026-10-03
+firmware: 0.7.0-dev
+---
+
 # mCOLD Foam V.1 — User Manual
 
-Draft 1 · October 2026 · firmware 0.7
 
 ## 1. About mCOLD
 

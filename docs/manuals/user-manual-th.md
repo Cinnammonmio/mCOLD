@@ -1,6 +1,14 @@
+---
+name: User-Manual_TH
+lang: th
+version: 0.1
+status: draft
+date: 2026-10-03
+firmware: 0.7.0-dev
+---
+
 # mCOLD Foam V.1 — คู่มือการใช้งาน
 
-ฉบับร่าง 1 · ตุลาคม 2026 · firmware 0.7
 
 ## 1. เกี่ยวกับ mCOLD
 
