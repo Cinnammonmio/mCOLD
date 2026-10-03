@@ -56,4 +56,4 @@ PDF in the same commit when it is superseded.
 | Quick Guide | 0.1 draft | 0.7.0-dev |
 | User Manual TH | 0.1 draft | 0.7.0-dev |
 | User Manual EN | 0.1 draft | 0.7.0-dev |
-| Service Manual | 0.1 draft | 0.7.0-dev |
+| Service Manual | 0.2 draft | 0.7.0-dev |

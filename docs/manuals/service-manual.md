@@ -1,7 +1,7 @@
 ---
 name: Service-Manual
 lang: en
-version: 0.1
+version: 0.2
 status: draft
 date: 2026-10-03
 firmware: 0.7.0-dev
@@ -80,6 +80,7 @@ even on USB — set it back to 0 first.
 | `ble [on\|off]` | BLE status; `on` advertises 60 s |
 | `rpc {json}` | Any PROTOCOL.md request, authorized |
 | `sleep` · `sleep clear` | Power manager state, wake record |
+| `soc` · `soc set P` | Counted state of charge, capacity, anchor; set it by hand |
 | `reboot` | Restart |
 
 Bench-only (power measurement and tests):
@@ -112,6 +113,8 @@ range and whether it is the default.
 | `led_status_s` | 60–3600 | 900 | On battery, the alive blink this often |
 | `batt_trip_mv` | 3000–4100 | 3550 | Below it, on battery, no new trip (`BATTERY_LOW`) |
 | `batt_off_mv` | 3000–3700 | 3400 | Below it, on battery, the box switches itself off |
+| `batt_mah` | 300–6000 | 1500 | Rated cell capacity, until one is learned |
+| `sleep_ua` | 0–5000 | 250 | Current asleep, for counting charge through a sleep |
 | `tz_offset_min` | −720–840 | 420 | Display time zone (records are UTC) |
 | `buzzer_enabled` | 0–1 | 1 | Alarm sound |
 | `sleep_en` | 0–1 | 1 | Deep sleep on battery |
@@ -153,6 +156,14 @@ Low battery: below `batt_trip_mv` no trip starts; below `batt_off_mv`
 BATTERY EMPTY and puts the charger in ship mode — the cell is disconnected
 from everything but the fuel gauge. Plugging USB in powers it back on
 (verified 2026-10-03).
+
+State of charge is counted, not read from the voltage: the current
+monitor's readings while awake, `sleep_ua` for each sleep, 100 % when the
+charger reports charge done; the fuel gauge's percent only to start, or
+when the kept count is more than 15 % from it (charged while switched
+off). A run from full to the switch-off voltage teaches it the cell's
+real capacity. `health` shows the counted and the gauge's percent side by
+side. The switch-off itself is by voltage.
 
 Wake record: `sleep` lists recent wakes (cause, boot ms, awake ms, mA,
 slept s). It survives a reset but not a power cut; `sleep clear` restarts it.
