@@ -1,6 +1,15 @@
+---
+name: Service-Manual
+lang: en
+version: 0.1
+status: draft
+date: 2026-10-03
+firmware: 0.7.0-dev
+hardware: foam V1.0.1
+---
+
 # mCOLD Foam V.1 — Service Manual
 
-Draft 1 · October 2026 · firmware 0.7.0-dev · hardware foam V1.0.1
 
 For technicians, firmware and QA. Deeper background: `firmware/HANDOFF.md`
 (state, traps, decisions), `firmware/PROTOCOL.md` (BLE/NFC/MQTT),
