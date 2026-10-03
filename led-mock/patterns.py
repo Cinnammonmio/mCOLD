@@ -147,7 +147,7 @@ def led_map():
     return img
 
 
-# One row per event. `lit` is which lights show, by position: L, M, R on
+# Rows grouped into framed sections. `lit` is which lights show, by position: L, M, R on
 # the front, S the side light (on the top edge, towards the right).
 # `bars` is the timeline as (start ms, length ms, colour, mark); `beeps`
 # the buzzer, as (start ms, length ms). From indicate.cpp: boot_cue is the
@@ -162,30 +162,36 @@ def bars(spans, colour):
     return [(t, n, colour, "") for t, n in spans]
 
 
-STATES = [
-    ("เปิดเครื่อง", "ครั้งเดียวตอนบูต", {"L": WHITE, "M": WHITE, "R": WHITE},
-     SWEEP + [(390, 120, GREEN, "")], []),
-    ("เปิดเครื่อง เครื่องมีปัญหา", "ไฟขวาแทนการกะพริบเขียว", {"L": WHITE, "M": WHITE, "R": AMBER},
-     SWEEP + bars([(390 + t, n) for t, n in TRIPLE], AMBER), []),
-    ("แตะ NFC", "ทันที", {"L": WHITE, "M": WHITE, "R": WHITE},
-     [(0, 120, WHITE, "")], []),
-    ("เริ่ม trip", "ทันที", {"M": GREEN}, bars(TRIPLE, GREEN), []),
-    ("trip ทำงาน", "บนแบต ทุก 15 นาที · เสียบ USB ทุก 1 วินาที", {"M": GREEN},
-     [(0, 40, GREEN, "")], []),
-    ("หยุด trip", "ทันที", {"M": GREEN}, [(0, 120, GREEN, "")], []),
-    ("alarm อุณหภูมิ", "ทันที แล้วทุกรอบตื่น (5 นาที) · USB ทุก 1 วินาที", {"L": RED},
-     bars(DOUBLE, RED), [(280, 150), (580, 150), (880, 150)]),
-    ("รับทราบ alarm", "ทันที · เสียงหยุด", {"L": BLUE}, [(0, 120, BLUE, "")], []),
-    ("เครื่องมีปัญหา", "ทันที แล้วบนแบตทุก 15 นาที · USB ทุก 1 วินาที", {"R": AMBER},
-     bars(TRIPLE, AMBER), []),
-    ("มีคนขยับกล่อง", "แสดงสถานะ 1 ครั้ง · บนแบต ≤ 4 ครั้ง/ชม.", {"M": GREEN},
-     [(0, 40, GREEN, "")], []),
-    ("กำลังชาร์จ", "ตลอดที่เสียบสาย", {"S": AMBER}, [(0, 2000, AMBER, "breathe")], []),
-    ("ชาร์จเกือบเต็ม (≥ 80%)", "ตลอดที่เสียบสาย", {"S": GREEN}, [(0, 2000, GREEN, "breathe")], []),
-    ("ชาร์จเต็ม", "ตลอดที่เสียบสาย", {"S": GREEN}, [(0, 2000, GREEN, "")], []),
-    ("เสียบสายแต่ไม่ชาร์จ", "ทุก 2 วินาที", {"S": AMBER}, [(0, 120, AMBER, "")], []),
-    ("ชาร์จผิดปกติ", "ทุก 1 วินาที · บี๊บ 1 ครั้งตอนเริ่ม", {"S": RED},
-     [(0, 120, RED, ""), (1000, 120, RED, "")], [(0, 150)]),
+SECTIONS = [
+    ("เปิดเครื่องและการแตะ", [
+        ("เปิดเครื่อง", "ครั้งเดียวตอนบูต", {"L": WHITE, "M": WHITE, "R": WHITE},
+         SWEEP + [(390, 120, GREEN, "")], []),
+        ("เปิดเครื่อง เครื่องมีปัญหา", "ไฟขวาแทนการกะพริบเขียว", {"L": WHITE, "M": WHITE, "R": AMBER},
+         SWEEP + bars([(390 + t, n) for t, n in TRIPLE], AMBER), []),
+        ("แตะ NFC", "ทันที", {"L": WHITE, "M": WHITE, "R": WHITE},
+         [(0, 120, WHITE, "")], []),
+        ("มีคนขยับกล่อง", "แสดงสถานะ 1 ครั้ง · ไม่เกิน 4 ครั้ง/ชม.", {"M": GREEN},
+         [(0, 40, GREEN, "")], []),
+    ]),
+    ("Trip", [
+        ("เริ่ม trip", "ทันที", {"M": GREEN}, bars(TRIPLE, GREEN), []),
+        ("trip ทำงาน", "ทุก 15 นาที", {"M": GREEN}, [(0, 40, GREEN, "")], []),
+        ("หยุด trip", "ทันที", {"M": GREEN}, [(0, 120, GREEN, "")], []),
+    ]),
+    ("Alarm และปัญหาของเครื่อง", [
+        ("alarm อุณหภูมิ", "ทันที แล้วทุกรอบตื่น (5 นาที)", {"L": RED},
+         bars(DOUBLE, RED), [(280, 150), (580, 150), (880, 150)]),
+        ("รับทราบ alarm", "ทันที · เสียงหยุด", {"L": BLUE}, [(0, 120, BLUE, "")], []),
+        ("เครื่องมีปัญหา", "ทันที แล้วทุก 15 นาที", {"R": AMBER}, bars(TRIPLE, AMBER), []),
+    ]),
+    ("ไฟข้างเครื่อง · การชาร์จ", [
+        ("กำลังชาร์จ", "ตลอดการชาร์จ", {"S": AMBER}, [(0, 2000, AMBER, "breathe")], []),
+        ("ชาร์จเกือบเต็ม (≥ 80%)", "ตลอดการชาร์จ", {"S": GREEN}, [(0, 2000, GREEN, "breathe")], []),
+        ("ชาร์จเต็ม", "ติดค้าง", {"S": GREEN}, [(0, 2000, GREEN, "")], []),
+        ("มีไฟเข้าแต่ไม่ชาร์จ", "ทุก 2 วินาที", {"S": AMBER}, [(0, 120, AMBER, "")], []),
+        ("ชาร์จผิดปกติ", "ทุก 1 วินาที · บี๊บ 1 ครั้งตอนเริ่ม", {"S": RED},
+         [(0, 120, RED, ""), (1000, 120, RED, "")], [(0, 150)]),
+    ]),
 ]
 
 UNLIT = (214, 216, 220)
@@ -214,58 +220,72 @@ def device(d, x, y, lit):
 
 def states():
     SPAN_S = 2000
-    ev_x, dev_x, tl_x, tl_w = 28, 330, 440, 520
-    row_h, top = 82, 106
-    h = top + row_h * len(STATES) + 40
-    img = Image.new("RGB", (tl_x + tl_w + 40, h), PAPER)
+    x_l, x_r = 28, 1000              # the frames
+    ev_x, dev_x, tl_x, tl_w = 48, 340, 450, 520
+    row_h, head_h, gap = 80, 34, 16
+    n_rows = sum(len(rows) for _, rows in SECTIONS)
+    top = 108
+    h = top + n_rows * row_h + len(SECTIONS) * (head_h + gap) + 56
+    img = Image.new("RGB", (x_r + 28, h), PAPER)
     d = ImageDraw.Draw(img)
     d.text((28, 26), "When each light shows", font=font("SemiBold", 19), fill=INK)
-    d.text((28, 50), "บนแบต เครื่องหลับระหว่างรอบ ไฟจึงติดเฉพาะตอนตื่น · เสียบ USB เครื่องไม่หลับ จังหวะถี่ขึ้น · ตาม firmware 0.7",
+    d.text((28, 50), "บนแบต เครื่องหลับระหว่างรอบ ไฟจึงติดเฉพาะตอนตื่น · ตาม firmware 0.7",
            font=font("Light", 12), fill=MUTED)
-    for x, t in ((ev_x, "เหตุการณ์"), (dev_x - 6, "ตำแหน่ง"), (tl_x, "รูปแบบ")):
-        d.text((x, 80), t, font=font("SemiBold", 11), fill=MUTED)
-    d.line([(28, 100), (tl_x + tl_w, 100)], fill=GRID, width=2)
+    for x, t in ((ev_x, "เหตุการณ์"), (dev_x - 4, "ตำแหน่ง"), (tl_x, "รูปแบบ")):
+        d.text((x, 82), t, font=font("SemiBold", 11), fill=MUTED)
+
+    y = top
+    for title, rows in SECTIONS:
+        box_h = head_h + len(rows) * row_h
+        d.rounded_rectangle([(x_l, y), (x_r, y + box_h)], 12, fill=(255, 255, 255),
+                            outline=(206, 209, 214), width=2)
+        d.rounded_rectangle([(x_l, y), (x_r, y + head_h)], 12, fill=(240, 242, 245))
+        d.rectangle([(x_l + 1, y + head_h - 12), (x_r - 1, y + head_h)], fill=(240, 242, 245))
+        d.line([(x_l, y + head_h), (x_r, y + head_h)], fill=(206, 209, 214), width=1)
+        d.text((ev_x, y + head_h / 2), title, font=font("SemiBold", 13), fill=INK, anchor="lm")
+        # time grid inside the frame
+        for ms in range(0, SPAN_S + 1, 500):
+            x = tl_x + tl_w * ms / SPAN_S
+            d.line([(x, y + head_h + 6), (x, y + box_h - 6)], fill=GRID)
+        ry = y + head_h
+        for i, (ev, when, lit, seq, beeps) in enumerate(rows):
+            if i:
+                d.line([(x_l + 14, ry), (x_r - 14, ry)], fill=GRID)
+            d.text((ev_x, ry + 22), ev, font=font("SemiBold", 13), fill=INK)
+            d.text((ev_x, ry + 42), when, font=font("Light", 11), fill=MUTED)
+            device(d, dev_x, ry + 8, lit)
+            by = ry + 28
+            for t0, n, col, mark in seq:
+                x0 = tl_x + tl_w * t0 / SPAN_S
+                x1 = tl_x + tl_w * min(t0 + n, SPAN_S) / SPAN_S
+                if mark == "breathe":
+                    steps = 64
+                    for s_ in range(steps):
+                        level = 0.12 + 0.88 * 0.5 * (1 - math.cos(2 * math.pi * s_ / steps))
+                        bx0 = x0 + (x1 - x0) * s_ / steps
+                        bx1 = x0 + (x1 - x0) * (s_ + 1) / steps + 1
+                        bar = tuple(round(p + (255 - p) * (1 - level)) for p in col)
+                        d.rectangle([(bx0, by), (bx1, by + 18)], fill=bar)
+                else:
+                    d.rectangle([(x0, by), (max(x1, x0 + 2), by + 18)], fill=col,
+                                outline=MUTED if col is WHITE else None)
+                    if mark:
+                        d.text(((x0 + x1) / 2, by + 9), mark, font=font("SemiBold", 9),
+                               fill=INK, anchor="mm")
+            for t0, n in beeps:
+                x0 = tl_x + tl_w * t0 / SPAN_S
+                x1 = tl_x + tl_w * (t0 + n) / SPAN_S
+                d.rectangle([(x0, by + 24), (x1, by + 29)], fill=INK)
+            if beeps:
+                x_end = tl_x + tl_w * (beeps[-1][0] + beeps[-1][1]) / SPAN_S
+                d.text((x_end + 6, by + 27), "บี๊บ", font=font("Light", 10), fill=MUTED, anchor="lm")
+            ry += row_h
+        y += box_h + gap
 
     for ms in range(0, SPAN_S + 1, 500):
         x = tl_x + tl_w * ms / SPAN_S
-        d.line([(x, top), (x, top + row_h * len(STATES) - 6)], fill=GRID)
-        d.text((x, top + row_h * len(STATES)), f"{ms}", font=font("Light", 10),
-               fill=MUTED, anchor="ma")
-    d.text((tl_x + tl_w / 2, h - 18), "milliseconds", font=font("Light", 10),
-           fill=MUTED, anchor="ma")
-
-    for i, (ev, when, lit, seq, beeps) in enumerate(STATES):
-        y = top + i * row_h
-        d.text((ev_x, y + 20), ev, font=font("SemiBold", 13), fill=INK)
-        d.text((ev_x, y + 40), when, font=font("Light", 11), fill=MUTED)
-        device(d, dev_x, y + 8, lit)
-        by = y + 26                                  # the bar's top
-        for t0, n, col, mark in seq:
-            x0 = tl_x + tl_w * t0 / SPAN_S
-            x1 = tl_x + tl_w * min(t0 + n, SPAN_S) / SPAN_S
-            if mark == "breathe":
-                steps = 64
-                for s_ in range(steps):
-                    level = 0.12 + 0.88 * 0.5 * (1 - math.cos(2 * math.pi * s_ / steps))
-                    bx0 = x0 + (x1 - x0) * s_ / steps
-                    bx1 = x0 + (x1 - x0) * (s_ + 1) / steps + 1
-                    bar = tuple(round(p + (PAPER[j] - p) * (1 - level)) for j, p in enumerate(col))
-                    d.rectangle([(bx0, by), (bx1, by + 18)], fill=bar)
-            else:
-                d.rectangle([(x0, by), (max(x1, x0 + 2), by + 18)], fill=col,
-                            outline=MUTED if col is WHITE else None)
-                if mark:
-                    d.text(((x0 + x1) / 2, by + 9), mark, font=font("SemiBold", 9),
-                           fill=INK, anchor="mm")
-        for t0, n in beeps:                          # the buzzer, under the bar
-            x0 = tl_x + tl_w * t0 / SPAN_S
-            x1 = tl_x + tl_w * (t0 + n) / SPAN_S
-            d.rectangle([(x0, by + 24), (x1, by + 29)], fill=INK)
-        if beeps:
-            x_end = tl_x + tl_w * (beeps[-1][0] + beeps[-1][1]) / SPAN_S
-            d.text((x_end + 6, by + 27), "บี๊บ", font=font("Light", 10), fill=MUTED, anchor="lm")
-        d.line([(28, y + row_h - 4), (tl_x + tl_w, y + row_h - 4)], fill=GRID)
-
+        d.text((x, y - 4), f"{ms}", font=font("Light", 10), fill=MUTED, anchor="ma")
+    d.text((tl_x + tl_w / 2, y + 14), "milliseconds", font=font("Light", 10), fill=MUTED, anchor="ma")
     img.save(OUT / "led_states.png")
     return img
 
