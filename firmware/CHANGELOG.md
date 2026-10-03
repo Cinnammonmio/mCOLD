@@ -76,7 +76,35 @@ P7, power: in progress.
 Measured on the bench (USB power, `sleep_usb 1`): a timer wake is 0.13 s
 of ROM and bootloader plus 1.2 s of firmware; 3.6 s with a panel
 refresh; an upload session ~15 s while the server sends no ACK.
-Battery current: not measured yet.
+
+After the first night on battery (~12 mA average, 2026-10-03):
+
+- **VDD_SPI kept on in deep sleep.** GPIO47/48 are in its domain; with it
+  off GPIO48 fell to 0 V and turned the LED rail on all night. Asleep:
+  5.75 mA → ≤ 0.25 mA.
+- Sleep entry: rails off, pins held, 40 ms settle, then the accelerometer
+  latch is cleared before the motion wake is armed.
+- Attention window 2 s on battery (30 s on USB).
+- GNSS on battery gives up after 60 s with nothing heard; backoff to ×16.
+- Upload sessions that get no ACK back off too, not only unreachable ones.
+- **Low battery:** `batt_trip_mv` (3550) refuses START_TRIP with
+  `BATTERY_LOW`; `batt_off_mv` (3400) logs `POWER_OFF`, draws BATTERY
+  EMPTY and switches the box off through the charger's ship mode until
+  USB is plugged in. Console `poweroff` runs the same path.
+- Front lights on their own cap, `led_front_pct` (2 %); the alive blink on
+  battery every `led_status_s` (900 s); a cargo alarm still at every wake.
+- Fuel gauge: SOC clamped to 100 %; "no battery" above 4.28 V, with a
+  quick start when a cell is connected.
+- BATTERY EMPTY title in capitals (the title font has no lower case);
+  `trip dump` names POWER OFF.
+- `platformio.ini`: monitor DTR/RTS low (no reset on open), CRLF.
+- ESP-IDF power management built in (`CONFIG_PM_ENABLE`, tickless idle);
+  nothing uses it by default yet.
+- Bench: `amps`, `hiz`, `cpu`, `pin`, `sleep_meas` (sleep current in the
+  wake record), `sleep` shows the last sleep's current.
+
+Measured with the charger in HIZ: asleep ≤ 0.25 mA; awake ~130 mA
+(~40 mA floor; the rest not found yet); BLE stack +25 mA; GNSS ~173 mA.
 
 ## 0.6.0 — 2026-10-02
 

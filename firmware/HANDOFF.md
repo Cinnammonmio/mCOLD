@@ -46,9 +46,31 @@ the box now deep-sleeps between jobs (`pm.*`, section 6). Verified on
 the bench with `sleep_usb 1` (USB in, behaving as on battery): timer
 wakes on the sample grid, 0.13 s boot + 1.2 s awake per wake, 3.6 s
 with a panel refresh, motion wakes, upload sessions with backoff, the
-trip carrying on through sleep with no RESUMED events. **Not yet done:
-battery current measured on the battery alone; NFC tap wake checked
-with a phone; charger/PD policy (needs the battery datasheet).**
+trip carrying on through sleep with no RESUMED events.
+
+First night on battery (2026-10-02/03): 99 % → 84 % in ~19 h, about
+**12 mA** average — over the 7.1 mA budget. Found and fixed on
+2026-10-03 (section 4 for the traps):
+
+| Cause | Was | Now |
+|---|---|---|
+| GPIO48 lost its hold in deep sleep (VDD_SPI off): LED rail on all night | 5.75 mA asleep | ≤ 0.25 mA asleep (the INA226's floor) |
+| Motion → 30 s attention window, 4 an hour, mostly false motion | ~5 mA | 2 s window on battery |
+| GNSS indoors: full 180 s sessions | ~3 mA | gives up after 60 s with nothing heard; backoff to ×16 |
+| Rail switching at sleep entry latched an accelerometer event | motion wake 0 s after sleeping | 40 ms settle, latch cleared before arming |
+
+Estimate after the fixes: ~1.5 mA average without uploads, 3–4 mA with
+an ACKing server — **to be confirmed by the second night (2026-10-03/04)**.
+
+Also new on 2026-10-03: low-battery switch-off (`batt_off_mv`, charger
+ship mode, verified: replug USB restarts it) and no new trip below
+`batt_trip_mv`; front lights 2 %, alive blink every 15 min on battery;
+fuel gauge without a battery reads "no battery" instead of 116 %.
+
+**Not yet done:** the awake current (~130 mA, floor ~40 mA, ~90 mA
+unexplained — see section 8); NFC tap wake checked with a phone;
+charger/PD policy and the fuel-gauge model (battery datasheet); a
+state of charge that counts current, not voltage alone.
 
 Bench state: Wi-Fi networks `mio` and `Mio_2.4G` and the broker login
 are in this board's NVS (set over USB, never in git). The server does
@@ -160,6 +182,25 @@ three axes, NFC read **and write**, and charging at ~474 mA.
 Every interrupt pin — GPIO 1, 2, 4, 5, 7, 21 — is RTC-capable, so all of
 them can wake the chip from deep sleep. The board was laid out correctly
 for the low-power architecture §12 asks for.
+
+TPS63020 PS/SYNC is tied to GND (checked in the layout 2026-10-03): the
+3.3 V converter runs in power-save mode at light load.
+
+**Power, measured 2026-10-03** (INA226 on the cell, 0.25 mA per count;
+awake figures with the charger in HIZ so the box runs from its cell):
+
+| State | Battery current |
+|---|---|
+| Deep sleep, VDD_SPI kept on | ≤ 0.25 mA |
+| Awake, radios off, rails off | ~130 mA mean, ~40 mA floor |
+| Awake, BLE stack up | ~155 mA |
+| Awake, GNSS session | ~173 mA |
+| Awake, CPU at 80 MHz / 40 MHz | 158 / 93 mA |
+| Charging from a PC port | +330 to +400 mA into the cell |
+
+The CPU clock barely matters between 160 and 80 MHz, so the ~90 mA above
+the floor is not the CPU. Signal pins of the unpowered panel/MAX6675/GNSS
+pulled low account for 15–25 mA of it; the rest is not found yet.
 
 ### Unresolved
 
@@ -305,9 +346,32 @@ command.
 
 Scripts can avoid it: open the port with DTR and RTS held low
 (pyserial: set `dtr = rts = False` *before* `open()`) and the board is
-not reset. That is the only way to watch a box cycle through deep
+not reset. `platformio.ini` now does the same for `pio device monitor`
+(`monitor_dtr = 0`, `monitor_rts = 0`, 2026-10-03), so opening the
+monitor no longer resets the box. That is the only way to watch a box cycle through deep
 sleep: the USB port disappears every time the chip sleeps and the
 watcher has to reopen it without resetting what it is watching.
+
+### GPIO47 and GPIO48 cannot be held in deep sleep unless VDD_SPI stays on
+
+They are powered from VDD_SPI, which deep sleep switches off by default.
+`gpio_hold_en` on a pad with no power holds nothing: GPIO48 falls to 0 V,
+and 0 V is *LED rail on* through Q1 — the four pixels' idle current, all
+night. It was the 5.75 mA asleep of the first battery night. `pm.cpp`
+keeps `ESP_PD_DOMAIN_VDDSDIO` on through sleep (≤ 0.25 mA measured after).
+Any new pin to hold in sleep: check its power domain first.
+
+### The takeover title font has no lower case
+
+`mColdTitle26` is cut to ' '..'Z' (`fonts_mcold.h`). A lower-case letter
+is not drawn at all: "Battery empty" came out as "B". Titles in capitals.
+
+### With no battery the fuel gauge reads the charger
+
+MAX17048 is powered from CELL_PLUS, which the charger holds up with no
+cell connected; the gauge models that as a cell and read 116 %. Above
+4.28 V the firmware now reports "no battery", and quick-starts the gauge
+when a cell is connected again.
 
 ### A box asleep cannot be flashed
 
@@ -326,6 +390,11 @@ panel refreshes in a row on USB produced none, so it is not the panel.
 Not yet known whether it is the radio's current step on 3V3_MAIN (as
 with the buzzer, see below) or the desk. Each one is a motion wake on
 battery (at most one a minute). Worth a controlled test before P8.
+
+One cause is known and fixed: switching the rails off at sleep entry
+latched an event that woke the box 0 s later. The latch is now cleared
+40 ms after the rails go off and the pins are held, before the motion
+wake is armed (`pm_on_quiet`).
 
 ### A zero result from a test that needs human timing is not data
 
@@ -373,6 +442,18 @@ GxEPD2, or bring Arduino back as a separate component then.
 
 **The project lives at `C:\mCOLD`.** ESP-IDF refuses a project path
 containing a space and the repo is under `Foam V.1`. Not configurable.
+
+**Low battery, by voltage (decided 2026-10-03).** Below `batt_trip_mv`
+(3.55 V, ~10 %) on battery no new trip starts (`BATTERY_LOW`); below
+`batt_off_mv` (3.40 V, ~5 %), three readings in a row, the box logs
+`POWER_OFF`, draws BATTERY EMPTY and puts the BQ25601 in ship mode, so
+the cell feeds nothing but the fuel gauge until USB comes back. Voltage,
+not the gauge's percent: the gauge has no model of this cell yet.
+
+**Lights cost the chip being awake, not the LEDs (2026-10-03).** Front
+lights 2 %, the alive blink every `led_status_s` (15 min) on battery, a
+cargo alarm at every wake, the motion attention window 2 s on battery
+(30 s on USB). The 30 s window at four an hour was ~5 mA on its own.
 
 **60 s is the fastest sampling this partition layout supports.** At
 300 s the log holds 269 days, at 60 s it holds 54, at 30 s only 27 —
@@ -458,7 +539,13 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
 
 ## 8. Still open
 
-- **T− grounding at the MAX6675** — blocks honest probe-fault detection
+- **T− grounded at the MAX6675** (hand-soldered 2026-10-03). Probe-fault
+  detection not yet tested; the panel showed `--` that evening with the
+  probe plugged in -- check the trip for PROBE_FAULT events
+- **Awake current ~130 mA** with a ~40 mA floor: ~90 mA not yet found
+  (not the CPU clock, not the radios; idle signal pins only 15–25 mA)
+- **NFC tap wake** from deep sleep: armed (GPO, EXT1) but not yet tried
+  with a phone
 - The 4-colour panel is not in hand; busy polarity and 25 s refresh
   cannot be verified without it
 - **Server is MQTT** (decided by the team, 2026-10-02): broker
@@ -497,7 +584,10 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
 - Battery datasheet, so MAX17048 `RCOMP` and the charger limits can be
   set rather than left at defaults. SOC currently reads low after a deep
   discharge; ModelGauge needs a full charge cycle before it is worth
-  judging
+  judging. The user sees the percent fall fast near 90 % (surface
+  charge relaxing after a full charge, and the gauge reading voltage
+  under the 130 mA of a wake): a state of charge that counts current
+  is being added (P7)
 - `bringup/` and the `bench/epd29-s3` edits, recovered from the zip copy,
   are on branch `bringup/import` (pushed 2026-10-02), waiting for a pull
   request into `main`
