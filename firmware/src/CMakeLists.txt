@@ -12,4 +12,4 @@ idf_component_register(SRCS "main.cpp" "health.cpp" "rails.cpp" "bus.cpp"
                                 esp_driver_uart esp_driver_rmt esp_driver_ledc
                                 esp_app_format esp_timer nvs_flash json mbedtls bt
                                 esp_wifi esp_netif esp_event mqtt
-                                esp_partition esp_system esp_hw_support)
+                                esp_partition esp_system esp_hw_support esp_pm)

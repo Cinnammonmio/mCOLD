@@ -18,6 +18,7 @@
 #include <esp_mac.h>
 #include <esp_attr.h>
 #include <esp_heap_caps.h>
+#include <esp_pm.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -995,9 +996,12 @@ bool dump_visit(const LogRecord &r, void *) {
       const uint8_t code = rd.u8();
       static const char *const NAMES[] = {
           "?", "RESUMED", "DOOR OPEN", "DOOR CLOSE", "MOTION", "PROBE FAULT",
-          "PROBE OK", "ALARM", "ALARM CLEAR", "ALARM ACK", "TIME SET", "LOSS"};
+          "PROBE OK", "ALARM", "ALARM CLEAR", "ALARM ACK", "TIME SET", "LOSS",
+          "POWER OFF"};
       printf("EVENT   %s", code < sizeof(NAMES) / sizeof(NAMES[0]) ? NAMES[code] : "?");
-      if (code == EV_ALARM_RAISE || code == EV_ALARM_CLEAR) {
+      if (code == EV_POWER_OFF) {
+        printf(" (battery low, cell %u mV)", rd.u16());
+      } else if (code == EV_ALARM_RAISE || code == EV_ALARM_CLEAR) {
         printf(" %s", alarm_name(rd.u8()));
       } else if (code == EV_DOOR_CLOSE) {
         printf(" after %lu ms", (unsigned long)rd.u32());
@@ -1330,6 +1334,19 @@ void run_command(char *line) {
     // stays off until USB power is plugged in (unplug and plug back).
     printf("  switching off as if the battery were empty\n");
     battery_off(g_power.cell_valid ? g_power.cell_volts : 0.0f);
+  }
+  else if (!strncmp(line, "cpu ", 4)) {
+    // Bench: CPU clock and automatic light sleep while awake, to measure
+    // what each costs. Not kept: the next boot is back to the default.
+    int mx = 160, mn = 160, ls = 0;
+    sscanf(line + 4, "%d %d %d", &mx, &mn, &ls);
+    esp_pm_config_t c = {};
+    c.max_freq_mhz = mx;
+    c.min_freq_mhz = mn;
+    c.light_sleep_enable = ls != 0;
+    const esp_err_t e = esp_pm_configure(&c);
+    printf("  cpu max %d MHz, min %d MHz, light sleep %s: %s\n", mx, mn, ls ? "on" : "off",
+           esp_err_to_name(e));
   }
   else if (!strncmp(line, "amps", 4)) amps(atoi(line + 4) > 0 ? atoi(line + 4) : 5);
   else if (!strcmp(line, "hiz off")) {

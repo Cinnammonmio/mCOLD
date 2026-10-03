@@ -357,7 +357,10 @@ void display_battery_off(float cell_volts) {
   char clock[8], data[40];
   clock_str(clock, sizeof(clock));
   snprintf(data, sizeof(data), "CELL %.2f V", cell_volts);
-  scr_takeover(g_draw, g_sn, clock, footer_state(s, p, have), "Battery empty",
+  // Capitals: the title font is cut to ' '..'Z' (fonts_mcold.h), and a
+  // lower-case letter there is simply not drawn -- "Battery empty" came
+  // out as "B" on the panel (2026-10-03).
+  scr_takeover(g_draw, g_sn, clock, footer_state(s, p, have), "BATTERY EMPTY",
                "Switched off. Charge to restart.", data, false, true);
   pm_hold(Hold::Display, true);
   show(g_draw);

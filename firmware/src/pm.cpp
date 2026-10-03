@@ -458,6 +458,10 @@ void pm_print(void) {
   printf("\n  this wake      %s, %s, %lu wakes since boot %lu\n", pm_wake_name(g_wake),
          g_warm ? "warm" : "cold", (unsigned long)g_kept.wakes,
          (unsigned long)time_boot_count());
+  if (g_sleep_ua != INT16_MIN) {
+    printf("  last sleep     %.2f mA (mean of its last 8.4 s, current monitor included)\n",
+           g_sleep_ua / 1000.0);
+  }
   printf("  sleep          %s%s\n", config().sleep_en ? "allowed" : "off (config sleep_en)",
          pm_external_power() ? ", but USB power is in: staying up" : "");
   printf("  duties done   ");
