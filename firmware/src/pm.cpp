@@ -393,6 +393,8 @@ void pm_init(void) {
 Wake pm_wake(void) { return g_wake; }
 bool pm_warm(void) { return g_warm; }
 uint32_t pm_wakes(void) { return g_kept.wakes; }
+uint32_t pm_slept_ms(void) { return g_warm ? g_slept_ms : 0; }
+uint32_t pm_boot_ms(void) { return g_warm ? g_boot_ms : 0; }
 
 const char *pm_wake_name(Wake w) {
   switch (w) {

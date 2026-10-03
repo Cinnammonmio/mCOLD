@@ -106,6 +106,20 @@ After the first night on battery (~12 mA average, 2026-10-03):
 Measured with the charger in HIZ: asleep ≤ 0.25 mA; awake ~130 mA
 (~40 mA floor; the rest not found yet); BLE stack +25 mA; GNSS ~173 mA.
 
+- **Counted state of charge** (`soc.*`): the INA226's current integrated
+  while awake, `sleep_ua` (250 µA) for each sleep, 100 % at charge done,
+  the gauge's percent only to start (or when the kept count disagrees
+  with it by over 15 %), the capacity learned from a full-to-switch-off
+  run. Kept in RTC memory and NVS (every 1 %). It feeds the screen, the
+  app, the records and the low-battery alarm; the switch-off stays on
+  the cell voltage. New settings `batt_mah` (1500), `sleep_ua` (250);
+  console `soc`, `soc set P`; `health` shows counted and gauge side by
+  side. Not yet run on the board.
+- Review fixes: GNSS due but unavailable, and a dwell run out with no
+  probe readings, no longer hold the chip awake; pm ignores wake times
+  over 30 s in the past; the battery switch-off holds the chip up until
+  done; a Wi-Fi refusal after a scan backs off instead of rescanning.
+
 ## 0.6.0 — 2026-10-02
 
 P6 in part: the box reaches the server. **OTA and the USB drive are

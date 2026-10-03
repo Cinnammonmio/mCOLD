@@ -59,6 +59,7 @@
 #include "power.h"
 #include "rails.h"
 #include "rtcclock.h"
+#include "soc.h"
 #include "temp.h"
 #include "timekeep.h"
 
@@ -495,6 +496,7 @@ void battery_off(float volts) {
   pm_hold(Hold::Display, true);
   const uint16_t mv = (uint16_t)lroundf(volts * 1000.0f);
   fflush(stdout);
+  soc_before_sleep(true);    // learns the capacity, if this ran from full
   trip_note_power_off(mv);
   trip_before_sleep();
   display_battery_off(volts);
@@ -514,6 +516,7 @@ void task_power(void *) {
 
     PowerStatus ps;
     power_read(&ps);
+    soc_update(ps);      // the counted percent, before anyone sees the reading
     g_power = ps;
     if (ps.current_valid) pm_note_current(ps.battery_ma < 0 ? -ps.battery_ma : 0);
     chargeled_update(ps);
@@ -670,8 +673,8 @@ void print_health(void) {
 
   const PowerStatus &p = g_power;
   if (p.cell_valid) {
-    printf("  cell         %.3f V  %.1f %%  %+.2f %%/hr\n", p.cell_volts,
-           p.soc_percent, p.rate_percent_hr);
+    printf("  cell         %.3f V  %.1f %% counted, %.1f %% gauge  %+.2f %%/hr\n",
+           p.cell_volts, p.soc_percent, p.gauge_percent, p.rate_percent_hr);
   } else if (p.cell_absent) {
     printf("  cell         no battery (%.3f V is the charger's output)\n", p.cell_volts);
   } else {
@@ -1219,6 +1222,7 @@ void before_sleep(void) {
   }
   trip_before_sleep();
   net_stop();
+  soc_before_sleep(false);
   power_sleep(config().sleep_meas != 0);
 }
 
@@ -1284,6 +1288,8 @@ void print_help(void) {
   printf("  sleep           power manager: why awake, next wake, recent wakes\n");
   printf("  sleep clear     start the wake record again\n");
   printf("  sleep test S    deep-sleep S seconds now, timer wake only (even on USB)\n");
+  printf("  soc             counted state of charge, capacity, anchor\n");
+  printf("  soc set P       bench: set the count to P %%\n");
   printf("  amps [S]        battery current for S seconds: mean, min, max\n");
   printf("  hiz [S] | off   bench: charger input off S s (300), box runs on its cell\n");
   printf("  poweroff        bench: the battery-empty switch-off; replug USB to restart\n\n");
@@ -1342,6 +1348,25 @@ void run_command(char *line) {
   else if (!strncmp(line, "rpc ", 4)) rpc_command(line + 4);
   else if (!strcmp(line, "ble")) print_ble();
   else if (!strcmp(line, "sleep")) pm_print();
+  else if (!strcmp(line, "soc")) {
+    SocStatus s;
+    soc_status(&s);
+    if (!s.valid) {
+      printf("  not counting yet (no cell reading)\n");
+    } else {
+      printf("  %.1f %%  %.0f of %.0f mAh (%s)  anchor: %s\n", s.percent, s.remaining_mah,
+             s.capacity_mah, s.capacity_learned ? "learned" : "rated, config batt_mah",
+             s.anchor);
+      if (s.drawn_since_full_mah >= 0) {
+        printf("  drawn since the last full charge: %.0f mAh\n", s.drawn_since_full_mah);
+      } else {
+        printf("  no full charge seen yet (charge to full to anchor)\n");
+      }
+    }
+  } else if (!strncmp(line, "soc set ", 8)) {
+    soc_set((float)atof(line + 8));
+    printf("  counted charge set to %.0f %%\n", atof(line + 8));
+  }
   else if (!strcmp(line, "poweroff")) {
     // Bench: the battery-empty path, whatever the cell says. The box
     // stays off until USB power is plugged in (unplug and plug back).
@@ -1576,6 +1601,7 @@ extern "C" void app_main(void) {
     float sm;     // the sleep just ended, if it was measured (config sleep_meas)
     if (power_sleep_mean(&sm)) pm_note_sleep_current(sm);
   }
+  soc_init();          // after config and power_init, before the first reading
   {
     char sn[16];
     device_sn(sn, sizeof(sn));

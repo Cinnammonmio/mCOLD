@@ -61,6 +61,10 @@ const char *pm_wake_name(Wake w);
 // module that keeps state across sleep checks this, not the reset reason.
 bool pm_warm(void);
 uint32_t pm_wakes(void);    // deep-sleep wakes since the last real boot
+// The sleep that ended with this wake, and the ROM + bootloader time
+// before app_main (both 0 after a cold boot).
+uint32_t pm_slept_ms(void);
+uint32_t pm_boot_ms(void);
 
 // External power, from PG#. While it is present the box never sleeps --
 // unless config sleep_usb is set, a bench setting that makes the box
