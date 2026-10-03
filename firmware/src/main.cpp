@@ -13,6 +13,7 @@
 // The supervisor watches heartbeats and reports what is wrong. It does
 // not restart anything: a box that reboots loses its state and its
 // time, and a reboot loop costs far more than a sensor that limps.
+#include <driver/gpio.h>
 #include <driver/usb_serial_jtag.h>
 #include <esp_app_desc.h>
 #include <esp_mac.h>
@@ -1334,6 +1335,24 @@ void run_command(char *line) {
     // stays off until USB power is plugged in (unplug and plug back).
     printf("  switching off as if the battery were empty\n");
     battery_off(g_power.cell_valid ? g_power.cell_volts : 0.0f);
+  }
+  else if (!strncmp(line, "pin ", 4)) {
+    // Bench: one pin taken over as a plain GPIO, for finding what a pin
+    // left high feeds. Whatever driver owned it does not get it back until
+    // a reboot.
+    int n = -1;
+    char how[4] = "";
+    if (sscanf(line + 4, "%d %3s", &n, how) == 2 && n >= 0 && n <= 48 &&
+        GPIO_IS_VALID_GPIO((gpio_num_t)n)) {
+      gpio_config_t c = {};
+      c.pin_bit_mask = 1ULL << n;
+      c.mode = strcmp(how, "in") ? GPIO_MODE_OUTPUT : GPIO_MODE_INPUT;
+      gpio_config(&c);
+      if (c.mode == GPIO_MODE_OUTPUT) gpio_set_level((gpio_num_t)n, atoi(how) ? 1 : 0);
+      printf("  GPIO%d %s\n", n, c.mode == GPIO_MODE_INPUT ? "input, no pull" : atoi(how) ? "high" : "low");
+    } else {
+      printf("  pin N 0|1|in\n");
+    }
   }
   else if (!strncmp(line, "cpu ", 4)) {
     // Bench: CPU clock and automatic light sleep while awake, to measure
