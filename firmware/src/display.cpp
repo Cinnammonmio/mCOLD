@@ -343,3 +343,24 @@ int display_rotation(void) { return g_rot; }
 
 bool display_show(const Canvas &c) { return g_epd ? show(c) : false; }
 
+void display_battery_off(float cell_volts) {
+  if (!g_epd) return;
+  g_hold = true;                // nothing else draws after this
+  TripStatus s;
+  trip_status(&s);
+  PowerStatus p;
+  bool have;
+  portENTER_CRITICAL(&g_mux);
+  p = g_pwr;
+  have = g_have_pwr;
+  portEXIT_CRITICAL(&g_mux);
+  char clock[8], data[40];
+  clock_str(clock, sizeof(clock));
+  snprintf(data, sizeof(data), "CELL %.2f V", cell_volts);
+  scr_takeover(g_draw, g_sn, clock, footer_state(s, p, have), "Battery empty",
+               "Switched off. Charge to restart.", data, false, true);
+  pm_hold(Hold::Display, true);
+  show(g_draw);
+  pm_hold(Hold::Display, false);
+}
+

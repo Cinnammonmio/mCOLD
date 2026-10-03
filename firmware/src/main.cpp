@@ -160,6 +160,10 @@ RTC_DATA_ATTR GnssPlan g_gnss_plan;
 const uint32_t GNSS_HOT_MS = 4 * 3600000;
 const uint32_t GNSS_BATT_SESSION_MS = 90000;
 const uint32_t GNSS_BATT_COLD_SESSION_MS = 180000;
+// Not one satellite heard in this long: the box is indoors (or in a
+// container), and the rest of the session would only cost current. The
+// night of 2026-10-02 spent ~3 mA on full-length sessions in a room.
+const uint32_t GNSS_NOTHING_HEARD_MS = 60000;
 
 // The next trip sample, through deep sleep.
 struct SamplePlan {
@@ -335,6 +339,17 @@ void task_gnss(void *) {
         }
       }
 
+      if (battery && now_ms() - start >= GNSS_NOTHING_HEARD_MS &&
+          (int32_t)(g_gnss_hold_until - now_ms()) <= 0) {
+        GnssSky k;
+        gnss_sky(&k);
+        if (!k.in_view && !k.heard) {
+          printf("[gnss] nothing heard in %lu s: indoors, giving up\n",
+                 (unsigned long)(GNSS_NOTHING_HEARD_MS / 1000));
+          break;
+        }
+      }
+
       GnssFix f;
       if (!gnss_last_fix(&f) || !f.valid || now_ms() - f.at_ms > 2000) continue;
       fixes++;
@@ -365,8 +380,9 @@ void task_gnss(void *) {
     GnssFix f;
     const bool have = gnss_last_fix(&f);
     const bool got = have && f.valid && now_ms() - f.at_ms < 5000;
-    g_gnss_plan.misses = got ? 0 : (uint8_t)(g_gnss_plan.misses < 3 ? g_gnss_plan.misses + 1 : 3);
-    // On battery the period stretches x2, x4, x8 while sessions fail.
+    g_gnss_plan.misses = got ? 0 : (uint8_t)(g_gnss_plan.misses < 4 ? g_gnss_plan.misses + 1 : 4);
+    // On battery the period stretches x2, x4, x8, x16 while sessions fail
+    // (with the default 30 min, up to 8 h between tries indoors).
     const uint32_t period = battery ? ((uint32_t)config().gnss_period_s * 1000) << g_gnss_plan.misses
                                     : GNSS_PERIOD_MS;
     g_gnss_plan.next_at = now_ms() + period;
@@ -435,6 +451,47 @@ void task_nfc(void *) {
 
 // ---- power -----------------------------------------------------------
 
+// Below config batt_off_mv, on battery, three readings in a row: the box
+// switches itself off (decided 2026-10-03). A LiPo run down past ~3.0 V
+// is damaged and swells, and even asleep the box keeps drawing; the
+// charger's ship mode cuts the cell off from everything but the fuel
+// gauge. Plugging USB in brings it back. Three readings, 0.7 s apart,
+// so one bad read cannot switch a box off in the middle of a trip.
+RTC_DATA_ATTR uint8_t g_low_reads = 0;
+[[noreturn]] void battery_off(float volts);
+
+void battery_guard(const PowerStatus &ps) {
+  if (pm_external_power() || ps.power_good || !ps.cell_valid ||
+      ps.cell_volts < 2.5f || ps.cell_volts > 4.5f) {
+    g_low_reads = 0;
+    return;
+  }
+  const uint16_t mv = (uint16_t)lroundf(ps.cell_volts * 1000.0f);
+  if (mv >= config().batt_off_mv) {
+    g_low_reads = 0;
+    return;
+  }
+  if (++g_low_reads < 3) return;
+  printf("[power] cell %u mV, below %ld: switching off; plug in USB to restart\n", mv,
+         (long)config().batt_off_mv);
+  battery_off(ps.cell_volts);
+}
+
+// Also the console's "poweroff", to check the whole path on the bench.
+void battery_off(float volts) {
+  const uint16_t mv = (uint16_t)lroundf(volts * 1000.0f);
+  fflush(stdout);
+  trip_note_power_off(mv);
+  trip_before_sleep();
+  display_battery_off(volts);
+  if (!power_ship_mode()) printf("[power] charger did not answer: sleeping instead\n");
+  fflush(stdout);
+  // Asleep with nothing to wake it but USB power, for the ten seconds
+  // until the battery switch opens -- or for good, if the charger did not
+  // take the command.
+  pm_sleep_until_usb();
+}
+
 void task_power(void *) {
   uint32_t last_kick = 0;
   for (;;) {
@@ -463,6 +520,7 @@ void task_power(void *) {
       struct tm tmv;
       rtc_get(&tmv);
     }
+    battery_guard(ps);
     pm_done(Duty::Power);
     if (g_hiz_until && (int32_t)(uptime_ms() - g_hiz_until) >= 0) {
       g_hiz_until = 0;
@@ -1121,10 +1179,21 @@ void trip_command(const char *args) {
   }
 }
 
+// The very last word, after the rails are off and the pins held: the
+// accelerometer latches an "event" from that switching itself (seen as
+// motion wakes 0 s after going to sleep, 2026-10-03), so whatever is
+// latched now is ours and is dropped, not counted. INT1 is low after.
+void before_sleep_quiet(void) {
+  if (g_accel_up && accel_int_level()) {
+    AccelEvent ev;
+    accel_take_event(&ev);
+    g_motion_blanked++;
+  }
+}
+
 // The last word before deep sleep, from the pm task.
 void before_sleep(void) {
-  // An event the accelerometer latched and nobody read would hold INT1
-  // high and keep the motion wake from being armed.
+  // Motion that came in while awake and was not yet read is real: count it.
   if (g_accel_up && accel_int_level()) {
     AccelEvent ev;
     if (accel_take_event(&ev) && !buzzer_recent(BUZZER_BLANK_MS)) trip_note_motion(ev);
@@ -1197,7 +1266,8 @@ void print_help(void) {
   printf("  sleep clear     start the wake record again\n");
   printf("  sleep test S    deep-sleep S seconds now, timer wake only (even on USB)\n");
   printf("  amps [S]        battery current for S seconds: mean, min, max\n");
-  printf("  hiz [S] | off   bench: charger input off S s (300), box runs on its cell\n\n");
+  printf("  hiz [S] | off   bench: charger input off S s (300), box runs on its cell\n");
+  printf("  poweroff        bench: the battery-empty switch-off; replug USB to restart\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
@@ -1253,6 +1323,12 @@ void run_command(char *line) {
   else if (!strncmp(line, "rpc ", 4)) rpc_command(line + 4);
   else if (!strcmp(line, "ble")) print_ble();
   else if (!strcmp(line, "sleep")) pm_print();
+  else if (!strcmp(line, "poweroff")) {
+    // Bench: the battery-empty path, whatever the cell says. The box
+    // stays off until USB power is plugged in (unplug and plug back).
+    printf("  switching off as if the battery were empty\n");
+    battery_off(g_power.cell_valid ? g_power.cell_volts : 0.0f);
+  }
   else if (!strncmp(line, "amps", 4)) amps(atoi(line + 4) > 0 ? atoi(line + 4) : 5);
   else if (!strcmp(line, "hiz off")) {
     g_hiz_until = 0;
@@ -1513,6 +1589,7 @@ extern "C" void app_main(void) {
   // Last: it may put the chip to sleep as soon as every task has done
   // its first pass.
   pm_on_sleep(before_sleep);
+  pm_on_quiet(before_sleep_quiet);
   pm_start();
 
   // app_main returns and the tasks it created carry on. Nothing is left

@@ -427,6 +427,15 @@ void trip_init(const char *sn) {
          (unsigned long)id, (unsigned long)g_t.samples);
 }
 
+void trip_note_power_off(uint16_t cell_mv) {
+  if (!g_mx) return;
+  Lock l;
+  if (!g_active) return;
+  event(EV_POWER_OFF, [](Writer &w, const void *p) {
+    w.u16(*(const uint16_t *)p);
+  }, &cell_mv);
+}
+
 void trip_before_sleep(void) {
   if (!g_mx) return;
   Lock l;
@@ -458,6 +467,12 @@ TripErr trip_start(const TripParams &p, uint32_t *id_out) {
   if (!g_mx) return TripErr::NoLog;
   Lock l;
   if (g_active) return TripErr::AlreadyActive;
+  // Decided 2026-10-03: a trip is not started on a battery that cannot
+  // carry it. Measured, on battery: a box on a charger may start one.
+  if (g_have_pwr && g_pwr.cell_valid && !g_pwr.power_good &&
+      g_pwr.cell_volts * 1000.0f < (float)config().batt_trip_mv) {
+    return TripErr::BatteryLow;
+  }
   if (p.low_c10 >= p.high_c10 || p.low_c10 < -400 || p.high_c10 > 1000 ||
       p.hyst_c10 > 100 || p.dwell_s > 3600) {
     return TripErr::BadParams;
@@ -742,6 +757,7 @@ const char *trip_err_name(TripErr e) {
     case TripErr::NoLog:         return "trip log unavailable";
     case TripErr::LogFull:       return "log full and nothing may be deleted";
     case TripErr::Flash:         return "flash error";
+    case TripErr::BatteryLow:    return "battery too low to start a trip: charge first";
   }
   return "?";
 }

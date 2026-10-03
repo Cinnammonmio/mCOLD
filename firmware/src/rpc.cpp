@@ -109,6 +109,7 @@ const char *trip_err_code(TripErr e) {
     case TripErr::BadParams:     return "BAD_ARGS";
     case TripErr::NoLog:         return "NO_LOG";
     case TripErr::LogFull:       return "LOG_FULL";
+    case TripErr::BatteryLow:    return "BATTERY_LOW";
     default:                     return "FLASH";
   }
 }

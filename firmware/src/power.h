@@ -65,6 +65,13 @@ bool power_sleep_mean(float *ma);
 // The battery current now, + into the cell. One register read.
 bool power_battery_ma(float *ma);
 
+// Switches the box off for good: the charger opens its battery switch
+// (BATFET_DIS, "ship mode") ten seconds after this returns, and the
+// cell then feeds nothing but the fuel gauge. It comes back on when USB
+// power is plugged in. For a cell too flat to run on (config
+// batt_off_mv): deep-discharging a LiPo is what swells it.
+bool power_ship_mode(void);
+
 // Bench: the charger's input switched off (HIZ), so the box runs from
 // its battery with the USB cable -- and the console -- still in. The
 // only way to measure what the box draws while still watching it.

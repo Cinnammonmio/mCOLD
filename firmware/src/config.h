@@ -33,6 +33,9 @@ struct Config {
   int32_t accel_wake_ths;     // 1..63, FS/64 per step (31.25 mg at +-2 g)
   int32_t led_bright_pct;     // side light brightness cap, % of full scale
   int32_t led_front_pct;      // front three lights' brightness cap, %
+  int32_t led_status_s;       // on battery, the steady status blinks this often
+  int32_t batt_off_mv;        // below this the box switches itself off (ship mode)
+  int32_t batt_trip_mv;       // below this no new trip starts; the box stays up
   int32_t buzzer_enabled;     // 0 silences alarm sounds
   int32_t tz_offset_min;      // local time for the display only; records are UTC
   int32_t sleep_en;           // 0 keeps the box awake on battery (bench, measurement)

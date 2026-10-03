@@ -113,6 +113,10 @@ int16_t g_sleep_ua = INT16_MIN;
 const int HOOKS_MAX = 6;
 PmHook g_hooks[HOOKS_MAX];
 int g_nhooks = 0;
+PmHook g_quiet = nullptr;
+// After the rails go off and the pins are held, before anything is
+// armed: long enough for the supply and the accelerometer to settle.
+const uint32_t SETTLE_MS = 40;
 
 const char *const DUTY_NAMES[] = {"sensors", "power", "trip",   "display",
                                   "nfc",     "uplink", "gnss", "indicate"};
@@ -176,6 +180,9 @@ void report(uint32_t sleep_ms, uint32_t awake, const char *motion, const char *n
     }
   }
   rails_all_off();
+  hold_pins();
+  vTaskDelay(pdMS_TO_TICKS(SETTLE_MS));
+  if (g_quiet) g_quiet();
 
   esp_sleep_enable_timer_wakeup((uint64_t)sleep_ms * 1000);
   const char *armed_motion = "no", *armed_nfc = "no", *armed_usb = "no";
@@ -222,8 +229,6 @@ void report(uint32_t sleep_ms, uint32_t awake, const char *motion, const char *n
   report(sleep_ms, awake, armed_motion, armed_nfc, armed_usb);
   fflush(stdout);
   vTaskDelay(pdMS_TO_TICKS(20));   // let the console drain
-
-  hold_pins();
   esp_deep_sleep_start();
 }
 
@@ -434,6 +439,8 @@ void pm_on_sleep(PmHook fn) {
   if (fn && g_nhooks < HOOKS_MAX) g_hooks[g_nhooks++] = fn;
 }
 
+void pm_on_quiet(PmHook fn) { g_quiet = fn; }
+
 void pm_start(void) {
   trace_check();
   xTaskCreatePinnedToCore(task, "pm", 3072, nullptr, 1, nullptr, 0);
@@ -496,6 +503,20 @@ void pm_print(void) {
 void pm_trace_clear(void) {
   g_trace.magic = 0;
   trace_check();
+}
+
+void pm_sleep_until_usb(void) {
+  for (int i = 0; i < g_nhooks; i++) g_hooks[i]();
+  rails_all_off();
+  hold_pins();
+  vTaskDelay(pdMS_TO_TICKS(SETTLE_MS));
+  if (gpio_get_level((gpio_num_t)PIN_PG_N)) {
+    esp_sleep_enable_ext1_wakeup_io(1ULL << PIN_PG_N, ESP_EXT1_WAKEUP_ANY_LOW);
+  }
+  printf("[pm] asleep until USB power\n");
+  fflush(stdout);
+  vTaskDelay(pdMS_TO_TICKS(20));
+  esp_deep_sleep_start();
 }
 
 void pm_sleep_test(uint32_t seconds) {

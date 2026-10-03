@@ -83,6 +83,7 @@ enum EventCode : uint8_t {
   EV_ALARM_ACK = 9,     // u16 alarms active when acknowledged
   EV_TIME_SET = 10,     // u8 source, u32 utc_s before (0 if unknown)
   EV_LOSS = 11,         // u32 trip deleted, u32 its records, u8 reason
+  EV_POWER_OFF = 12,    // u16 cell mV: battery too low, the box switched itself off
 };
 
 enum Alarm : uint8_t {

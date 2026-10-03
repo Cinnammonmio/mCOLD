@@ -74,6 +74,9 @@ volatile int g_cue = -1;               // pending cue; a newer one replaces it
 RTC_DATA_ATTR uint32_t g_window_until = 0;
 RTC_DATA_ATTR uint32_t g_windows[INDICATE_WINDOWS_PER_HOUR];
 RTC_DATA_ATTR uint32_t g_windows_magic = 0;
+// When the steady status last showed, through deep sleep: on battery it
+// is shown every config led_status_s, not at every wake (2026-10-03).
+RTC_DATA_ATTR uint32_t g_status_at = 0;
 const uint32_t WINDOWS_MAGIC = 0x494E4431;   // "IND1"
 portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -203,7 +206,9 @@ void open_window(bool counted) {
       }
     }
   }
-  if (allowed) g_window_until = t + INDICATE_WINDOW_MS;
+  if (allowed) {
+    g_window_until = t + (external_power() ? INDICATE_WINDOW_MS : INDICATE_BATTERY_WINDOW_MS);
+  }
   portEXIT_CRITICAL(&g_mux);
   // Someone is looking: the box stays up to show them.
   if (allowed) pm_hold(Hold::Indicate, true);
@@ -224,7 +229,15 @@ void task(void *) {
     // woke it has been taken -- an alarm it raises shows in this frame.
     for (int i = 0; i < 50 && !pm_is_done(Duty::Trip); i++) vTaskDelay(pdMS_TO_TICKS(100));
     trip_status(&prev);
-    play_status(prev);
+    // A cargo alarm shows at every wake; the "alive" tick only every
+    // led_status_s -- each one costs the LED rail and a third of a second
+    // of the chip awake.
+    const bool cargo = prev.active && (prev.alarms_active & CARGO_ALARMS);
+    if (cargo || external_power() || !g_status_at ||
+        now_ms() - g_status_at >= (uint32_t)config().led_status_s * 1000) {
+      play_status(prev);
+      g_status_at = now_ms() ? now_ms() : 1;
+    }
   }
   uint32_t last_status = now_ms();
   pm_done(Duty::Indicate);
@@ -272,6 +285,7 @@ void task(void *) {
     if (t - last_status >= period) {
       play_status(s);
       last_status = now_ms();
+      g_status_at = last_status ? last_status : 1;
     }
   }
 }

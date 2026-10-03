@@ -53,6 +53,7 @@ enum class TripErr : uint8_t {
   NoLog,          // the trip log is not available: nothing can be recorded
   LogFull,        // full, and nothing that may be deleted to make room
   Flash,
+  BatteryLow,     // below config batt_trip_mv, on battery: charge first
 };
 
 struct TripStatus {
@@ -93,6 +94,10 @@ void trip_note_time_set(TimeSource src, uint32_t utc_before);
 // Time-based alarms (door held open, probe gone). Call about once a
 // second.
 void trip_tick(void);
+
+// The battery is about to be cut off (batt_off_mv): one last event, so
+// the gap that follows in the trip has its reason.
+void trip_note_power_off(uint16_t cell_mv);
 
 // Before deep sleep: keeps what the log does not hold (dwell timers,
 // motion since the last sample) for the wake that follows.

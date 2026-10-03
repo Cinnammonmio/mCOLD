@@ -33,6 +33,9 @@ const float SHUNT_OHMS = 0.010f;
 const uint8_t BQ_REG00 = 0x00;      // input current limit, EN_HIZ in bit 7
 const uint8_t BQ_HIZ = 0x80;
 const uint8_t BQ_REG01 = 0x01;      // power-on config, holds the kick bit
+const uint8_t BQ_REG07 = 0x07;      // misc: BATFET_DIS bit 5, BATFET_DLY bit 3
+const uint8_t BQ_BATFET_DIS = 0x20;
+const uint8_t BQ_BATFET_DLY = 0x08;
 const uint8_t BQ_REG08 = 0x08;      // system status
 const uint8_t BQ_REG09 = 0x09;      // faults
 const uint8_t BQ_WD_RST = 0x40;     // REG01 bit 6
@@ -91,6 +94,13 @@ bool power_battery_ma(float *ma) {
   if (!read16(Dev::Current, ADDR_INA226, INA_SHUNT, &v)) return false;
   if (ma) *ma = (int16_t)v * 2.5e-6f / SHUNT_OHMS * 1000.0f;
   return true;
+}
+
+bool power_ship_mode(void) {
+  uint8_t r = 0;
+  if (i2c_read_reg(Dev::Charger, ADDR_BQ25601, BQ_REG07, &r, 1) != BusErr::Ok) return false;
+  r = (uint8_t)(r | BQ_BATFET_DIS | BQ_BATFET_DLY);
+  return i2c_write_reg(Dev::Charger, ADDR_BQ25601, BQ_REG07, r) == BusErr::Ok;
 }
 
 bool power_set_hiz(bool on) {

@@ -86,6 +86,9 @@ void pm_note_sleep_current(float ma);
 // a module that must leave a part in a low-power state registers here.
 typedef void (*PmHook)(void);
 void pm_on_sleep(PmHook fn);
+// Called last, after the rails are off, the pins are held and things have
+// settled for a moment -- just before the wake sources are armed.
+void pm_on_quiet(PmHook fn);
 
 // Starts the task that decides. After every module has started.
 void pm_start(void);
@@ -96,3 +99,6 @@ void pm_trace_clear(void);
 // Bench: sleep now for `seconds`, timer wake only, even on USB power --
 // so sleep current can be measured with the cable still in.
 void pm_sleep_test(uint32_t seconds);
+
+// Asleep with USB power (PG#) as the only wake: the battery-empty state.
+[[noreturn]] void pm_sleep_until_usb(void);
