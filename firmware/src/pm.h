@@ -79,6 +79,8 @@ void pm_next(Duty d, uint32_t at);
 
 // Battery current seen while awake, for the wake-cost record.
 void pm_note_current(float ma);
+// The mean current of the sleep that ended with this wake (power.h).
+void pm_note_sleep_current(float ma);
 
 // Called just before sleep, from the pm task, after every duty is done:
 // a module that must leave a part in a low-power state registers here.

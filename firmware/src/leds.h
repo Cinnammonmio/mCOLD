@@ -57,9 +57,14 @@ static const int LED_CARGO = 3;    // LED3, front left
 
 // Cap on every channel, as a percentage of full scale. Colours are
 // scaled to it when staged, so it applies from the next leds_set() on.
-// Default 20 %: docs/led-design.md; config led_bright_pct.
+// Two caps: the side light (charge status, config led_bright_pct,
+// 20 % per docs/led-design.md) and the three front lights (config
+// led_front_pct, 8 % -- turned down 2026-10-03 to save power; the front
+// lights blink at every wake, the side light only shows on a charger).
 void leds_set_brightness(int pct);
+void leds_set_front_brightness(int pct);
 
-// 20% of full scale: the default until config is applied.
+// The defaults until config is applied: 20 % and 8 % of full scale.
 static const uint8_t LEDS_BRIGHTNESS_CAP = 51;
+static const uint8_t LEDS_FRONT_BRIGHTNESS_CAP = 20;
 static const uint32_t LEDS_PULSE_MAX_MS = 2000;

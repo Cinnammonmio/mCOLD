@@ -55,7 +55,20 @@ struct PowerStatus {
 
 void power_init(void);
 // Before deep sleep: parts that would otherwise draw current for nothing.
-void power_sleep(void);
+// `measure` leaves the current monitor averaging through the sleep
+// instead (it then draws 330 uA itself), for power_sleep_mean().
+void power_sleep(bool measure);
+// After a measured sleep: the mean battery current, mA out of the cell,
+// over the last 8.4 s before waking. False if this wake has none.
+bool power_sleep_mean(float *ma);
+
+// The battery current now, + into the cell. One register read.
+bool power_battery_ma(float *ma);
+
+// Bench: the charger's input switched off (HIZ), so the box runs from
+// its battery with the USB cable -- and the console -- still in. The
+// only way to measure what the box draws while still watching it.
+bool power_set_hiz(bool on);
 
 // Reads all three. Fields whose device did not answer are left invalid
 // rather than zeroed, so a failure cannot be mistaken for a reading.

@@ -77,6 +77,7 @@ struct WakeRec {
   uint16_t awake_ms;        // app_main to sleep
   int16_t ma_x10;           // battery current while awake, mean; INT16_MIN none
   uint16_t slept_s;         // how long the sleep before this wake lasted
+  int16_t sleep_ua;         // that sleep's current, uA (config sleep_meas); INT16_MIN none
 };
 const int TRACE_N = 48;
 struct Trace {
@@ -88,7 +89,7 @@ struct Trace {
   uint32_t awake_ms_measured;  // the part of awake_ms that had a reading
   WakeRec r[TRACE_N];
 };
-const uint32_t TRACE_MAGIC = 0x50545243;  // "PTRC"
+const uint32_t TRACE_MAGIC = 0x50545244;  // "PTRD"
 RTC_NOINIT_ATTR Trace g_trace;
 
 Wake g_wake = Wake::Cold;
@@ -107,6 +108,7 @@ uint32_t g_done_at[(int)Duty::Count];
 uint32_t g_hold_off_at[(int)Hold::Count];
 double g_ma_sum = 0;
 uint32_t g_ma_n = 0;
+int16_t g_sleep_ua = INT16_MIN;
 
 const int HOOKS_MAX = 6;
 PmHook g_hooks[HOOKS_MAX];
@@ -135,6 +137,7 @@ void trace_put(uint32_t awake) {
   w.awake_ms = (uint16_t)(awake > 65535 ? 65535 : awake);
   w.ma_x10 = g_ma_n ? (int16_t)(g_ma_sum / g_ma_n * 10) : INT16_MIN;
   w.slept_s = (uint16_t)(g_slept_ms / 1000 > 65535 ? 65535 : g_slept_ms / 1000);
+  w.sleep_ua = g_sleep_ua;
   g_trace.head = (uint16_t)((g_trace.head + 1) % TRACE_N);
   if (g_trace.count < TRACE_N) g_trace.count++;
   g_trace.wakes++;
@@ -422,6 +425,11 @@ void pm_note_current(float ma) {
   g_ma_n++;
 }
 
+void pm_note_sleep_current(float ma) {
+  const float ua = ma * 1000.0f;
+  g_sleep_ua = (int16_t)(ua > 32767 ? 32767 : ua < -32767 ? -32767 : ua);
+}
+
 void pm_on_sleep(PmHook fn) {
   if (fn && g_nhooks < HOOKS_MAX) g_hooks[g_nhooks++] = fn;
 }
@@ -471,14 +479,17 @@ void pm_print(void) {
     printf("  awake: %.1f mA mean -> %.3f mA averaged over all time, before sleep current\n",
            ma_awake, total_s > 0 ? ma_awake * r.awake_ms / 1000.0 / total_s : 0.0);
   }
-  printf("\n  %-8s %-10s %7s %7s %8s %8s\n", "mono s", "cause", "boot ms", "awake", "mA", "slept s");
+  printf("\n  %-8s %-10s %7s %7s %8s %8s %9s\n", "mono s", "cause", "boot ms", "awake", "mA",
+         "slept s", "sleep uA");
   for (int i = 0; i < r.count; i++) {
     const WakeRec &w = r.r[(r.head + TRACE_N - r.count + i) % TRACE_N];
     char ma[12] = "--";
     if (w.ma_x10 != INT16_MIN) snprintf(ma, sizeof(ma), "%.1f", w.ma_x10 / 10.0);
-    printf("  %-8lu %-10s %7u %7u %8s %8u\n", (unsigned long)w.mono_s,
+    char su[12] = "--";
+    if (w.sleep_ua != INT16_MIN) snprintf(su, sizeof(su), "%d", w.sleep_ua);
+    printf("  %-8lu %-10s %7u %7u %8s %8u %9s\n", (unsigned long)w.mono_s,
            pm_wake_name((Wake)w.cause), (unsigned)w.boot_ms_x10 * 10, (unsigned)w.awake_ms,
-           ma, (unsigned)w.slept_s);
+           ma, (unsigned)w.slept_s, su);
   }
 }
 

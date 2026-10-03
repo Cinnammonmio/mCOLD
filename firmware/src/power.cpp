@@ -20,11 +20,18 @@ const uint8_t INA_CONFIG = 0x00;
 // radio. MODE 000 is power-down.
 const uint16_t INA_RUN = 0x4000 | (2 << 9) | (4 << 6) | (4 << 3) | 7;
 const uint16_t INA_OFF = INA_RUN & ~7;
+// For measuring a sleep: 1024 averages of 8.244 ms shunt conversions,
+// shunt only, continuous -- one result every 8.4 s, the mean current
+// over that time. Read first thing on waking, it is the current of the
+// last 8.4 s of the sleep (the INA226's own 330 uA included).
+const uint16_t INA_SLEEP_MEAN = 0x4000 | (7 << 9) | (0 << 6) | (7 << 3) | 5;
 const uint8_t INA_SHUNT = 0x01;     // signed, 2.5 uV per count
 const uint8_t INA_BUS = 0x02;       // 1.25 mV per count
 const float SHUNT_OHMS = 0.010f;
 
 // BQ25601
+const uint8_t BQ_REG00 = 0x00;      // input current limit, EN_HIZ in bit 7
+const uint8_t BQ_HIZ = 0x80;
 const uint8_t BQ_REG01 = 0x01;      // power-on config, holds the kick bit
 const uint8_t BQ_REG08 = 0x08;      // system status
 const uint8_t BQ_REG09 = 0x09;      // faults
@@ -40,6 +47,9 @@ bool read16(Dev d, uint8_t addr, uint8_t reg, uint16_t *v) {
 
 }  // namespace
 
+bool g_sleep_mean_valid = false;
+float g_sleep_mean_ma = 0;
+
 bool write16(Dev d, uint8_t addr, uint8_t reg, uint16_t v) {
   const uint8_t b[3] = {reg, (uint8_t)(v >> 8), (uint8_t)v};
   return i2c_write(d, addr, b, 3) == BusErr::Ok;
@@ -52,14 +62,49 @@ void power_init(void) {
   // at the defaults it was designed to be safe at.
   //
   // The current monitor is: it comes out of power-down (power_sleep).
+  // If it was left averaging through the sleep, that average is read
+  // first, before the new configuration starts a new one.
+  uint16_t cfg = 0, v = 0;
+  g_sleep_mean_valid = false;
+  if (read16(Dev::Current, ADDR_INA226, INA_CONFIG, &cfg) && cfg == INA_SLEEP_MEAN &&
+      read16(Dev::Current, ADDR_INA226, INA_SHUNT, &v)) {
+    g_sleep_mean_ma = -((int16_t)v * 2.5e-6f / SHUNT_OHMS * 1000.0f);   // out of the cell
+    g_sleep_mean_valid = true;
+  }
   write16(Dev::Current, ADDR_INA226, INA_CONFIG, INA_RUN);
+
+  // The charger keeps HIZ through a reset of this chip, and only this
+  // firmware's own timer would ever have switched it back: a reset in
+  // the middle of a bench measurement would leave the box never charging
+  // again. So every boot starts with the input on. (A wake from sleep
+  // too: the box only sleeps on battery, where HIZ changes nothing.)
+  power_set_hiz(false);
 }
 
-void power_sleep(void) {
+bool power_sleep_mean(float *ma) {
+  if (g_sleep_mean_valid && ma) *ma = g_sleep_mean_ma;
+  return g_sleep_mean_valid;
+}
+
+bool power_battery_ma(float *ma) {
+  uint16_t v;
+  if (!read16(Dev::Current, ADDR_INA226, INA_SHUNT, &v)) return false;
+  if (ma) *ma = (int16_t)v * 2.5e-6f / SHUNT_OHMS * 1000.0f;
+  return true;
+}
+
+bool power_set_hiz(bool on) {
+  uint8_t r = 0;
+  if (i2c_read_reg(Dev::Charger, ADDR_BQ25601, BQ_REG00, &r, 1) != BusErr::Ok) return false;
+  r = on ? (uint8_t)(r | BQ_HIZ) : (uint8_t)(r & ~BQ_HIZ);
+  return i2c_write_reg(Dev::Charger, ADDR_BQ25601, BQ_REG00, r) == BusErr::Ok;
+}
+
+void power_sleep(bool measure) {
   // Left converting, the INA226 draws 330 uA -- about 5 % of the whole
   // 7-day budget, spent measuring a current nobody reads while the chip
-  // sleeps. Power-down is 0.5 uA.
-  write16(Dev::Current, ADDR_INA226, INA_CONFIG, INA_OFF);
+  // sleeps. Power-down is 0.5 uA. Unless the sleep is being measured.
+  write16(Dev::Current, ADDR_INA226, INA_CONFIG, measure ? INA_SLEEP_MEAN : INA_OFF);
 }
 
 void power_read(PowerStatus *out) {

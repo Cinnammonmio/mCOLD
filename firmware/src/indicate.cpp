@@ -280,6 +280,7 @@ void task(void *) {
 
 void indicate_start(void) {
   leds_set_brightness(config().led_bright_pct);
+  leds_set_front_brightness(config().led_front_pct);
   if (!pm_warm() || g_windows_magic != WINDOWS_MAGIC) {
     memset(g_windows, 0, sizeof(g_windows));
     g_window_until = 0;

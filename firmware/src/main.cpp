@@ -105,6 +105,10 @@ bool g_accel_up = false;
 AccelSample g_accel = {};
 bool g_accel_valid = false;
 uint32_t g_motion_blanked = 0;
+// Bench: charger input off for a while, so the box runs from its cell
+// with the cable in. Switched back on by itself: a box left in HIZ by a
+// forgotten command would never charge again.
+volatile uint32_t g_hiz_until = 0;   // uptime_ms(); 0: not in HIZ
 
 // How long after a beep motion events are still the beep's own.
 const uint32_t BUZZER_BLANK_MS = 250;
@@ -460,6 +464,11 @@ void task_power(void *) {
       rtc_get(&tmv);
     }
     pm_done(Duty::Power);
+    if (g_hiz_until && (int32_t)(uptime_ms() - g_hiz_until) >= 0) {
+      g_hiz_until = 0;
+      power_set_hiz(false);
+      printf("[power] charger input back on (hiz time over)\n");
+    }
     // Twice in the first seconds of a wake, so even a short wake records
     // the current it costs; then every five seconds.
     vTaskDelay(pdMS_TO_TICKS(uptime_ms() < 3000 ? 700 : 5000));
@@ -971,6 +980,8 @@ void config_changed(const char *key, int32_t v) {
     accel_set_threshold((uint8_t)v);
   } else if (!strcmp(key, "led_bright_pct")) {
     leds_set_brightness((int)v);
+  } else if (!strcmp(key, "led_front_pct")) {
+    leds_set_front_brightness((int)v);
   }
 }
 
@@ -1120,8 +1131,35 @@ void before_sleep(void) {
   }
   trip_before_sleep();
   net_stop();
-  power_sleep();
+  power_sleep(config().sleep_meas != 0);
 }
+
+// Bench: battery current, sampled for a while, with min/mean/max.
+void amps(int seconds) {
+  if (seconds < 1) seconds = 1;
+  if (seconds > 60) seconds = 60;
+  float lo = 1e9f, hi = -1e9f, sum = 0;
+  int n = 0;
+  for (uint32_t end = uptime_ms() + (uint32_t)seconds * 1000; (int32_t)(uptime_ms() - end) < 0;) {
+    float ma;
+    if (power_battery_ma(&ma)) {
+      ma = -ma;                  // out of the cell, as the box draws it
+      if (ma < lo) lo = ma;
+      if (ma > hi) hi = ma;
+      sum += ma;
+      n++;
+    }
+    vTaskDelay(pdMS_TO_TICKS(40));
+    beat(Job::Console);
+  }
+  if (n) {
+    printf("  drawn from the cell over %d s: mean %.1f mA, min %.1f, max %.1f (%d readings)\n",
+           seconds, sum / n, lo, hi, n);
+  } else {
+    printf("  current monitor did not answer\n");
+  }
+}
+
 
 void print_help(void) {
   printf("\n  health          every device, its state, and the readings\n");
@@ -1157,7 +1195,9 @@ void print_help(void) {
   printf("  ble [on|off]    BLE state; 'on' advertises for 60 s\n");
   printf("  sleep           power manager: why awake, next wake, recent wakes\n");
   printf("  sleep clear     start the wake record again\n");
-  printf("  sleep test S    deep-sleep S seconds now, timer wake only (even on USB)\n\n");
+  printf("  sleep test S    deep-sleep S seconds now, timer wake only (even on USB)\n");
+  printf("  amps [S]        battery current for S seconds: mean, min, max\n");
+  printf("  hiz [S] | off   bench: charger input off S s (300), box runs on its cell\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
@@ -1213,6 +1253,20 @@ void run_command(char *line) {
   else if (!strncmp(line, "rpc ", 4)) rpc_command(line + 4);
   else if (!strcmp(line, "ble")) print_ble();
   else if (!strcmp(line, "sleep")) pm_print();
+  else if (!strncmp(line, "amps", 4)) amps(atoi(line + 4) > 0 ? atoi(line + 4) : 5);
+  else if (!strcmp(line, "hiz off")) {
+    g_hiz_until = 0;
+    printf("  %s\n", power_set_hiz(false) ? "charger input back on" : "charger did not answer");
+  } else if (!strncmp(line, "hiz", 3)) {
+    const int s = atoi(line + 3);
+    const int secs = s > 0 && s <= 1800 ? s : 300;
+    if (power_set_hiz(true)) {
+      g_hiz_until = uptime_ms() + (uint32_t)secs * 1000;
+      printf("  charger input off for %d s: running on the cell (hiz off to end)\n", secs);
+    } else {
+      printf("  charger did not answer\n");
+    }
+  }
   else if (!strcmp(line, "sleep clear")) {
     pm_trace_clear();
     printf("  wake record cleared\n");
@@ -1392,6 +1446,10 @@ extern "C" void app_main(void) {
   time_init();
   log_start();
   power_init();
+  {
+    float sm;     // the sleep just ended, if it was measured (config sleep_meas)
+    if (power_sleep_mean(&sm)) pm_note_sleep_current(sm);
+  }
   {
     char sn[16];
     device_sn(sn, sizeof(sn));

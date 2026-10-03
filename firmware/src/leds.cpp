@@ -33,9 +33,13 @@ esp_timer_handle_t g_pulse_timer = nullptr;
 uint8_t g_rgb[LED_COUNT][3];
 bool g_rail_held = false;
 
-volatile uint8_t g_cap = LEDS_BRIGHTNESS_CAP;
+volatile uint8_t g_cap = LEDS_BRIGHTNESS_CAP;               // the side light
+volatile uint8_t g_cap_front = LEDS_FRONT_BRIGHTNESS_CAP;   // the three on the front
 
-uint8_t scale(uint8_t v) { return (uint8_t)((v * g_cap + 127) / 255); }
+uint8_t scale(int i, uint8_t v) {
+  const uint8_t cap = i == LED_SIDE ? g_cap : g_cap_front;
+  return (uint8_t)((v * cap + 127) / 255);
+}
 
 bool any_lit(void) {
   for (int i = 0; i < LED_COUNT; i++) {
@@ -138,9 +142,9 @@ bool leds_init(void) {
 void leds_set(int i, uint8_t r, uint8_t g, uint8_t b) {
   if (i < 0 || i >= LED_COUNT || !g_lock) return;
   xSemaphoreTake(g_lock, portMAX_DELAY);
-  g_rgb[i][0] = scale(r);
-  g_rgb[i][1] = scale(g);
-  g_rgb[i][2] = scale(b);
+  g_rgb[i][0] = scale(i, r);
+  g_rgb[i][1] = scale(i, g);
+  g_rgb[i][2] = scale(i, b);
   xSemaphoreGive(g_lock);
 }
 
@@ -178,8 +182,12 @@ void leds_pulse(int i, uint8_t r, uint8_t g, uint8_t b, uint32_t ms) {
 
 bool leds_pulse_active(int index) { return g_pulse_idx == index; }
 
-void leds_set_brightness(int pct) {
+uint8_t cap_of(int pct) {
   if (pct < 1) pct = 1;
   if (pct > 100) pct = 100;
-  g_cap = (uint8_t)((pct * 255 + 50) / 100);
+  return (uint8_t)((pct * 255 + 50) / 100);
 }
+
+void leds_set_brightness(int pct) { g_cap = cap_of(pct); }
+
+void leds_set_front_brightness(int pct) { g_cap_front = cap_of(pct); }
