@@ -219,20 +219,22 @@ what is missing.
 
 The device connects as client id `<sn>` -- the factory serial number,
 e.g. `mCDV1-L0169-1069-001`; `MCOLD-xxxx` until one is set -- to the
-broker and login set in its NVS. All topics are under `mcold/v1/<sn>/`
-(`v1` is the version of this topic layout; a layout that breaks the
-server gets `v2`, and both can run on one broker while boxes move over):
+broker and login set in its NVS. As eTEMP does it (decided 2026-10-05),
+**what the box publishes is under `mcold/<sn>/`, what it subscribes to is
+under `mcold/v1/<sn>/`** -- `v1` is the version of the commands it
+understands; a box that understands `v2` subscribes there, and both can
+run on one broker while boxes move over:
 
 | Topic | Direction | QoS | Retained | Payload |
 |---|---|---|---|---|
-| `mcold/v1/<sn>/rec` | device → server | 1 | no | a batch of records |
+| `mcold/<sn>/rec` | device → server | 1 | no | a batch of records |
 | `mcold/v1/<sn>/ack` | **server → device** | 1 | no | `{"trip":T,"upto":S}` |
-| `mcold/v1/<sn>/status` | device → server | 0 | yes | `GET_STATUS` result (section 4) |
-| `mcold/v1/<sn>/online` | device → server | 1 | yes | `"1"` while connected; `"0"` when a battery session ends, or from the broker (last will) if the device drops |
+| `mcold/<sn>/status` | device → server | 0 | yes | `GET_STATUS` result (section 4) |
+| `mcold/<sn>/online` | device → server | 1 | yes | `"1"` while connected; `"0"` when a battery session ends, or from the broker (last will) if the device drops |
 | `mcold/v1/<sn>/firmware` | **server → device** | 1 | **yes** | a file name to install, e.g. `mCOLD_0.7.1.bin` (below) |
-| `mcold/v1/<sn>/ota/state` | device → server | 1 | yes | what came of it (below) |
+| `mcold/<sn>/ota/state` | device → server | 1 | yes | what came of it (below) |
 
-Subscribing to `mcold/v1/+/rec` gets every device's records.
+Subscribing to `mcold/+/rec` gets every device's records.
 
 ### Batches
 
@@ -364,7 +366,7 @@ a file, and the box downloads it itself.
 2. Publish the file name to `mcold/v1/<sn>/firmware`, **retained** -- a box
    on battery is asleep almost all the time and only sees it at its next
    session. A whole `https://...` URL is accepted too.
-3. Watch `mcold/v1/<sn>/ota/state`:
+3. Watch `mcold/<sn>/ota/state`:
    ```json
    {"ver":"0.7.1","state":"downloading","pct":40}
    {"ver":"0.7.1","state":"rebooting","from":"0.7.0"}

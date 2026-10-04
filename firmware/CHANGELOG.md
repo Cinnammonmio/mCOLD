@@ -38,6 +38,11 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Topics as eTEMP has them** (decided 2026-10-05): what the box
+  publishes is `mcold/<sn>/rec|status|online|ota/state`, what it
+  subscribes to is `mcold/v1/<sn>/ack|firmware`. Summary for everyone in
+  `docs/mqtt-topics.md`. 0.7.0-dev.4.
+
 - **READY page with no trip** (A1, decided 2026-10-05): an arrow up to
   the NFC tag, a phone, "SCAN TO START TRIP". No clock, temperature or
   link icons, so the frame stays until a trip starts, power is plugged

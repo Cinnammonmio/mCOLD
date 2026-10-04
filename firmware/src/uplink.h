@@ -17,12 +17,14 @@
 //
 // Topics, with <sn> the device SN (PROTOCOL.md section 6):
 //
-//   mcold/v1/<sn>/rec      device -> server   record batches, QoS 1
-//   mcold/v1/<sn>/ack      server -> device   {"trip":T,"upto":S}
-//   mcold/v1/<sn>/status   device -> server   GET_STATUS, retained
-//   mcold/v1/<sn>/online   device -> server   "1" / "0" (last will), retained
-//   mcold/v1/<sn>/firmware server -> device   a file name to install (ota.h), retained
-//   mcold/v1/<sn>/ota/state device -> server  what came of it, retained
+//   mcold/<sn>/rec          device -> server   rows, QoS 1
+//   mcold/<sn>/status       device -> server   GET_STATUS, retained
+//   mcold/<sn>/online       device -> server   "1" / "0" (last will), retained
+//   mcold/<sn>/ota/state    device -> server   what came of an update, retained
+//   mcold/v1/<sn>/ack       server -> device   {"trip":T,"upto":S}
+//   mcold/v1/<sn>/firmware  server -> device   a file name to install (ota.h), retained
+//
+// Published without the version, subscribed with it, as eTEMP does.
 //
 // Broker and login are in NVS (namespace "mqtt"), never in the image.
 //

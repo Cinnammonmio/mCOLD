@@ -27,7 +27,7 @@
 //
 // Not during a trip, and not on a low battery: the request waits and
 // runs once both allow it. What happened goes back on
-// mcold/v1/<sn>/ota/state (retained), so the server can see which boxes
+// mcold/<sn>/ota/state (retained), so the server can see which boxes
 // took an update.
 #pragma once
 
