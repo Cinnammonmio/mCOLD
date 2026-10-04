@@ -91,3 +91,16 @@ void row_csv(const LogRow &r, uint32_t trip, uint32_t seq, const char *sn, const
 // started without a known time is TRIP_<SN>_<id>.
 void row_file_name(const char *sn, const LogRow &start, uint32_t trip, int tz_min, char *out,
                    size_t n);
+
+// The factory SN pattern, which does not change (2026-10-05):
+//   PPPVv-LllYY-MMYY-NNN    e.g. mCDV1-L0169-1069-001
+//   PPP product, v version, L lot ll of year YY, made month MM of year YY
+//   (Buddhist era, last two digits), NNN unit 001-999.
+bool sn_pattern_ok(const char *sn);
+
+// The USB drive's volume label (FAT: 11 characters, capitals): the first
+// two letters of the product, the version, the lot with its L, the unit
+// -- mCDV1-L0169-1069-001 -> MC1L0169001 (decided 2026-10-05; the L stays
+// so 0169 is not read as a month). An SN off the pattern gives its first
+// 11 letters and digits.
+void sn_usb_label(const char *sn, char *out, size_t n);

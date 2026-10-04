@@ -38,6 +38,17 @@ To cut a release:
 
 P7, power: in progress.
 
+- **USB drive, F1 and the start of F2** (phases named 2026-10-05: F1 the
+  device code, F2 `flash` + USB composite, F3 CSV files on the drive, F4
+  Windows test). F1: no second code beside the SN; the drive label is
+  `MC1L0169001` (product's first two letters, version, lot with its L,
+  unit) and `sn` shows it. `sn set` takes only the label's pattern now
+  (`PPPVv-LllYY-MMYY-NNN`, month 01-12, unit 001-999). F2: `flash`
+  restarts into the ROM's download mode -- the way to flash once the USB
+  port is ours, on a board with no BOOT button. Checked: esptool
+  connected with no reset of its own, and a hard reset came back to the
+  firmware.
+
 - **Trip rows go up after the trip** (decided 2026-10-05,
   `docs/trip-data-flow.md`). While a trip runs its rows stay in the box
   and the server gets the status -- now with `alarms_raised` and

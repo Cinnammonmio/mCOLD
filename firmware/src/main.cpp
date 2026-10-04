@@ -16,6 +16,7 @@
 #include <driver/gpio.h>
 #include <driver/usb_serial_jtag.h>
 #include <esp_app_desc.h>
+#include <soc/rtc_cntl_reg.h>
 #include <esp_mac.h>
 #include <esp_attr.h>
 #include <esp_heap_caps.h>
@@ -834,7 +835,9 @@ void device_sn(char *out, size_t n) {
 }
 
 bool sn_store(const char *s) {
-  if (!sn_valid(s)) return false;
+  // The label's pattern, exactly (logrow.h): a typo is refused here, not
+  // found later in a file name or on the server.
+  if (!sn_valid(s) || !sn_pattern_ok(s)) return false;
   nvs_handle_t h;
   if (nvs_open("sys", NVS_READWRITE, &h) != ESP_OK) return false;
   const bool ok = nvs_set_str(h, "sn", s) == ESP_OK && nvs_commit(h) == ESP_OK;
@@ -1345,6 +1348,7 @@ void print_help(void) {
   printf("  sleep clear     start the wake record again\n");
   printf("  sleep test S    deep-sleep S seconds now, timer wake only (even on USB)\n");
   printf("  sn [set S]      the device serial number (factory: set, then reboot)\n");
+  printf("  flash           restart into download mode, for flashing over USB\n");
   printf("  soc             counted state of charge, capacity, anchor\n");
   printf("  soc set P       bench: set the count to P %%\n");
   printf("  amps [S]        battery current for S seconds: mean, min, max\n");
@@ -1411,16 +1415,19 @@ void run_command(char *line) {
   else if (!strcmp(line, "ble")) print_ble();
   else if (!strcmp(line, "sleep")) pm_print();
   else if (!strcmp(line, "sn")) {
-    char sn[SN_LEN];
+    char sn[SN_LEN], label[12];
     device_sn(sn, sizeof(sn));
-    printf("  %s\n", sn);
+    sn_usb_label(sn, label, sizeof(label));
+    printf("  %s   (USB drive %s%s)\n", sn, label,
+           sn_pattern_ok(sn) ? "" : "; not the factory pattern");
   } else if (!strncmp(line, "sn set ", 7)) {
     // Factory: the name on the label. Everything that carries the SN
     // read it at boot, so it takes effect at the next one.
     if (sn_store(line + 7)) {
       printf("  SN %s stored; reboot to use it everywhere\n", line + 7);
     } else {
-      printf("  refused: 4-%d characters, letters, digits, - _ .\n", SN_LEN - 1);
+      printf("  refused: the label's pattern, e.g. mCDV1-L0169-1069-001\n"
+             "  (product+V+version, L+lot+year, month+year, unit 001-999)\n");
     }
   }
   else if (!strcmp(line, "soc")) {
@@ -1576,6 +1583,16 @@ void run_command(char *line) {
   else if (!strcmp(line, "log read")) log_bench_read();
   else if (!strcmp(line, "log erase")) {
     printf("  %s\n", log_err_name(flashlog_erase_trip(BENCH_TRIP)));
+  } else if (!strcmp(line, "flash")) {
+    // Into the ROM's download mode, for esptool: the way to flash once the
+    // USB port is a drive and a serial port of our own, and this board has
+    // no BOOT button (GPIO0 is not brought out). The flag lasts one reset;
+    // SW1 (EN) gets back to the firmware.
+    printf("  into download mode: flash now (pio run -t upload), or press reset to come back\n");
+    fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    REG_WRITE(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
+    esp_restart();
   } else if (!strcmp(line, "reboot")) {
     printf("  restarting\n");
     fflush(stdout);

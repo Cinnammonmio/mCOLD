@@ -1,5 +1,6 @@
 #include "logrow.h"
 
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -264,4 +265,46 @@ void row_file_name(const char *sn, const LogRow &start, uint32_t trip, int tz_mi
   } else {
     snprintf(out, n, "TRIP_%s_%lu.csv", id, (unsigned long)trip);
   }
+}
+
+namespace {
+bool digits(const char *p, int n) {
+  for (int i = 0; i < n; i++) {
+    if (!isdigit((unsigned char)p[i])) return false;
+  }
+  return true;
+}
+}  // namespace
+
+bool sn_pattern_ok(const char *s) {
+  if (!s || strlen(s) != 20) return false;
+  if (!isalpha((unsigned char)s[0]) || !isalpha((unsigned char)s[1]) ||
+      !isalpha((unsigned char)s[2]) || s[3] != 'V' || !isdigit((unsigned char)s[4])) {
+    return false;
+  }
+  if (s[5] != '-' || s[6] != 'L' || !digits(s + 7, 4) || s[11] != '-' || !digits(s + 12, 4) ||
+      s[16] != '-' || !digits(s + 17, 3)) {
+    return false;
+  }
+  const int lot = (s[7] - '0') * 10 + (s[8] - '0');
+  const int month = (s[12] - '0') * 10 + (s[13] - '0');
+  const int unit = (s[17] - '0') * 100 + (s[18] - '0') * 10 + (s[19] - '0');
+  return lot >= 1 && month >= 1 && month <= 12 && unit >= 1;
+}
+
+void sn_usb_label(const char *sn, char *out, size_t n) {
+  if (n < 12) {
+    if (n) out[0] = 0;
+    return;
+  }
+  if (sn_pattern_ok(sn)) {
+    snprintf(out, n, "%c%c%cL%.4s%.3s", toupper((unsigned char)sn[0]),
+             toupper((unsigned char)sn[1]), sn[4], sn + 7, sn + 17);
+    return;
+  }
+  size_t k = 0;
+  for (const char *p = sn ? sn : ""; *p && k < 11; p++) {
+    if (isalnum((unsigned char)*p)) out[k++] = (char)toupper((unsigned char)*p);
+  }
+  out[k] = 0;
 }

@@ -561,6 +561,14 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
 
 ## 8. Still open
 
+- **USB drive (F2-F4, after 2026-10-05).** F1 is done (label
+  `MC1L0169001`, SN pattern checked) and `flash` works. Next: TinyUSB
+  composite (CDC console + MSC) -- the port stops being USB-Serial-JTAG,
+  so `pio run -t upload` needs `flash` typed first; this board has **no
+  BOOT button**, and OTA is the way back if that path ever fails. Then F3
+  (CSV files generated on read, read-only, full-SN names) and F4
+  (Windows).
+
 - **T− grounded at the MAX6675** (hand-soldered 2026-10-03). Probe-fault
   detection not yet tested; the panel showed `--` that evening with the
   probe plugged in -- check the trip for PROBE_FAULT events
