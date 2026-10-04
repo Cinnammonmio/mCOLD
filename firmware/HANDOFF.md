@@ -561,6 +561,13 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
 
 ## 8. Still open
 
+- **OTA is the way firmware reaches a box** (decided 2026-10-05): the
+  board sits in its case, SW1 (reset) is hard to reach and there is no
+  BOOT button. USB flashing is for the bench only, and nothing may ever
+  need SW1: a box left in download mode by `flash` comes back with
+  `esptool.py --before no_reset --after hard_reset chip_id` over the same
+  USB port (checked). Test the OTA rollback (`ota rollback-test`) before
+  relying on it.
 - **USB drive (F2-F4, after 2026-10-05).** F1 is done (label
   `MC1L0169001`, SN pattern checked) and `flash` works. Next: TinyUSB
   composite (CDC console + MSC) -- the port stops being USB-Serial-JTAG,
