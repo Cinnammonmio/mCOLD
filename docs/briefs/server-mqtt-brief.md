@@ -1,10 +1,10 @@
 ---
 name: Server-Brief_MQTT
 lang: th
-version: 0.3
+version: 0.4
 status: draft
 date: 2026-10-04
-firmware: 0.7.0-dev.1
+firmware: 0.7.0-dev.2
 ---
 
 # mCOLD — สิ่งที่ฝั่ง Server ต้องทำ (MQTT)
@@ -28,16 +28,16 @@ firmware: 0.7.0-dev.1
 - client id = รหัสเครื่อง (`sn`) ตามฉลาก เช่น `mCDV1-L0169-1069-001` (ตัวพิมพ์เล็ก-ใหญ่มีผล)
   กล่องที่ยังไม่ได้ตั้ง SN จากโรงงานจะใช้ชื่อชั่วคราว `MCOLD-xxxx`
 - broker และ login ตั้งในเครื่องแต่ละกล่อง ไม่อยู่ใน firmware หรือ git
-- ทุก topic อยู่ใต้ `mcold/<sn>/`
+- ทุก topic อยู่ใต้ `mcold/v1/<sn>/`
 
 | Topic | ทิศทาง | QoS | Retained | เนื้อหา |
 |---|---|---|---|---|
-| `mcold/<sn>/rec` | กล่อง → server | 1 | ไม่ | ชุด record (ข้อ 3) |
-| `mcold/<sn>/ack` | **server → กล่อง** | 1 | ไม่ | `{"trip":T,"upto":S}` (ข้อ 4) |
-| `mcold/<sn>/status` | กล่อง → server | 0 | ใช่ | สถานะล่าสุด (JSON เดียวกับ `GET_STATUS`) |
-| `mcold/<sn>/online` | กล่อง → server | 1 | ใช่ | `"1"` ตอนเชื่อมต่อ, `"0"` ตอนจบรอบหรือหลุด (last will) |
+| `mcold/v1/<sn>/rec` | กล่อง → server | 1 | ไม่ | ชุด record (ข้อ 3) |
+| `mcold/v1/<sn>/ack` | **server → กล่อง** | 1 | ไม่ | `{"trip":T,"upto":S}` (ข้อ 4) |
+| `mcold/v1/<sn>/status` | กล่อง → server | 0 | ใช่ | สถานะล่าสุด (JSON เดียวกับ `GET_STATUS`) |
+| `mcold/v1/<sn>/online` | กล่อง → server | 1 | ใช่ | `"1"` ตอนเชื่อมต่อ, `"0"` ตอนจบรอบหรือหลุด (last will) |
 
-รับข้อมูลทุกกล่องได้ด้วยการ subscribe `mcold/+/rec`
+รับข้อมูลทุกกล่องได้ด้วยการ subscribe `mcold/v1/+/rec`
 
 ## 3. ข้อมูลที่กล่องส่งขึ้นมา
 
@@ -91,7 +91,7 @@ firmware: 0.7.0-dev.1
 
 1. เก็บ record ของชุดนั้นลงฐานข้อมูลให้เรียบร้อย **ใช้ (sn, trip, seq) เป็น key**
    record ที่มาซ้ำต้องเก็บครั้งเดียว
-2. จากนั้น publish ไปที่ `mcold/<sn>/ack`
+2. จากนั้น publish ไปที่ `mcold/v1/<sn>/ack`
    ```
    {"trip":8,"upto":15}
    ```
@@ -126,8 +126,8 @@ firmware: 0.7.0-dev.1
 
 - **TLS ที่พอร์ต 8883** พร้อม certificate ของ server ที่กล่องตรวจสอบได้
 - **login แยกต่อเครื่อง** (หรือ client certificate)
-- **ACL:** แต่ละกล่อง publish ได้เฉพาะ `mcold/<sn>/rec`, `status`, `online`, `ota/state` ของตัวเอง
-  และ subscribe ได้เฉพาะ `mcold/<sn>/ack`, `firmware` ของตัวเอง ส่วน `ack` และ `firmware` ให้ publish ได้เฉพาะ server
+- **ACL:** แต่ละกล่อง publish ได้เฉพาะ `mcold/v1/<sn>/rec`, `status`, `online`, `ota/state` ของตัวเอง
+  และ subscribe ได้เฉพาะ `mcold/v1/<sn>/ack`, `firmware` ของตัวเอง ส่วน `ack` และ `firmware` ให้ publish ได้เฉพาะ server
 
 เหตุผล: ACK คือคำสั่งให้กล่อง "ลบข้อมูลได้" ถ้าใครปลอม ACK ได้ ข้อมูลที่ยังไม่ถึง server จะหายถาวร
 
@@ -144,9 +144,9 @@ firmware: 0.7.0-dev.1
 (`https://drive.siamatic.co.th/media/firmwares/<ชื่อไฟล์>`) ทดสอบผ่านแล้ว 2026-10-04
 
 1. วางไฟล์ `mCOLD_<เวอร์ชัน>.bin` ที่ทีม firmware ส่งให้ ไว้ในโฟลเดอร์ firmwares
-2. publish ชื่อไฟล์ไปที่ `mcold/<sn>/firmware` แบบ **retain** เช่น `mCOLD_0.7.1.bin`
+2. publish ชื่อไฟล์ไปที่ `mcold/v1/<sn>/firmware` แบบ **retain** เช่น `mCOLD_0.7.1.bin`
    (กล่องที่ใช้แบตหลับอยู่เกือบตลอด จะเห็นคำสั่งตอนตื่นมาส่งข้อมูลรอบถัดไป)
-3. ดูผลที่ `mcold/<sn>/ota/state` (retain):
+3. ดูผลที่ `mcold/v1/<sn>/ota/state` (retain):
 
 | state | ความหมาย |
 |---|---|

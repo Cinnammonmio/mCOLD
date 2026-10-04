@@ -38,15 +38,19 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Topics move to `mcold/v1/<sn>/...`** (was `mcold/<sn>/...`): the
+  product, then the version of the topic layout, as the team asked
+  (2026-10-04). Same messages otherwise.
+
 - **OTA** (`ota.*`), the eTEMP V2 way: the server publishes a file name
-  on `mcold/<sn>/firmware` (retained), the box downloads it from the
+  on `mcold/v1/<sn>/firmware` (retained), the box downloads it from the
   file server (base URL in NVS, `ota base URL`) straight into the other
   slot. Checked before it is booted: same project and a newer version
   from the image header, the image's SHA-256, and an RSA-3072 signature
   against the key of the running image. Booted on probation: kept once
   it reaches the broker, rolled back by the bootloader if not within
   3 minutes. Not during a trip or under 30 % battery (it waits, then
-  goes ahead). Results on `mcold/<sn>/ota/state`, retained. Console:
+  goes ahead). Results on `mcold/v1/<sn>/ota/state`, retained. Console:
   `ota`, `ota base URL`, `ota FILE|URL [force]`, `ota rollback-test`.
   Tested through MQTTX: a wrongly signed image refused, 0.7.0-dev to
   0.7.0-dev.1 and confirmed.

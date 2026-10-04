@@ -1,7 +1,7 @@
 // Firmware updates over the air: "controlled update, rollback" (§7).
 //
 // The server names a file and the box fetches it itself, the way eTEMP
-// V2 does it: a message on mcold/<sn>/firmware carries just the file
+// V2 does it: a message on mcold/v1/<sn>/firmware carries just the file
 // name (`mCOLD_0.7.1.bin`), the box joins it to the base URL it keeps in
 // NVS and downloads the image over HTTP(S) straight into the other OTA
 // slot. A whole http(s) URL is taken as it is.
@@ -27,7 +27,7 @@
 //
 // Not during a trip, and not on a low battery: the request waits and
 // runs once both allow it. What happened goes back on
-// mcold/<sn>/ota/state (retained), so the server can see which boxes
+// mcold/v1/<sn>/ota/state (retained), so the server can see which boxes
 // took an update.
 #pragma once
 

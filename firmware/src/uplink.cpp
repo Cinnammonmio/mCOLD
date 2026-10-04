@@ -30,7 +30,10 @@ char g_host[64] = "";
 uint16_t g_port = 1883;
 char g_user[40] = "";
 char g_pass[72] = "";
-char t_rec[48], t_ack[48], t_status[48], t_online[48], t_fw[48], t_ota[56];
+// Every topic is mcold/v1/<sn>/...: the product, then the version of this
+// topic layout, so a later layout can run beside it on the same broker.
+#define TOPIC_ROOT "mcold/v1/"
+char t_rec[64], t_ack[64], t_status[64], t_online[64], t_fw[64], t_ota[64];
 
 esp_mqtt_client_handle_t g_client = nullptr;
 volatile bool g_mqtt = false;
@@ -495,12 +498,12 @@ void task(void *) {
 
 void uplink_start(const char *sn) {
   snprintf(g_sn, sizeof(g_sn), "%s", sn ? sn : "MCOLD");
-  snprintf(t_rec, sizeof(t_rec), "mcold/%s/rec", g_sn);
-  snprintf(t_ack, sizeof(t_ack), "mcold/%s/ack", g_sn);
-  snprintf(t_status, sizeof(t_status), "mcold/%s/status", g_sn);
-  snprintf(t_online, sizeof(t_online), "mcold/%s/online", g_sn);
-  snprintf(t_fw, sizeof(t_fw), "mcold/%s/firmware", g_sn);
-  snprintf(t_ota, sizeof(t_ota), "mcold/%s/ota/state", g_sn);
+  snprintf(t_rec, sizeof(t_rec), TOPIC_ROOT "%s/rec", g_sn);
+  snprintf(t_ack, sizeof(t_ack), TOPIC_ROOT "%s/ack", g_sn);
+  snprintf(t_status, sizeof(t_status), TOPIC_ROOT "%s/status", g_sn);
+  snprintf(t_online, sizeof(t_online), TOPIC_ROOT "%s/online", g_sn);
+  snprintf(t_fw, sizeof(t_fw), TOPIC_ROOT "%s/firmware", g_sn);
+  snprintf(t_ota, sizeof(t_ota), TOPIC_ROOT "%s/ota/state", g_sn);
   g_mx = xSemaphoreCreateMutex();
   load();
   if (!pm_warm() || g_plan.magic != PLAN_MAGIC) g_plan = {PLAN_MAGIC, 0, 0, false, 0, 0, 0};

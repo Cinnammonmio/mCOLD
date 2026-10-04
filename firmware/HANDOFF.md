@@ -582,7 +582,7 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
     server must publish an ACK naming device, trip and sequence range,
     on a topic the device subscribes to, before the device may reclaim.
 - **OTA works** (2026-10-04, `ota.*`): the server publishes a file name
-  on `mcold/<sn>/firmware` (retained), the box fetches it from the team's
+  on `mcold/v1/<sn>/firmware` (retained), the box fetches it from the team's
   file server (the base URL eTEMP uses, in NVS) and checks header,
   SHA-256 and signature; rollback if the new image does not reach the
   broker in 3 minutes. Tested on the bench through MQTTX: a wrongly
