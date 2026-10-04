@@ -1,9 +1,9 @@
 ---
 name: Device-Settings
 lang: th
-version: 1.0
+version: 1.1
 date: 2026-10-05
-firmware: 0.7.0-dev.7
+firmware: 0.7.0-dev.8
 ---
 
 # mCOLD — ค่าตั้งค่าของเครื่อง
@@ -12,32 +12,50 @@ firmware: 0.7.0-dev.7
 
 | ทาง | วิธี | ตั้งอะไรได้ |
 |---|---|---|
-| **แอป (BLE)** | คำสั่ง `APPLY_CONFIG` (ต้องแตะ NFC + AUTH ก่อน) | ทุกอย่างในตาราง "แอป / server" + Wi-Fi + MQTT + OTA |
+| **แอป (BLE)** | `APPLY_CONFIG` (ต้องแตะ NFC + AUTH ก่อน) หรือ `SET_CONFIG` / `SET_WIFI` / `DEL_WIFI` | ค่าในตาราง "แอป / server" + Wi-Fi (รวม DHCP / IP คงที่) + OTA base |
 | **Server (MQTT)** | publish ที่ `mcold/v1/<sn>/config` แบบ **retain** | เหมือนแอป |
-| **Console (สาย USB)** | `config set KEY VALUE`, `wifi add`, `mqtt set`, `ota base`, `sn set` | ทุกค่า รวมค่าโรงงานและค่าทดสอบ |
+| **Console (สาย USB)** | `config set`, `wifi add`, `wifi ip`, `mqtt set`, `ota base`, `sn set` | ทุกค่า รวมค่าโรงงาน, ค่าทดสอบ และ **MQTT broker** |
+
+**MQTT broker ตั้งจาก console เท่านั้น** (ตัดสินใจ 2026-10-05): คนที่ตั้งเห็นได้ทันทีว่าต่อได้หรือไม่
+ถ้าตั้งผิดจากระยะไกล กล่องจะหลุดจาก server และตั้งกลับจากระยะไกลไม่ได้อีก
 
 ## เอกสารตั้งค่า
 
 ```json
 {"rev": 3,
- "config":   {"upload_period_s": 600, "led_front_pct": 2},
- "wifi":     {"add": [{"ssid": "Warehouse-2", "pass": "..."}], "del": ["OldNet"]},
- "mqtt":     {"host": "broker.example.com", "port": 1883, "user": "...", "pass": "..."},
+ "config":   {"upload_period_s": 600, "temp_adj_c100": -50},
+ "wifi":     {"add": [{"ssid": "Warehouse-2", "pass": "...", "dhcp": true},
+                      {"ssid": "Office", "pass": "...", "dhcp": false,
+                       "ip": "192.168.1.50", "gateway": "192.168.1.1",
+                       "subnet": "255.255.255.0", "dns": "8.8.8.8"}],
+              "del": ["OldNet"]},
  "ota_base": "https://drive.siamatic.co.th/media/firmwares"}
 ```
 
 - ทุกส่วนไม่บังคับ ส่งแค่ส่วนที่จะเปลี่ยน
 - **`rev`** (จำเป็นสำหรับ MQTT): เลขเพิ่มขึ้นทุกครั้ง กล่องใช้เอกสารแต่ละ rev ครั้งเดียว
-  rev เท่าเดิมหรือต่ำกว่าถูกเพิกเฉย (เพราะข้อความ retain ส่งซ้ำทุกครั้งที่กล่องต่อ)
+  rev เท่าเดิมหรือต่ำกว่าถูกเพิกเฉย (ข้อความ retain ส่งซ้ำทุกครั้งที่กล่องต่อ)
 - ตรวจทีละค่า ค่าที่ผิดไม่ทำให้ค่าอื่นไม่ถูกตั้ง
-- **Wi-Fi:** `del` ก่อน `add` (กล่องจำได้สูงสุด 5 เครือข่าย) · `add` ชื่อเดิมคือเปลี่ยนรหัสผ่าน
-- **MQTT broker ใหม่ = ทดลองก่อน 15 นาที:** ต่อ broker ใหม่ได้ → ใช้ต่อ · ต่อไม่ได้ → กลับไปใช้ broker เดิมเอง
-  และรายงาน `mqtt_reverted` พิมพ์ผิดจึงไม่ทำให้กล่องหลุดถาวร
+- ส่ง `"mqtt"` มาจะได้ error `console only`
+
+### Wi-Fi (แบบเดียวกับ eTEMP)
+
+| field | ความหมาย |
+|---|---|
+| `ssid` | ชื่อเครือข่าย (1–32 ตัว) |
+| `pass` | รหัสผ่าน 8–63 ตัว หรือ `""` = เครือข่ายเปิด · **เครือข่ายใหม่ต้องมี** · เครือข่ายเดิมไม่ส่ง = ใช้รหัสเดิม |
+| `dhcp` | `true` = รับ IP อัตโนมัติ · `false` = ใช้ IP คงที่ด้านล่าง |
+| `ip`, `gateway`, `subnet` | IP คงที่ (จำเป็นเมื่อ `dhcp: false`) · gateway ต้องอยู่ subnet เดียวกับ ip |
+| `dns` | ไม่บังคับ · ไม่ใส่ = ใช้ gateway |
+
+- ตั้งแยกได้ต่อเครือข่าย (จำได้ 5 เครือข่าย) เพราะ IP คงที่ผูกกับวงของแต่ละที่
+- เครือข่ายใหม่เริ่มที่ DHCP · เปลี่ยน IP ของเครือข่ายที่ต่ออยู่ กล่องจะต่อใหม่ทันที
+- `del` ทำก่อน `add` · `add` ชื่อเดิมคือแก้รหัสผ่านและ/หรือ IP
 
 ### ผลที่กล่องรายงาน — `mcold/<sn>/config/state` (retain)
 
 ```json
-{"rev":3,"applied":["upload_period_s","led_front_pct","wifi add Warehouse-2"],
+{"rev":3,"applied":["upload_period_s","temp_adj_c100","wifi add Office"],
  "errors":{"sample_period_s":"a trip is running: send it again after the trip"},
  "state":"partial"}
 ```
@@ -47,55 +65,54 @@ firmware: 0.7.0-dev.7
 | `ok` | ตั้งครบทุกค่า |
 | `partial` | บางค่าไม่ได้ตั้ง ดูเหตุผลใน `errors` |
 | `refused` | เอกสารไม่มี `rev` ที่ถูกต้อง |
-| `mqtt_reverted` | ต่อ broker ใหม่ไม่ได้ใน 15 นาที กลับไปใช้ตัวเดิมแล้ว |
 
-ทางแอป (`APPLY_CONFIG`) ได้ `applied` / `errors` กลับมาในคำตอบทันที
+ทางแอป (`APPLY_CONFIG`) ได้ `applied` / `errors` กลับในคำตอบทันที
 
 ### อ่านค่าปัจจุบัน
-- **แอปได้เองอัตโนมัติ:** พอแอปต่อ BLE และเปิดรับ EVENT กล่องส่ง event `SETTINGS` ทันที
-  และส่งใหม่ทุกครั้งที่ค่าเปลี่ยน (จากแอป, server หรือ console) หน้าตั้งค่าในแอปจึงตรงกับเครื่องเสมอ
+- **แอปได้เองอัตโนมัติ:** พอต่อ BLE และเปิดรับ EVENT กล่องส่ง event `SETTINGS` ทันที
+  และส่งใหม่ทุกครั้งที่ค่าเปลี่ยน (จากแอป, server หรือ console)
 
   ```json
   {"ev":"SETTINGS",
-   "config":{"sample_period_s":300,"upload_period_s":300,"led_front_pct":2, "...": "ทุกค่า"},
-   "editable":["sample_period_s","upload_period_s", "..."],
-   "trip_locked":["sample_period_s","cal_offset_c100", "..."],
-   "server_rev":1,
-   "network":{"wifi":["mio","Mio_2.4G"],"mqtt":{"host":"...","port":1883,"user":"...","on_trial":false},
+   "config":{"sample_period_s":300,"temp_adj_c100":0, "...": "ทุกค่า"},
+   "editable":["sample_period_s","upload_period_s","temp_adj_c100", "..."],
+   "trip_locked":["sample_period_s","temp_adj_c100", "..."],
+   "server_rev":3,
+   "network":{"wifi":[{"ssid":"Office","dhcp":false,"ip":"192.168.1.50","gateway":"192.168.1.1",
+                       "subnet":"255.255.255.0","dns":"8.8.8.8"},
+                      {"ssid":"Warehouse-2","dhcp":true}],
               "ota_base":"https://..."}}
   ```
   - `editable`: ค่าที่แอปแก้ได้ · `trip_locked`: แก้ไม่ได้ระหว่าง trip
-  - `network` ส่งเฉพาะหลังแตะ NFC + AUTH แล้ว (BLE ใครอยู่ใกล้ก็ต่อได้) และไม่มีรหัสผ่านเสมอ
-- `GET_SETTINGS` (แอป): ขอข้อมูลชุดเดียวกันเอง
-- `GET_CONFIG` (แอป): ทุกค่าใน `config`
-- `GET_NETWORK` (แอป, ต้อง AUTH): ชื่อ Wi-Fi ที่จำไว้, broker (host/port/user), OTA base — **ไม่มีรหัสผ่าน**
-- `status` ทาง MQTT มี `fw` และ `net` (Wi-Fi ที่ต่ออยู่, RSSI, IP)
+  - `network` ส่งเฉพาะหลังแตะ NFC + AUTH และ **ไม่มีรหัสผ่านเสมอ**
+- `GET_SETTINGS`: ขอชุดเดียวกันเอง · `GET_CONFIG`: เฉพาะ `config` · `GET_NETWORK` (ต้อง AUTH): เฉพาะ `network`
 
 ## ค่าที่แอป / server ตั้งได้
 
 | key | ค่าเริ่มต้น | ช่วง | หน่วย | ความหมาย | ระหว่าง trip |
 |---|---|---|---|---|---|
-| `sample_period_s` | 300 | 60–3600 | วินาที | รอบบันทึกอุณหภูมิ | 🔒 ล็อก |
+| `sample_period_s` | 300 | 60–3600 | วินาที | รอบบันทึกอุณหภูมิ | 🔒 |
+| `temp_adj_c100` | 0 | −1000–1000 | 0.01 °C | **ปรับค่าอุณหภูมิ** (แบบ tempAdj ของ eTEMP) บวกเพิ่มจากค่าที่วัด เช่น −50 = −0.50 °C ใช้ทั้งบนจอ, ในแถว log และที่ส่ง server | 🔒 |
 | `upload_period_s` | 300 | 60–86400 | วินาที | รอบเปิด Wi-Fi ส่ง status/ข้อมูลตอนใช้แบต (ยิ่งถี่ยิ่งกินแบต) | ได้ |
 | `gnss_period_s` | 1800 | 300–86400 | วินาที | รอบหาตำแหน่ง GPS ระหว่าง trip | ได้ |
 | `idle_wake_s` | 3600 | 300–86400 | วินาที | ตอนไม่มีอะไรทำ ตื่นเช็คอย่างน้อยทุกเท่านี้ | ได้ |
-| `tz_offset_min` | 420 | −720–840 | นาที | เขตเวลา (+07:00 = 420) ใช้กับเวลาบนจอและ `timestamp` | ได้ |
+| `tz_offset_min` | 420 | −720–840 | นาที | เขตเวลา (+07:00 = 420) | ได้ |
 | `led_front_pct` | 2 | 1–100 | % | ความสว่างไฟหน้า 3 ดวง | ได้ |
 | `led_bright_pct` | 20 | 1–100 | % | ความสว่างไฟข้าง (ชาร์จ) | ได้ |
 | `led_status_s` | 900 | 60–3600 | วินาที | รอบกะพริบบอกสถานะตอนใช้แบต | ได้ |
 | `buzzer_enabled` | 1 | 0–1 | | เปิด/ปิดเสียง | ได้ |
 | `accel_wake_ths` | 2 | 1–63 | ×31 mg | ความไวการจับการขยับ (ยิ่งน้อยยิ่งไว) | ได้ |
-| `cal_offset_c100` | 0 | −1000–1000 | 0.01 °C | สอบเทียบ: บวกเพิ่ม | 🔒 ล็อก |
-| `cal_gain_ppm` | 1000000 | 900000–1100000 | ppm | สอบเทียบ: คูณ | 🔒 ล็อก |
-| `cal_version` | 0 | | | เลขครั้งที่สอบเทียบ | 🔒 ล็อก |
-| `cal_date` | 0 | | Unix s | วันที่สอบเทียบ | 🔒 ล็อก |
 
-🔒 = เปลี่ยนไม่ได้ขณะมี trip รัน เพราะหัว trip บันทึกค่าเหล่านี้ไว้ใช้กับทุกแถวใน trip นั้น ส่งใหม่หลังจบ trip
+🔒 = เปลี่ยนไม่ได้ระหว่าง trip เพราะหัว trip บันทึกค่าไว้ใช้กับทุกแถว ส่งใหม่หลังจบ trip
+
+**อุณหภูมิที่แสดง** = ค่าที่วัด × `cal_gain_ppm` + `cal_offset_c100` (สอบเทียบจากโรงงาน) + `temp_adj_c100` (ปรับโดยผู้ใช้)
 
 ## ค่าที่ตั้งได้จาก console เท่านั้น (โรงงาน / ทดสอบ)
 
-| key | ค่าเริ่มต้น | ความหมาย |
+| key / คำสั่ง | ค่าเริ่มต้น | ความหมาย |
 |---|---|---|
+| `mqtt set HOST PORT USER PASS` | | MQTT broker และ login |
+| `cal_offset_c100`, `cal_gain_ppm`, `cal_version`, `cal_date` | 0, 1000000, 0, 0 | สอบเทียบ probe จากโรงงาน |
 | `batt_off_mv` | 3400 | แบตต่ำกว่านี้ 3 ครั้งติด ตัดเครื่องกันแบตเสีย |
 | `batt_trip_mv` | 3550 | แบตต่ำกว่านี้ไม่ให้เริ่ม trip |
 | `batt_mah` | 1500 | ความจุแบตตั้งต้นสำหรับนับ % |
@@ -103,11 +120,11 @@ firmware: 0.7.0-dev.7
 | `sleep_ua` | 250 | กระแสตอนหลับที่ใช้คำนวณ % |
 | `epd_inset_t/b/l/r` | 0 | ระยะที่ขอบกล่องบังจอ (เครื่องนี้วัดได้ซ้าย 3 px) |
 | `sleep_en`, `sleep_usb`, `sleep_meas`, `light_sleep` | | สวิตช์ทดสอบการใช้ไฟ |
-| SN | | `sn set` ตามรูปแบบฉลากเท่านั้น |
+| `sn set` | | SN ตามรูปแบบฉลากเท่านั้น |
 
 ## ความปลอดภัย
 
 ⚠️ ตอนนี้ MQTT เป็นพอร์ต 1883 **ไม่เข้ารหัส** และใช้ login ร่วมกัน:
-- รหัส Wi-Fi และรหัส MQTT ในเอกสารตั้งค่าวิ่งเป็นข้อความเปิด
+- รหัส Wi-Fi ในเอกสารตั้งค่าวิ่งเป็นข้อความเปิด
 - ใครมี login ก็ส่งเอกสารตั้งค่าให้ทุกกล่องได้
 - **ก่อนใช้งานจริงต้องมี TLS (8883), login แยกเครื่อง และ ACL:** `mcold/v1/#` publish ได้เฉพาะ server

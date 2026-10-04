@@ -1,10 +1,10 @@
 ---
 name: User-Manual_EN
 lang: en
-version: 0.5
+version: 0.6
 status: draft
-date: 2026-10-04
-firmware: 0.7.0-dev
+date: 2026-10-05
+firmware: 0.7.0-dev.8
 ---
 
 # mCOLD Foam V.1 — User Manual
@@ -155,7 +155,8 @@ the box opens Bluetooth for the app for 60 seconds. The tap is also the
 permission: no pairing, no code.
 
 **Wi-Fi:** the box remembers up to 5 networks and joins the strongest. Staff
-set them up. On battery it connects briefly every 5 minutes to send new
+set them up from the app or the server, each with an automatic (DHCP) or a
+fixed address. On battery it connects briefly every 5 minutes to send new
 records; if it cannot, it waits longer between tries to save the battery.
 Records waiting to be sent stay on the box.
 
