@@ -77,15 +77,16 @@ void clock_str(char *out, size_t n) {
   if (t.quality == TimeSource::None) {
     // No time is dashes, never 00:00: a frame claiming a time it cannot
     // know is worse than one that admits it.
-    snprintf(out, n, "--/-- --:--");
+    snprintf(out, n, "--:-- --/--/--");
     return;
   }
   const time_t local = (time_t)(t.utc_ms / 1000) + config().tz_offset_min * 60;
   struct tm tm;
   gmtime_r(&local, &tm);
-  // Day/month and time (2026-10-04): a box looked at after a long trip
-  // should say which day its picture is from.
-  snprintf(out, n, "%02d/%02d %02d:%02d", tm.tm_mday, tm.tm_mon + 1, tm.tm_hour, tm.tm_min);
+  // Time, then the date (hh:mm DD/MM/YY, decided 2026-10-04): a box
+  // looked at after a long trip should say which day its picture is from.
+  snprintf(out, n, "%02d:%02d %02d/%02d/%02d", tm.tm_hour, tm.tm_min, tm.tm_mday,
+           tm.tm_mon + 1, tm.tm_year % 100);
 }
 
 Foot footer_state(const TripStatus &s, const PowerStatus &p, bool have_p) {

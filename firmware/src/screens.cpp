@@ -237,7 +237,13 @@ int icon(Canvas &c, const Icon &ic, int x, int bottom, Ink ink, bool off = false
       if (row[k] == '#') c.pixel(x + k, top + r, ink);
     }
   }
-  if (off) c.line(x - 1, top + ic.h, x + ic.w, top - 1, ink);
+  if (off) {
+    // One strike for every icon, the same length and angle whatever the
+    // icon's width (2026-10-04): drawn corner to corner it came out steep
+    // across the narrow GNSS pin and shallow across Wi-Fi and the cloud.
+    const int cx = x + ic.w / 2;
+    c.line(cx - 8, top + ic.h, cx + 8, top - 1, ink);
+  }
   return ic.w;
 }
 

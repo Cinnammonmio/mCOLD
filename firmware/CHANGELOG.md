@@ -137,7 +137,9 @@ Measured with the charger in HIZ: asleep ≤ 0.25 mA; awake ~130 mA
   is format 2 with a 24-byte SN (was 12). `MCOLD-xxxx` until set.
 - Screen: the reading centred on its own, the unit hanging off its right;
   the header in a new bold 12 px face with lower case (tools/genfont.py)
-  and the local date with the time (`04/10 22:50`); everything drawn
+  and the local time with the date (`22:50 04/10/26`, regular 11 px:
+  bold and medium hinted the 1 heavier than the other digits); every
+  crossed-out footer icon gets the same strike; everything drawn
   inside the area the case leaves visible, `epd_inset_t/b/l/r`, measured
   with `screen cal` (six frames 3 px apart).
 - Lights in two families: warnings keep their place and colour (red left
