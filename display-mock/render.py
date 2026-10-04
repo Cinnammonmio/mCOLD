@@ -51,6 +51,7 @@ READING = font("Light", 15)      # min/max and charge-row values
 READINGS = [font("Light", s) for s in (15, 13, 12)]  # right-aligned values
 STATUS = font("Medium", 13)      # charge state word
 TITLE = font("Bold", 26)         # takeover headline
+TITLE_S = font("Bold", 20)       # READY headline, under the arrow
 BIG = font("Bold", 44)           # state of charge
 HEROES = [font("Bold", s) for s in (80, 72, 64)]
 HERO_UNIT = font("Bold", 20)     # the C of the unit; the ring is drawn
@@ -78,6 +79,7 @@ ICON_BOTTOM = 120   # footer icons stop one row above this
 # not. The battery is the one exception: it is a gauge, so it is drawn
 # from its value rather than blitted.
 ICONS = icons.bitmaps()
+TAP = icons.tap_rows()
 BATT_W, BATT_H = 11, icons.ICON_H
 
 
@@ -150,7 +152,7 @@ class Screen:
         self.text((EDGE_R, BASE_BAR), clock, CAPS, WHITE, anchor="rs", track=TRACK)
 
     def footer(self, *, trip=False, shock=False, wifi=False, cloud=False,
-               gnss=False, charging=False, battery=78, storage=6):
+               gnss=False, charging=False, battery=78, storage=6, note=None):
         """One row of state. `storage` is percent USED, so both readings
         move toward their own bad news and the red rule reads the same way
         for each. No SD indicator -- the card is optional and not
@@ -163,8 +165,14 @@ class Screen:
         # like "not refreshed". The two that come and go sit after them,
         # so neither ever shifts what is already there.
         x = M
-        for name, on in (("wifi", wifi), ("cloud", cloud), ("gnss", gnss)):
-            x += self.icon(name, x, ICON_BOTTOM, off=not on) + GAP
+        if note:
+            # READY: a still frame, so no live link icons -- they would be
+            # out of date within the hour and the frame is meant to stay.
+            self.text((M, BASE_FOOT), note, CAPS, track=TRACK)
+            x += self.width(note, CAPS, TRACK) + GAP
+        else:
+            for name, on in (("wifi", wifi), ("cloud", cloud), ("gnss", gnss)):
+                x += self.icon(name, x, ICON_BOTTOM, off=not on) + GAP
         if trip:
             x += self.icon("trip", x, ICON_BOTTOM) + GAP
         if shock:
@@ -341,13 +349,53 @@ def monitor(name, *, device="MCOLD-0117", clock="14:32", temp="4.2",
 
 
 # ---------------------------------------------------------------------
+# Ready -- no trip. One instruction and nothing that goes stale: no clock,
+# no temperature, no link icons, so the frame stays until a trip starts
+# or the battery has moved 5 % (decided 2026-10-05).
+# ---------------------------------------------------------------------
+def ready(name, *, device="mCDV1-L0169-1069-001", low=False, **flags):
+    s = Screen(name)
+    s.header(device, "")
+    # The arrow, centred, points at the tag: the NFC antenna sits above the
+    # middle of the panel (decided 2026-10-05).
+    m = Image.new("L", (W, H), 0)
+    d = mono(m)
+    cx, tip = W // 2, BAR + 3
+    d.polygon([(cx, tip), (cx + 9, tip + 9), (cx + 2, tip + 9), (cx + 2, tip + 16),
+               (cx - 2, tip + 16), (cx - 2, tip + 9), (cx - 9, tip + 9)], fill=255)
+    top = RULE - 6 - len(TAP)
+    for y, row in enumerate(TAP):
+        for x, ch in enumerate(row):
+            if ch == "#":
+                m.putpixel((M + x, top + y), 255)
+    s._stamp(m, BLACK)
+    x = M + len(TAP[0]) + 10
+    s.text((x, 56), "SCAN TO", TITLE_S)
+    s.text((x, 77), "START TRIP", TITLE_S)
+    if low:
+        s.text((x, 94), "Battery low. Charge first.", BODY, RED)
+    else:
+        s.text((x, 94), "Hold your phone to the box.", BODY)
+    for line, fnt in (("START TRIP", TITLE_S), ("Hold your phone to the box.", BODY),
+                      ("Battery low. Charge first.", BODY)):
+        if x + s.width(line, fnt) > EDGE_R:
+            print(f"  warn {name}: {line!r} overflows by "
+                  f"{round(x + s.width(line, fnt) - EDGE_R)} px")
+    s.footer(note="NO ACTIVE TRIP", **flags)
+    return s.save()
+
+
+# ---------------------------------------------------------------------
 # Charge screen -- no temperature; the full charging picture instead.
 # ---------------------------------------------------------------------
 def charge(name, *, device="MCOLD-0117", clock="14:32", soc=62,
            state="FAST CHARGE", rows=(), **flags):
     s = Screen(name)
     s.header(device, clock)
-    s.text((M, 66), f"{soc}%", BIG)
+    # The number big, the sign small: "100%" in the big face is 121 px and
+    # ran into the rows beside it (2026-10-05).
+    s.text((M, 66), f"{soc}", BIG)
+    s.text((M + s.width(f"{soc}", BIG) + 2, 66), "%", STATUS)
     s.text((M, 90), state, STATUS, track=0.4)
     col = 104
     for i, (label, value) in enumerate(rows):
@@ -415,9 +463,10 @@ def build():
     OUT.mkdir(exist_ok=True)
     add = SCREENS.append
 
-    add(("A1  IDLE / READY", monitor(
-        "A1_idle", minmax=None, note="NO ACTIVE TRIP",
-        wifi=True, cloud=True, gnss=True, battery=78, storage=6)))
+    add(("A1  READY (NO TRIP)", ready("A1_idle", battery=78, storage=2)))
+    add(("A1b READY, LOW BATTERY", ready("A1b_idle_low", low=True, battery=9, storage=2)))
+    add(("A1c READY, CHARGING", ready("A1c_idle_charging", charging=True, battery=64,
+                                       storage=2)))
 
     add(("A2  TRIP ACTIVE", monitor("A2_trip", **LIVE)))
 
@@ -434,12 +483,12 @@ def build():
         trip=True, wifi=False, cloud=False, battery=16, storage=6)))
 
     add(("A6  CHARGING", charge(
-        "A6_charging", soc=62, state="FAST CHARGE", rows=(
+        "A6_charging", soc=100, state="FAST CHARGE", rows=(
             ("SOURCE", "DOCK PD 20V"),
             ("CURRENT", "1.18 A"),
             ("FULL IN", "42 MIN")),
         charging=True, wifi=True, cloud=True, gnss=True,
-        battery=62, storage=6)))
+        battery=100, storage=6)))
 
     add(("B1  BOOT / SELF-TEST", takeover(
         "B1_boot", clock="--:--", title="SELF-TEST", sub="Checking sensors and storage",

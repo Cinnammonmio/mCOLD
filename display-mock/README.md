@@ -35,7 +35,9 @@ python display-mock/icons.py       # แถบพรีวิวไอคอน 
 
 | Code | State | ไฟล์ |
 |---|---|---|
-| A1 | IDLE / READY | `A1_idle.png` |
+| A1 | READY — ไม่มี trip: "SCAN TO START TRIP" | `A1_idle.png` |
+| A1b | READY แบตต่ำ (เริ่ม trip ไม่ได้) | `A1b_idle_low.png` |
+| A1c | READY ระหว่างชาร์จ | `A1c_idle_charging.png` |
 | A2 | TRIP ACTIVE | `A2_trip.png` |
 | A3 | OUT OF BAND | `A3_warning.png` |
 | A4 | ALARM | `A4_alarm.png` |
