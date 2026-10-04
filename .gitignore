@@ -4,3 +4,7 @@ mcold-spec/mcold_spec.html
 # PlatformIO build output
 .pio/
 __pycache__/
+
+# Files made for people, not sources: trip CSVs pulled from a box (they
+# can carry positions) and copies of the PDFs packed for sending.
+exports/
