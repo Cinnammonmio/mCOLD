@@ -1,7 +1,7 @@
 ---
 name: Server-Brief_MQTT
 lang: th
-version: 0.1
+version: 0.2
 status: draft
 date: 2026-10-04
 firmware: 0.7.0-dev
@@ -25,7 +25,8 @@ firmware: 0.7.0-dev
 
 ## 2. การเชื่อมต่อ
 
-- client id = รหัสเครื่อง (`sn`) เช่น `MCOLD-9A74`
+- client id = รหัสเครื่อง (`sn`) ตามฉลาก เช่น `mCDV1-L0169-1069-001` (ตัวพิมพ์เล็ก-ใหญ่มีผล)
+  กล่องที่ยังไม่ได้ตั้ง SN จากโรงงานจะใช้ชื่อชั่วคราว `MCOLD-xxxx`
 - broker และ login ตั้งในเครื่องแต่ละกล่อง ไม่อยู่ใน firmware หรือ git
 - ทุก topic อยู่ใต้ `mcold/<sn>/`
 
@@ -41,7 +42,7 @@ firmware: 0.7.0-dev
 ## 3. ข้อมูลที่กล่องส่งขึ้นมา
 
 ```
-{"sn":"MCOLD-9A74","trip":8,"schema":1,"from":0,"to":15,
+{"sn":"mCDV1-L0169-1069-001","trip":8,"schema":1,"from":0,"to":15,
  "records":[{"seq":0,"type":1,"data":"<base64>"}, ...]}
 ```
 
@@ -77,6 +78,9 @@ firmware: 0.7.0-dev
 | 39 | u8 | สถานะการชาร์จ |
 | 40 | u16 | alarm ที่ active (bit ต่อ alarm) |
 | 42 | u16 | อุปกรณ์ที่ทำงานผิดปกติ (bit ต่ออุปกรณ์) |
+
+**เริ่ม trip (type 1)** — มีช่วง alarm, รอบการบันทึก, ค่าสอบเทียบ, เวอร์ชัน firmware
+และ SN (offset 58, ยาว 24 byte ใน header format 2 — format 1 เดิมยาว 12 byte)
 
 **Event (type 3)** — byte 11 คือรหัส event: 1 รีเซ็ตแล้วทำ trip ต่อ, 4 ขยับ, 5 probe เสีย,
 6 probe กลับมาปกติ, 7 alarm เกิด, 8 alarm หาย, 9 รับทราบ alarm, 10 ตั้งเวลา,

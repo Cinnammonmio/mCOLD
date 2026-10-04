@@ -1,9 +1,9 @@
 ---
 name: Quick-Guide
 lang: th
-version: 0.1
+version: 0.2
 status: draft
-date: 2026-10-03
+date: 2026-10-04
 firmware: 0.7.0-dev
 compact: yes
 ---
@@ -12,13 +12,13 @@ compact: yes
 
 ## 1. เปิดเครื่อง · Switch on
 
-เลื่อนสวิตช์เปิดเครื่อง ไฟหน้า 3 ดวงกวาดสีขาว แล้วกะพริบเขียว = พร้อมใช้งาน
+เลื่อนสวิตช์เปิดเครื่อง ไฟหน้า 3 ดวงกวาดน้ำเงิน ม่วง ฟ้า แล้วกะพริบฟ้า = พร้อมใช้งาน
 
-Slide the power switch on. The three front lights sweep white, then blink green: ready.
+Slide the power switch on. The front lights sweep blue, violet, cyan, then blink cyan: ready.
 
-กะพริบเหลือง 3 ครั้งแทนสีเขียว = เครื่องมีปัญหา ดูหัวข้อ 6
+กะพริบเหลือง 3 ครั้งแทน = เครื่องมีปัญหา ดูหัวข้อ 6 · แดงและเหลืองคือการเตือนเสมอ น้ำเงิน ม่วง ฟ้า คือปกติ
 
-Three amber blinks instead of green: the box has a problem, see 6.
+Three amber blinks instead: the box has a problem, see 6. Red and amber always warn; blue, violet and cyan are normal.
 
 ## 2. ชาร์จ · Charge
 
@@ -26,9 +26,9 @@ Three amber blinks instead of green: the box has a problem, see 6.
 
 | ไฟข้างเครื่อง · Side light | ความหมาย · Meaning |
 |---|---|
-| เหลือง หายใจ · breathing yellow | กำลังชาร์จ · charging |
-| เขียว หายใจ · breathing green | เกือบเต็ม (≥ 80%) · nearly full |
-| เขียวค้าง · steady green | เต็ม · full |
+| น้ำเงิน หายใจ · breathing blue | กำลังชาร์จ · charging |
+| ฟ้า หายใจ · breathing cyan | เกือบเต็ม (≥ 80%) · nearly full |
+| ฟ้าค้าง · steady cyan | เต็ม · full |
 | เหลือง กะพริบช้า · slow yellow blink | มีไฟแต่ไม่ชาร์จ · power in, not charging |
 | แดง กะพริบ · red blink | ชาร์จผิดปกติ · charge fault |
 
@@ -38,15 +38,15 @@ Three amber blinks instead of green: the box has a problem, see 6.
 
 The battery must be charged enough; a low battery refuses a new trip.
 
-ไฟกลางกะพริบเขียว 3 ครั้ง = เริ่ม trip แล้ว
+ไฟกลางกะพริบฟ้า 3 ครั้ง = เริ่ม trip แล้ว
 
-Three green blinks on the middle light: the trip has started.
+Three cyan blinks on the middle light: the trip has started.
 
 ## 4. ระหว่างเดินทาง · During the trip
 
 - เครื่องบันทึกอุณหภูมิทุก 5 นาที · Temperature is recorded every 5 minutes.
 - จอแสดงอุณหภูมิล่าสุดและต่ำสุด–สูงสุด · The screen shows the latest temperature with min/max.
-- ไฟกลางกะพริบเขียวสั้นๆ ทุก 15 นาที = ทำงานปกติ · A short green blink every 15 min: working normally.
+- ไฟกลางกะพริบฟ้าสั้นๆ ทุก 15 นาที = ทำงานปกติ · A short cyan blink every 15 min: working normally.
 
 ## 5. Alarm อุณหภูมิ · Temperature alarm
 

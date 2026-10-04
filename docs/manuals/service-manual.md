@@ -1,9 +1,9 @@
 ---
 name: Service-Manual
 lang: en
-version: 0.2
+version: 0.3
 status: draft
-date: 2026-10-03
+date: 2026-10-04
 firmware: 0.7.0-dev
 hardware: foam V1.0.1
 ---
@@ -68,12 +68,14 @@ even on USB — set it back to 0 first.
 | `health` | Every device, its state and readings; battery, charger, rails |
 | `tasks` | Task heartbeats, heap |
 | `version` | Firmware version and image hash |
+| `sn` · `sn set S` | The serial number; factory sets it, then reboot (screen, BLE, NFC, MQTT, records) |
 | `accel` / `gnss` / `nfc` | Sensor detail |
 | `led I R G B` · `ledtest [S] [N]` · `beep MS` | Lights and buzzer by hand |
 | `config` · `config set K V` · `config reset` | Settings (section 5) |
 | `trip` · `trip start [L H [HYST DWELL]]` · `trip stop` · `trip ack` · `trip dump [N]` | Trips from the bench |
 | `log` · `logtest` | Trip log status; power-cut self-test (14 cases) |
 | `screen` · `screen N` · `screen rot 1\|3` | Redraw, design pages, orientation |
+| `screen cal` | Six frames 3 px apart: count those visible per side, inset = (6 − count) × 3 |
 | `wifi` / `sync` | Wi-Fi and upload status |
 | `wifi add SSID PASS` · `wifi del SSID` | Known networks (up to 5) |
 | `mqtt set HOST PORT [USER PASS]` | Broker and login |
@@ -115,7 +117,9 @@ range and whether it is the default.
 | `batt_off_mv` | 3000–3700 | 3400 | Below it, on battery, the box switches itself off |
 | `batt_mah` | 300–6000 | 1500 | Rated cell capacity, until one is learned |
 | `sleep_ua` | 0–5000 | 250 | Current asleep, for counting charge through a sleep |
+| `soc_source` | 0–1 | 0 | Percent shown: 0 voltage (OCV table), 1 counted |
 | `tz_offset_min` | −720–840 | 420 | Display time zone (records are UTC) |
+| `epd_inset_t/b/l/r` | 0–20 / 0–30 | 0 | Panel pixels the case hides on each side (`screen cal`) |
 | `buzzer_enabled` | 0–1 | 1 | Alarm sound |
 | `sleep_en` | 0–1 | 1 | Deep sleep on battery |
 | `idle_wake_s` | 300–86400 | 3600 | Longest sleep with nothing due |
@@ -123,13 +127,14 @@ range and whether it is the default.
 | `upload_period_s` | 60–86400 | 300 | On battery: one upload session this often |
 | `sleep_usb` | 0–1 | 0 | Bench: behave as on battery with USB in |
 | `sleep_meas` | 0–1 | 0 | Bench: measure each sleep's current (+0.33 mA) |
+| `light_sleep` | 0–1 | 0 | Trial: light sleep between tasks while awake, on battery |
 
 Wi-Fi and broker credentials are separate (`wifi add`, `mqtt set`) and never
 appear in documents or the repository.
 
 ## 6. Provisioning a new box
 
-1. Flash the current release.
+1. Flash the current release; `sn set <label SN>`, then `reboot`.
 2. `health`: every fitted device `ok` (pd, buzzer, sd show `unknown` until used).
 3. `logtest`: all 14 pass.
 4. `ledtest` and `beep 150`: check each light and the buzzer by eye and ear.
