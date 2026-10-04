@@ -3,7 +3,7 @@ name: MQTT-Topics
 lang: th
 version: 1.0
 date: 2026-10-05
-firmware: 0.7.0-dev.4
+firmware: 0.7.0-dev.5
 ---
 
 # mCOLD — MQTT topics
@@ -35,7 +35,7 @@ firmware: 0.7.0-dev.4
 
 | Topic | กล่อง | Server | QoS | Retain | เนื้อหา |
 |---|---|---|---|---|---|
-| `mcold/<sn>/rec` | **pub** | **sub** | 1 | ไม่ | ชุดแถว log ไม่เกิน 16 แถว |
+| `mcold/<sn>/rec` | **pub** | **sub** | 1 | ไม่ | แถว log ของ trip **ที่จบแล้ว** ก้อนละ 20 แถว |
 | `mcold/<sn>/status` | **pub** | **sub** | 0 | ใช่ | สถานะล่าสุดของกล่อง |
 | `mcold/<sn>/online` | **pub** + last will | **sub** | 1 | ใช่ | `"1"` ต่ออยู่ / `"0"` จบ session หรือหลุด |
 | `mcold/<sn>/ota/state` | **pub** | **sub** | 1 | ใช่ | ผลการอัปเดต firmware |
@@ -52,7 +52,8 @@ firmware: 0.7.0-dev.4
 ### `mcold/<sn>/rec` — แถว log
 
 ```json
-{"sn":"mCDV1-L0169-1069-001","trip":11,"schema":3,"from":0,"to":15,
+{"sn":"mCDV1-L0169-1069-001","trip":11,"schema":3,"part":1,"parts":1,
+ "from":0,"to":6,"last":true,
  "rows":[
   {"trip":11,"seq":1,"sn":"mCDV1-L0169-1069-001","timestamp":"02:47:27 05/10/2026",
    "utc":1791143247,"event":"SAMPLE","temp":4.25,"tempmin":2,"tempmax":8,"alarm":"",
@@ -60,6 +61,8 @@ firmware: 0.7.0-dev.4
    "motion":0,"battery":97,"internet":"online","detail":""}, ...]}
 ```
 
+ส่งเฉพาะ trip ที่จบแล้ว ก้อนละ 20 แถว (ก้อนที่ k = `seq` 20(k−1)…20k−1) · `last: true` คือก้อนสุดท้าย
+ระหว่าง trip ส่งแค่ `status` — ดู [`trip-data-flow.md`](trip-data-flow.md)
 ทุกแถวมี column ชุดเดียวกัน ไม่ว่าจะเป็น sample หรือ event · **key คือ (sn, trip, seq)**
 ความหมายของแต่ละ column และรายการ event อยู่ใน brief ข้อ 3
 
@@ -77,7 +80,8 @@ firmware: 0.7.0-dev.4
 ```json
 {"time":{"utc":1791143247,"quality":"ntp","boot":42},
  "temp":{"ok":true,"c":4.25},
- "trip":{"active":true,"id":11,"samples":12,"min":3.5,"max":5.25,"alarms":[],"acked":false},
+ "trip":{"active":true,"id":11,"samples":12,"min":3.5,"max":5.25,"alarms":[],"acked":false,
+         "alarms_raised":1,"last_alarm":{"type":"HIGH","utc":1791146150}},
  "power":{"soc":78,"mv":3987,"ma":-12,"charge":"none","external":false},
  "gnss":{"fix":false,"lat":null,"lon":null,"age_s":null},
  "storage":{"used_pct":1},

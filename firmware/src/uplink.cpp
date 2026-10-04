@@ -39,6 +39,7 @@ char t_rec[64], t_ack[64], t_status[64], t_online[64], t_fw[64], t_ota[64];
 
 esp_mqtt_client_handle_t g_client = nullptr;
 volatile bool g_mqtt = false;
+volatile bool g_status_now = false;   // connected again: the status first
 volatile bool g_started = false;
 TaskHandle_t g_task = nullptr;
 SemaphoreHandle_t g_mx = nullptr;
@@ -50,7 +51,6 @@ struct Flight {
   uint32_t trip, from, to, sent_at;
 };
 Flight g_flight = {};
-bool g_last_was_live = false;
 
 uint32_t g_batches = 0, g_acks = 0, g_rejected = 0;
 uint32_t g_ack_wait = UPLINK_ACK_TIMEOUT_MS;   // grows while the server is silent
@@ -167,6 +167,7 @@ void on_mqtt(void *, esp_event_base_t, int32_t id, void *data) {
       esp_mqtt_client_publish(g_client, t_online, "1", 1, 1, 1);
       printf("[uplink] connected to %s:%u\n", g_host, g_port);
       ota_on_connected();       // what a new image proves itself by
+      g_status_now = true;      // what happened while out of reach, at once
       if (g_task) xTaskNotifyGive(g_task);
       break;
     case MQTT_EVENT_DISCONNECTED:
@@ -210,7 +211,7 @@ void start_client(void) {
   c.session.last_will.qos = 1;
   c.session.last_will.retain = 1;
   c.buffer.size = 1024;
-  c.buffer.out_size = 8192;           // a full batch: 16 rows of ~330 bytes
+  c.buffer.out_size = 12288;          // a full part: 20 rows of ~350 bytes
   g_client = esp_mqtt_client_init(&c);
   if (!g_client) return;
   esp_mqtt_client_register_event(g_client, MQTT_EVENT_ANY, on_mqtt, nullptr);
@@ -232,6 +233,7 @@ struct Batch {
   uint32_t last;
   RowHeader h;
   int tz;
+  uint32_t end;     // the part's last seq on the grid
 };
 
 // Each record as the row the server stores: the same columns as the CSV
@@ -243,7 +245,8 @@ bool collect(const LogRecord &r, void *ctx) {
     cJSON_AddItemToArray(b->arr, row_json(row, r.trip, r.seq, g_sn, b->h, b->tz));
   }
   b->last = r.seq;
-  return ++b->n < UPLINK_BATCH;
+  ++b->n;
+  return r.seq < b->end;
 }
 
 // The trip's header row (its tempmin/tempmax go on every row). False for
@@ -275,29 +278,24 @@ bool skip_legacy(uint32_t trip, uint32_t last) {
   return true;
 }
 
-// The next trip with records the server has not confirmed. Oldest first,
-// but the running trip gets every other batch, so live samples are not
-// stuck behind a month of backlog (§9.5).
-bool pick(uint32_t *trip, uint32_t *from) {
+// The next finished trip with rows the server has not confirmed, oldest
+// first. The running trip is not uploaded: its rows go once it has ended,
+// as a whole (decided 2026-10-05) -- while it runs, the server gets the
+// status.
+bool pick(uint32_t *trip, uint32_t *from, uint32_t *last_seq) {
   TripStatus s;
   trip_status(&s);
   uint32_t trips[64];
   const int n = flashlog_trips(trips, 64);
   uint32_t last;
-  if (s.active && !g_last_was_live && flashlog_last_seq(s.id, &last) &&
-      last >= ack_get(s.id) && !skip_legacy(s.id, last)) {
-    *trip = s.id;
-    *from = ack_get(s.id);
-    g_last_was_live = true;
-    return true;
-  }
   for (int i = 0; i < n && i < 64; i++) {
     if (trips[i] > TRIP_ID_REAL_MAX) continue;      // bench records stay home
+    if (s.active && trips[i] == s.id) continue;
     const uint32_t a = ack_get(trips[i]);
     if (flashlog_last_seq(trips[i], &last) && last >= a && !skip_legacy(trips[i], last)) {
       *trip = trips[i];
       *from = a;
-      g_last_was_live = s.active && trips[i] == s.id;
+      *last_seq = last;
       return true;
     }
   }
@@ -305,13 +303,19 @@ bool pick(uint32_t *trip, uint32_t *from) {
 }
 
 void send_batch(void) {
-  uint32_t trip, from;
-  if (!pick(&trip, &from)) return;
+  uint32_t trip, from, last;
+  if (!pick(&trip, &from, &last)) return;
+  // A part is a slot on the 20-row grid; after a partial ACK the rest of
+  // that slot goes, so the parts stay the same however the ACKs fell.
+  const uint32_t part = from / UPLINK_BATCH;
   cJSON *o = cJSON_CreateObject();
   cJSON_AddStringToObject(o, "sn", g_sn);
   cJSON_AddNumberToObject(o, "trip", trip);
   cJSON_AddNumberToObject(o, "schema", ROW_HEADER_FORMAT);
-  Batch b = {cJSON_AddArrayToObject(o, "rows"), 0, from, {}, config().tz_offset_min};
+  cJSON_AddNumberToObject(o, "part", part + 1);
+  cJSON_AddNumberToObject(o, "parts", last / UPLINK_BATCH + 1);
+  Batch b = {cJSON_AddArrayToObject(o, "rows"), 0, from, {}, config().tz_offset_min,
+             (part + 1) * UPLINK_BATCH - 1};
   trip_header(trip, &b.h);
   flashlog_read(trip, from, collect, &b, nullptr);
   if (!b.n) {
@@ -320,6 +324,7 @@ void send_batch(void) {
   }
   cJSON_AddNumberToObject(o, "from", from);
   cJSON_AddNumberToObject(o, "to", b.last);
+  cJSON_AddBoolToObject(o, "last", b.last >= last);
   char *s = cJSON_PrintUnformatted(o);
   cJSON_Delete(o);
   if (!s) return;
@@ -430,24 +435,36 @@ void battery_pass(void) {
     // and then with nothing to send, so a status and a firmware message
     // still reach a box that is not on a trip; and at once for a new image
     // that has to reach the broker to be kept.
-    const bool records = n && (!g_plan.next_at || (int32_t)(t - g_plan.next_at) >= 0);
+    TripStatus ts;
+    trip_status(&ts);
+    // Rows of finished trips, and while a trip runs its status, on the
+    // upload schedule (which backs off when nobody answers).
+    const bool sched = (n || ts.active) && (!g_plan.next_at || (int32_t)(t - g_plan.next_at) >= 0);
+    const bool records = can && sched;
     const bool checkin = can && (!g_plan.checkin_at || (int32_t)(t - g_plan.checkin_at) >= 0);
     const bool urgent = can && ota_needs_broker();
     if (!records && !checkin && !urgent) {
       stop_client();          // left over from USB power
       net_want(false);
-      uint32_t at = n ? g_plan.next_at : 0;
+      uint32_t at = (n || ts.active) ? g_plan.next_at : 0;
       if (can && (!at || (int32_t)(g_plan.checkin_at - at) < 0)) at = g_plan.checkin_at;
       pm_next(Duty::Uplink, at);
       pm_done(Duty::Uplink);
       return;
     }
     g_ses = {true, t, false, false, g_acks, 0, false};
+    // A batch left in flight from USB power is not this session's: without
+    // this, the first look saw it overdue and ended the session at once,
+    // counted as a server that does not answer.
+    xSemaphoreTake(g_mx, portMAX_DELAY);
+    g_flight.on = false;
+    xSemaphoreGive(g_mx);
     pm_hold(Hold::Uplink, true);
     pm_no_light_sleep(true);    // Wi-Fi and the broker, without naps in between
     net_want(true);
-    printf("[uplink] session: %lu records waiting%s\n", (unsigned long)n,
-           urgent ? ", a new image to confirm" : (!records ? " (check-in)" : ""));
+    printf("[uplink] session: %lu rows waiting%s\n", (unsigned long)n,
+           urgent ? ", a new image to confirm"
+           : !records ? " (check-in)" : !n ? " (trip status)" : "");
   }
 
   NetStatus ns;
@@ -513,8 +530,10 @@ void task(void *) {
     // Status on change, and every five minutes regardless.
     TripStatus s;
     trip_status(&s);
-    if (!status_at || now_ms() - status_at > 300000 || s.active != prev.active ||
-        s.alarms_active != prev.alarms_active || s.samples != prev.samples) {
+    if (g_status_now || !status_at || now_ms() - status_at > 300000 ||
+        s.active != prev.active || s.alarms_active != prev.alarms_active ||
+        s.samples != prev.samples) {
+      g_status_now = false;
       publish_status();
       status_at = now_ms();
       prev = s;
@@ -584,6 +603,18 @@ bool uplink_configured(void) { return g_host[0] != 0; }
 
 uint32_t uplink_acked(uint32_t trip) { return ack_get(trip); }
 
+bool uplink_mark_delivered(uint32_t trip, uint32_t *last_seq) {
+  uint32_t last;
+  if (!flashlog_last_seq(trip, &last)) return false;
+  xSemaphoreTake(g_mx, portMAX_DELAY);
+  if (last + 1 > ack_get(trip)) ack_put(trip, last + 1);
+  if (g_flight.on && g_flight.trip == trip) g_flight.on = false;
+  xSemaphoreGive(g_mx);
+  if (last_seq) *last_seq = last;
+  printf("[uplink] trip %08lX delivered by the app: not uploaded\n", (unsigned long)trip);
+  return true;
+}
+
 bool uplink_fully_acked(uint32_t trip) {
   uint32_t last;
   if (!flashlog_last_seq(trip, &last)) return true;   // nothing left to send
@@ -621,9 +652,12 @@ void uplink_status(UplinkStatus *out) {
   out->next_session_ms = g_plan.next_at;
   uint32_t trips[64];
   const int n = flashlog_trips(trips, 64);
+  TripStatus s;
+  trip_status(&s);
   for (int i = 0; i < n && i < 64; i++) {
     uint32_t last;
     if (trips[i] > TRIP_ID_REAL_MAX || !flashlog_last_seq(trips[i], &last)) continue;
+    if (s.active && trips[i] == s.id) continue;     // sent once it has ended
     const uint32_t a = ack_get(trips[i]);
     if (last + 1 > a) out->records_pending += last + 1 - a;
   }

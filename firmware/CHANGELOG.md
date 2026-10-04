@@ -38,6 +38,20 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Trip rows go up after the trip** (decided 2026-10-05,
+  `docs/trip-data-flow.md`). While a trip runs its rows stay in the box
+  and the server gets the status -- now with `alarms_raised` and
+  `last_alarm`, sent at once when the broker answers again. A finished
+  trip goes up in parts of 20 rows on a fixed grid (`part`, `parts`,
+  `last`), oldest first, across sessions. The app's "stop and send" pulls
+  the trip over BLE and gives it to the server itself, then
+  `MARK_DELIVERED` tells the box not to upload it; `LIST_TRIPS` says
+  which trips are `sent`, and the trip summary page says SENT / NOT SENT.
+  On battery a status session every upload period while a trip runs.
+  Fixed: going from USB to battery ended the first session at once (a
+  batch from USB power looked overdue) and counted it as a miss.
+  0.7.0-dev.5.
+
 - **Topics as eTEMP has them** (decided 2026-10-05): what the box
   publishes is `mcold/<sn>/rec|status|online|ota/state`, what it
   subscribes to is `mcold/v1/<sn>/ack|firmware`. Summary for everyone in

@@ -43,7 +43,19 @@ struct Totals {
   int16_t min_c100, max_c100;
   uint16_t alarms_raised;
   uint32_t motion;
+  uint8_t last_alarm;       // Alarm, 0xFF none
+  uint32_t last_alarm_utc;
 };
+
+uint8_t alarm_of(uint8_t ev) {
+  switch (ev) {
+    case RE_ALARM_HIGH:  return AL_TEMP_HIGH;
+    case RE_ALARM_LOW:   return AL_TEMP_LOW;
+    case RE_ALARM_PROBE: return AL_PROBE;
+    case RE_BATTERY_LOW: return AL_BATTERY;
+  }
+  return 0xFF;
+}
 Totals g_t = {};
 
 // Latest inputs.
@@ -265,6 +277,10 @@ void raise_alarm(uint8_t a, int16_t value) {
   g_alarms |= (uint16_t)(1u << a);
   g_acked = false;
   g_t.alarms_raised++;
+  TimeStamp ts;
+  time_now(&ts);
+  g_t.last_alarm = a;
+  g_t.last_alarm_utc = ts.quality == TimeSource::None ? 0 : (uint32_t)(ts.utc_ms / 1000);
   event(ev, a == AL_BATTERY ? value : 0);
   printf("[trip] ALARM %s\n", alarm_name(a));
 }
@@ -351,6 +367,8 @@ bool rebuild_visit(const LogRecord &r, void *ctx) {
     case RE_ALARM_PROBE:
     case RE_BATTERY_LOW:
       b->t.alarms_raised++;
+      b->t.last_alarm = alarm_of(row.event);
+      b->t.last_alarm_utc = row.time_q ? row.utc : 0;
       b->acked = false;
       break;
     case RE_ALARM_ACK:
@@ -674,6 +692,8 @@ void trip_status(TripStatus *out) {
   out->min_c100 = g_t.min_c100;
   out->max_c100 = g_t.max_c100;
   out->lost_trips = g_lost_trips;
+  out->last_alarm = g_t.alarms_raised ? g_t.last_alarm : 0xFF;
+  out->last_alarm_utc = g_t.alarms_raised ? g_t.last_alarm_utc : 0;
 }
 
 uint32_t trip_last_id(void) { return g_active ? g_id : g_last_id; }

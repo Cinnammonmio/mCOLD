@@ -632,7 +632,7 @@ PC companion ใช้ topology ร่วมกับ serial/device ID เพื
 | Trip workflow | เริ่ม Trip ด้วย NFC+แอป/BLE; stop/report | REQ เริ่ม Trip + PROPOSED รายละเอียด |
 | NFC | ID/NDEF/link/app handoff/GPO wake | REQ แนวทาง + PROPOSED protocol |
 | BLE | iOS status/config/control/download | REQ ช่องทาง + PROPOSED services |
-| Wi-Fi | live upload ระหว่าง Trip และ incremental backlog upload เมื่อกลับมา online | REQ; server API/ACK ยัง VERIFY |
+| Wi-Fi | live upload ระหว่าง Trip และ incremental backlog upload เมื่อกลับมา online · **เปลี่ยน 2026-10-05:** ระหว่าง Trip ส่งแค่ status (live), แถวทั้ง Trip ส่งหลังจบ ทาง Wi-Fi หรือแอป (`docs/trip-data-flow.md`) | REQ; server API/ACK ยัง VERIFY |
 | USB MSC / CSV | PC/NB เห็น Flash Drive ที่มี CSV แยก Trip แม้ไม่มี SD | REQ; read-only snapshot เป็น PROPOSED |
 | USB control | optional CDC/vendor commands ร่วมกับ MSC | PROPOSED |
 | Dock 6 เครื่อง | PC คุย Device 6 ตัวผ่าน hub | REQ |

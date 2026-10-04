@@ -73,6 +73,11 @@ struct TripStatus {
   bool out_of_band;            // outside the thresholds now, alarm or not
   int16_t min_c100, max_c100;
   uint32_t lost_trips;      // deleted to make room, since the device was new
+  // The latest alarm raised in this trip (0xFF: none) and when, UTC s
+  // (0: unknown): with alarms_raised, what a server that was out of reach
+  // learns from the status when the box gets through again.
+  uint8_t last_alarm;
+  uint32_t last_alarm_utc;
 };
 
 // After the log, config and time are up. Resumes a trip that a reset

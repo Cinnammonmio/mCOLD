@@ -67,7 +67,7 @@ struct UplinkStatus {
   uint32_t batches_sent;
   uint32_t acks;           // application ACKs accepted
   uint32_t acks_rejected;  // malformed, unknown trip, or beyond the log
-  uint32_t records_pending;
+  uint32_t records_pending;   // rows of finished trips not yet delivered
   uint32_t last_ack_ms;    // mono_ms(); 0: never
   // Battery sessions
   uint32_t sessions;
@@ -76,12 +76,18 @@ struct UplinkStatus {
 };
 void uplink_status(UplinkStatus *out);
 
-static const int UPLINK_BATCH = 16;              // records per batch
+// Rows per message, on a grid: part k carries seq 20(k-1) .. 20k-1, so a
+// trip is the same parts whoever counts them (decided 2026-10-05).
+static const int UPLINK_BATCH = 20;
 static const uint32_t UPLINK_ACK_TIMEOUT_MS = 15000;     // first wait for an ACK
 static const uint32_t UPLINK_ACK_WAIT_MAX_MS = 300000;   // the longest, when silent
 // On battery with nothing to send, a session anyway this often: a status,
 // and a firmware message, for a box that is not on a trip.
 static const uint32_t UPLINK_CHECKIN_MS = 6 * 3600000;
+
+// The app delivered trip `trip` to the server itself (MARK_DELIVERED):
+// marked as sent, never uploaded. False if the log has no such trip.
+bool uplink_mark_delivered(uint32_t trip, uint32_t *last_seq);
 
 // Hand an ACK in as though the server had sent it: for the bench, before
 // the server side exists. It goes through every check a real one does.

@@ -202,7 +202,9 @@ void build(const TripStatus &s, const char *clock) {
     else snprintf(alarms, sizeof(alarms), "none");
     snprintf(samples, sizeof(samples), "%lu", (unsigned long)g_closed.samples);
     const Row rows[] = {{"Samples", samples}, {"Temperature", range}, {"Alarms", alarms}};
-    scr_detail(g_draw, g_sn, clock, f, title, "CLOSED", rows, 3);
+    // Whether the server has it yet: sent over Wi-Fi, or by the app.
+    scr_detail(g_draw, g_sn, clock, f, title,
+               uplink_fully_acked(g_closed.id) ? "SENT" : "NOT SENT", rows, 3);
     return;
   }
 

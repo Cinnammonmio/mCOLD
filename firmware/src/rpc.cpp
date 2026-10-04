@@ -194,6 +194,16 @@ cJSON *c_status(uint32_t id, const cJSON *, RpcSession *) {
   num_or_null(tr, "max", s.have_temp, s.max_c100 / 100.0);
   add_alarms(tr, "alarms", s.alarms_active);
   cJSON_AddBoolToObject(tr, "acked", s.acked);
+  // What happened while nobody could see: a server that was out of reach
+  // learns from these that an alarm came and went (decided 2026-10-05).
+  cJSON_AddNumberToObject(tr, "alarms_raised", s.alarms_raised);
+  if (s.last_alarm != 0xFF) {
+    cJSON *la = cJSON_AddObjectToObject(tr, "last_alarm");
+    cJSON_AddStringToObject(la, "type", row_alarm_name(s.last_alarm));
+    num_or_null(la, "utc", s.last_alarm_utc != 0, s.last_alarm_utc);
+  } else {
+    cJSON_AddNullToObject(tr, "last_alarm");
+  }
 
   PowerStatus p;
   bool have;
@@ -378,8 +388,30 @@ cJSON *c_list_trips(uint32_t id, const cJSON *, RpcSession *) {
     cJSON_AddNumberToObject(e, "trip", t[i]);
     uint32_t last;
     num_or_null(e, "last_seq", flashlog_last_seq(t[i], &last), last);
+    // Delivered: the server has every row (ACKs, or the app said so).
+    cJSON_AddBoolToObject(e, "sent", uplink_fully_acked(t[i]));
     cJSON_AddItemToArray(a, e);
   }
+  return o;
+}
+
+// The app has the whole trip and has handed it to the server itself
+// ("stop and send", decided 2026-10-05): the box need not upload it.
+cJSON *c_mark_delivered(uint32_t id, const cJSON *req, RpcSession *) {
+  double trip;
+  if (!get_num(req, "trip", &trip) || trip < 1 || trip > TRIP_ID_REAL_MAX) {
+    return fail(id, "BAD_ARGS", "trip");
+  }
+  TripStatus s;
+  trip_status(&s);
+  if (s.active && s.id == (uint32_t)trip) return fail(id, "ALREADY_ACTIVE", "the trip is still running: stop it first");
+  uint32_t last;
+  if (!uplink_mark_delivered((uint32_t)trip, &last)) {
+    return fail(id, "BAD_ARGS", "no such trip in the log");
+  }
+  cJSON *o = ok(id);
+  cJSON_AddNumberToObject(o, "trip", trip);
+  cJSON_AddNumberToObject(o, "rows", last + 1);
   return o;
 }
 
@@ -606,6 +638,7 @@ const Cmd CMDS[] = {
     {"STOP_TRIP", true, c_stop},
     {"ACK_ALARM", true, c_ack},
     {"LIST_TRIPS", false, c_list_trips},
+    {"MARK_DELIVERED", true, c_mark_delivered},
     {"GET_TRIP_SUMMARY", false, c_summary},
     {"READ_LOG_CHUNK", false, c_read_log},
     {"GET_STORAGE_STATUS", false, c_storage},

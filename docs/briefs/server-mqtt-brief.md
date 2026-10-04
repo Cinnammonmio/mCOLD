@@ -1,10 +1,10 @@
 ---
 name: Server-Brief_MQTT
 lang: th
-version: 0.6
+version: 0.7
 status: draft
 date: 2026-10-04
-firmware: 0.7.0-dev.4
+firmware: 0.7.0-dev.5
 ---
 
 # mCOLD — สิ่งที่ฝั่ง Server ต้องทำ (MQTT)
@@ -48,7 +48,8 @@ firmware: 0.7.0-dev.4
 และเป็น column ชุดเดียวกับไฟล์ CSV ที่คนเปิดดู
 
 ```
-{"sn":"mCDV1-L0169-1069-001","trip":11,"schema":3,"from":0,"to":15,
+{"sn":"mCDV1-L0169-1069-001","trip":11,"schema":3,"part":1,"parts":1,
+ "from":0,"to":6,"last":true,
  "rows":[
   {"trip":11,"seq":1,"sn":"mCDV1-L0169-1069-001","timestamp":"02:47:27 05/10/2026",
    "utc":1791143247,"event":"SAMPLE","temp":4.25,"tempmin":2,"tempmax":8,"alarm":"",
@@ -59,7 +60,12 @@ firmware: 0.7.0-dev.4
    ...}, ...]}
 ```
 
-- ชุดละไม่เกิน 16 แถวของ trip เดียว เรียงตาม `seq`
+- **ส่งเฉพาะ trip ที่จบแล้ว** (ตกลง 5 ต.ค., `docs/trip-data-flow.md`): ระหว่าง trip แถวอยู่ในกล่อง
+  server ได้แค่ `status` · จบแล้วส่งเป็นก้อนละ 20 แถว trip เก่าก่อน
+- `part` / `parts`: ก้อนที่ k มีแถว `seq` 20(k−1)…20k−1 เสมอ · `last: true` คือก้อนสุดท้าย (มี `TRIP_STOP`)
+- trip ที่แอปส่งให้ server เองแล้ว (แอปเรียก `MARK_DELIVERED`) กล่องจะไม่ส่งซ้ำทาง Wi-Fi
+- ระหว่าง trip `status` → `trip` มี `alarms_raised` และ `last_alarm` (ชนิด + เวลา)
+  ใช้รู้ว่ามี alarm เกิดตอนกล่องออฟไลน์
 - **key ของแต่ละแถวคือ (sn, trip, seq)**
 
 | column | ความหมาย |
@@ -118,9 +124,9 @@ firmware: 0.7.0-dev.4
 ## 5. จังหวะการส่งเมื่อกล่องใช้แบต
 
 กล่องหลับระหว่างรอบเพื่อประหยัดแบต และ Wi-Fi ปิดอยู่ จะเชื่อมต่อเป็น **รอบสั้นๆ** ทุก 5 นาที
-เมื่อมีข้อมูลรอส่ง:
+ระหว่างมี trip (ส่ง `status`) หรือเมื่อมี trip ที่จบแล้วรอส่ง:
 
-1. เปิด Wi-Fi → เชื่อม broker → ส่ง `status` → ส่งชุด record
+1. เปิด Wi-Fi → เชื่อม broker → ส่ง `status` → ส่งก้อนแถวของ trip ที่จบแล้ว
 2. **รอ ACK ชุดละไม่เกิน 10 วินาที** ได้ ACK แล้วส่งชุดถัดไป
 3. จบรอบ: ส่ง `"0"` ที่ `online` แล้วตัดการเชื่อมต่อ
 

@@ -163,7 +163,8 @@ A value the device does not have is **absent or `null`, never 0**.
 | `START_TRIP` | ✎ | `low`, `high` (°C); `hyst` (°C, 0.5), `dwell_s` (300) | `trip` |
 | `STOP_TRIP` | ✎ | | `trip` |
 | `ACK_ALARM` | ✎ | | `alarms` still active |
-| `LIST_TRIPS` | | | `trips`: `[{"trip", "last_seq"}]`, oldest first |
+| `LIST_TRIPS` | | | `trips`: `[{"trip", "last_seq", "sent"}]`, oldest first; `sent`: the server has every row |
+| `MARK_DELIVERED` | ✎ | `trip` | `trip`, `rows`: the app gave this finished trip to the server itself; the box will not upload it (`ALREADY_ACTIVE` while it runs) |
 | `GET_TRIP_SUMMARY` | | `trip` | thresholds, `samples`, `min`, `max`, `alarms`, `stopped` |
 | `READ_LOG_CHUNK` | | `trip`, `from` (seq), `max` (1-16) | `records`, `next` |
 | `GET_STORAGE_STATUS` | | | `sectors`, `used`, `free`, `trips`, `days_left` |
@@ -192,7 +193,10 @@ A value the device does not have is **absent or `null`, never 0**.
 ```
 
 `fw` is the running firmware and the OTA slot it runs from; `net.ssid`,
-`rssi` and `ip` are there only while connected.
+`rssi` and `ip` are there only while connected. `trip` also carries
+`alarms_raised` (in the whole trip) and `last_alarm` (`{"type":"HIGH",
+"utc":...}` or `null`): a server that was out of reach learns from them
+that an alarm came and went while it could not see.
 
 `READ_LOG_CHUNK` returns records exactly as the device stored them, one
 JSON object each, `{"seq":5,"type":16,"data":"<base64>"}`, where `data` is
@@ -239,7 +243,8 @@ Subscribing to `mcold/+/rec` gets every device's records.
 ### Batches
 
 ```json
-{"sn":"mCDV1-L0169-1069-001","trip":11,"schema":3,"from":0,"to":15,
+{"sn":"mCDV1-L0169-1069-001","trip":11,"schema":3,"part":1,"parts":1,
+ "from":0,"to":6,"last":true,
  "rows":[
   {"trip":11,"seq":1,"sn":"mCDV1-L0169-1069-001","timestamp":"02:47:27 05/10/2026",
    "utc":1791143247,"event":"SAMPLE","temp":4.25,"tempmin":2,"tempmax":8,"alarm":"",
@@ -250,7 +255,15 @@ Subscribing to `mcold/+/rec` gets every device's records.
    ...}, ...]}
 ```
 
-Up to 16 rows, in sequence order, of one trip. **Every record is a row
+**Only finished trips are uploaded** (decided 2026-10-05,
+`docs/trip-data-flow.md`): while a trip runs its rows stay in the box
+and the server gets the `status`; once it has ended it goes up in parts
+of 20 rows, oldest trip first. Part k always holds seq 20(k-1)..20k-1,
+`parts` is how many the trip has, and `last` marks the one with
+TRIP_STOP. A trip the app has already delivered (`MARK_DELIVERED`) is not
+uploaded at all.
+
+**Every record is a row
 with the same columns** (record format 3, decided 2026-10-05): a sample
 and every event alike carry the state of the box at that moment, so the
 server stores one table, and the CSV a person opens has the same columns
@@ -319,14 +332,15 @@ ACK is harmless.
 
 Timing on USB power (always connected): after a batch the device waits
 15 s for the ACK, then resends, doubling the wait up to 5 minutes while
-the server stays silent, and going back to 15 s at the next ACK. While a
-trip is running, every other batch is its newest records, so live data
-is not stuck behind backlog.
+the server stays silent, and going back to 15 s at the next ACK. The
+status goes on every change, every five minutes, and at once whenever
+the broker answers again.
 
 ### On battery: sessions, not a connection
 
-On battery the box sleeps between samples and Wi-Fi is off. When records
-are waiting it connects for a **session** once per `upload_period_s`
+On battery the box sleeps between samples and Wi-Fi is off. While a trip
+runs, or rows of a finished one are waiting, it connects for a **session**
+once per `upload_period_s`
 (default 300 s, one sample period): Wi-Fi up, broker connect, `status`,
 batches, then `"0"` on `online` and a clean disconnect. Inside a session
 it waits **10 s** for each ACK; an ACK later than that is too late for
