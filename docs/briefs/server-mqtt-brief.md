@@ -1,10 +1,10 @@
 ---
 name: Server-Brief_MQTT
 lang: th
-version: 0.4
+version: 0.5
 status: draft
 date: 2026-10-04
-firmware: 0.7.0-dev.2
+firmware: 0.7.0-dev.3
 ---
 
 # mCOLD — สิ่งที่ฝั่ง Server ต้องทำ (MQTT)
@@ -41,55 +41,66 @@ firmware: 0.7.0-dev.2
 
 ## 3. ข้อมูลที่กล่องส่งขึ้นมา
 
+ทุก record เป็น **แถวเดียวกัน มี column ชุดเดียวกัน** ไม่ว่าจะเป็น sample หรือ event
+(ตกลงกันเมื่อ 5 ต.ค.) แต่ละแถวมีสถานะของกล่อง ณ ตอนนั้นครบ server เก็บลงตารางเดียวได้เลย
+และเป็น column ชุดเดียวกับไฟล์ CSV ที่คนเปิดดู
+
 ```
-{"sn":"mCDV1-L0169-1069-001","trip":8,"schema":1,"from":0,"to":15,
- "records":[{"seq":0,"type":1,"data":"<base64>"}, ...]}
+{"sn":"mCDV1-L0169-1069-001","trip":11,"schema":3,"from":0,"to":15,
+ "rows":[
+  {"trip":11,"seq":1,"sn":"mCDV1-L0169-1069-001","timestamp":"02:47:27 05/10/2026",
+   "utc":1791143247,"event":"SAMPLE","temp":4.25,"tempmin":2,"tempmax":8,"alarm":"",
+   "timeok":true,"gnssstate":"last","latitude":13.7563,"longitude":100.5018,"motion":0,
+   "battery":97,"internet":"online","detail":""},
+  {"trip":11,"seq":2,"sn":"mCDV1-L0169-1069-001","timestamp":"02:47:28 05/10/2026",
+   "utc":1791143248,"event":"ALARM_HIGH","temp":8.5,"tempmin":2,"tempmax":8,"alarm":"HIGH",
+   ...}, ...]}
 ```
 
-- ชุดละไม่เกิน 16 record ของ trip เดียว เรียงตาม `seq`
-- `data` คือ record แบบ binary (little-endian) เข้ารหัส base64
-- `type`: 1 = เริ่ม trip, 2 = sample, 3 = event, 4 = จบ trip
-- ทุก record ขึ้นต้นด้วย stamp 11 byte
+- ชุดละไม่เกิน 16 แถวของ trip เดียว เรียงตาม `seq`
+- **key ของแต่ละแถวคือ (sn, trip, seq)**
 
-| Offset | ชนิด | ความหมาย |
+| column | ความหมาย |
+|---|---|
+| `trip` | เลข trip ที่กล่องสร้างเอง (ไม่ซ้ำเมื่อคู่กับ `sn`) |
+| `seq` | ลำดับแถวใน trip เริ่มที่ 0 |
+| `sn` | serial number ของกล่อง |
+| `timestamp` | เวลาไทย `hh:mm:ss DD/MM/YYYY` |
+| `utc` | เวลาเดียวกันเป็น Unix seconds สำหรับเรียงลำดับ |
+| `event` | แถวนี้คืออะไร (ตารางถัดไป) |
+| `temp` | อุณหภูมิ °C; `null` = probe อ่านไม่ได้ |
+| `tempmin` / `tempmax` | ช่วง alarm ของ trip นี้ |
+| `alarm` | alarm ที่ค้างอยู่ `HIGH`, `LOW`, `PROBE`, `BATTERY` คั่นด้วย `|`; ว่าง = ไม่มี |
+| `timeok` | `false` = กล่องไม่รู้เวลาตอนนั้น (`timestamp`/`utc` เป็น `null` และมี `boot`, `up_s` ไว้เรียงลำดับ) |
+| `gnssstate` | `fix` = ตำแหน่งใหม่, `last` = ตำแหน่งเก่า, `none` = ไม่มี |
+| `latitude` / `longitude` | องศา; `null` เมื่อ `none` |
+| `motion` | จำนวนครั้งที่ขยับตั้งแต่แถวก่อน |
+| `battery` | แบต % |
+| `internet` | ผลการส่งรอบล่าสุด: `online`, `wifi_only` (ต่อ Wi-Fi ได้แต่ไม่ถึง server), `offline` |
+| `detail` | รายละเอียดของ event (ส่วนใหญ่ว่าง) |
+
+| `event` | เกิดเมื่อ | `detail` |
 |---|---|---|
-| 0 | u32 | เวลา UTC (วินาที) — ใช้ไม่ได้ถ้า quality = 0 |
-| 4 | u8 | quality ของเวลา: 0 ไม่มี, 1 RTC, 2 GNSS, 3 แอป, 4 NTP |
-| 5 | u16 | boot (นับเฉพาะการรีเซ็ตจริง) |
-| 7 | u32 | tick (ms) — boot + tick ใช้เรียงลำดับ record ของกล่องเดียวกัน |
+| `TRIP_START` / `TRIP_STOP` | เริ่ม / จบ trip | |
+| `SAMPLE` | ทุกรอบบันทึก (ค่าเริ่มต้น 5 นาที) | |
+| `ALARM_HIGH` / `ALARM_LOW` | อุณหภูมิเกิน `tempmax` / ต่ำกว่า `tempmin` นานกว่าเวลาที่ตั้ง | |
+| `ALARM_PROBE` | อ่านอุณหภูมิไม่ได้เกิน 1 นาที | |
+| `BATTERY_LOW` | แบตต่ำกว่า 15% | % |
+| `ALARM_CLEAR` | alarm หาย | ชนิด |
+| `ALARM_ACK` | มีคนกดรับทราบ | alarm ที่รับทราบ |
+| `PROBE_FAULT` / `PROBE_OK` | probe หลุด / กลับมา | สาเหตุ |
+| `USB_IN` / `USB_OUT` | เสียบ / ถอดไฟ | |
+| `POWER_ON` | เครื่องรีเซ็ตแล้วทำ trip ต่อ | สาเหตุการรีเซ็ต |
+| `POWER_OFF` | แบตหมด เครื่องตัดตัวเอง | mV |
+| `TIME_SET` | มีการตั้งเวลา | เวลาก่อนตั้ง |
+| `DATA_LOST` | trip เก่าถูกลบเพราะพื้นที่เต็ม | เลข trip |
+| `SHOCK` | สำรองไว้: กระแทกแรงเกินเกณฑ์ (ยังไม่ได้ตั้งเกณฑ์) | |
 
-**Sample (type 2)** — 1 record ทุก 5 นาทีระหว่าง trip
-
-| Offset | ชนิด | ความหมาย |
-|---|---|---|
-| 11 | u8 | สถานะการวัดอุณหภูมิ (0 = ปกติ) |
-| 12 | u16 | ค่าดิบ MAX6675 (หน่วย 0.25 °C); 0xFFFF = ไม่มี |
-| 14 | i16 | อุณหภูมิหลังสอบเทียบ (0.01 °C); −32768 = ไม่มี |
-| 16 | u8 | ประตู: 0 ไม่ทราบ, 1 ปิด, 2 เปิด (ฟังก์ชันประตูปิดอยู่) |
-| 17 | u16 | จำนวนครั้งที่เปิดประตูใน trip นี้ |
-| 19 | u16 | จำนวนครั้งที่ขยับ ตั้งแต่ sample ก่อนหน้า |
-| 21 | u8 | GNSS: bit0 fix รอบล่าสุด, bit1 เคย fix |
-| 22 / 26 | i32 / i32 | latitude / longitude (1e−7 องศา) |
-| 30 | u16 | อายุของ fix (วินาที); 0xFFFF = ไม่มี |
-| 32 / 33 | u8 / u8 | ดาวเทียมที่ใช้ / HDOP×10 (0xFF = ไม่ทราบ) |
-| 34 | u16 | แรงดันแบต (mV); 0 = ไม่ทราบ |
-| 36 | u8 | แบต %; 0xFF = ไม่ทราบ |
-| 37 | i16 | กระแสแบต (mA, + = เข้าแบต); −32768 = ไม่ทราบ |
-| 39 | u8 | สถานะการชาร์จ |
-| 40 | u16 | alarm ที่ active (bit ต่อ alarm) |
-| 42 | u16 | อุปกรณ์ที่ทำงานผิดปกติ (bit ต่ออุปกรณ์) |
-
-**เริ่ม trip (type 1)** — มีช่วง alarm, รอบการบันทึก, ค่าสอบเทียบ, เวอร์ชัน firmware
-และ SN (offset 58, ยาว 24 byte ใน header format 2 — format 1 เดิมยาว 12 byte)
-
-**Event (type 3)** — byte 11 คือรหัส event: 1 รีเซ็ตแล้วทำ trip ต่อ, 4 ขยับ, 5 probe เสีย,
-6 probe กลับมาปกติ, 7 alarm เกิด, 8 alarm หาย, 9 รับทราบ alarm, 10 ตั้งเวลา,
-11 ข้อมูลถูกลบเพราะพื้นที่เต็ม, 12 ปิดเครื่องเพราะแบตหมด
-(2, 3 เป็นเรื่องประตูซึ่งปิดอยู่) รายละเอียดทุกฟิลด์อยู่ที่ `firmware/src/record.h`
+การขยับธรรมดาไม่เป็นแถว นับรวมไว้ใน `motion`
 
 ## 4. ACK — สิ่งที่ server ต้องตอบ
 
-1. เก็บ record ของชุดนั้นลงฐานข้อมูลให้เรียบร้อย **ใช้ (sn, trip, seq) เป็น key**
+1. เก็บแถวของชุดนั้นลงฐานข้อมูลให้เรียบร้อย **ใช้ (sn, trip, seq) เป็น key**
    record ที่มาซ้ำต้องเก็บครั้งเดียว
 2. จากนั้น publish ไปที่ `mcold/v1/<sn>/ack`
    ```
