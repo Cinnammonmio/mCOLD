@@ -1,7 +1,7 @@
 ---
 name: User-Manual_EN
 lang: en
-version: 0.4
+version: 0.5
 status: draft
 date: 2026-10-04
 firmware: 0.7.0-dev
@@ -77,7 +77,7 @@ carries on.
 
 | Where | Shows |
 |---|---|
-| Top bar | Serial number and the local date and time, e.g. 04/10 22:50 |
+| Top bar | Serial number and the local time and date, e.g. 22:50 04/10/26 |
 | Centre | Latest temperature (°C), large |
 | Below it | Min / max of this trip, or "NO ACTIVE TRIP" |
 | Bottom left | Wi-Fi, server, GNSS and trip icons |
