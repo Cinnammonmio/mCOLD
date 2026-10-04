@@ -48,6 +48,7 @@ enum class Hold : uint8_t {
   Display,      // a refresh is in progress
   Indicate,     // a light or sound pattern is playing
   Console,      // typed at recently
+  Ota,          // downloading an update, or a new image not yet confirmed
   Count
 };
 

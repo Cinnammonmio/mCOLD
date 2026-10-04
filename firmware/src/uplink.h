@@ -21,6 +21,8 @@
 //   mcold/<sn>/ack      server -> device   {"trip":T,"upto":S}
 //   mcold/<sn>/status   device -> server   GET_STATUS, retained
 //   mcold/<sn>/online   device -> server   "1" / "0" (last will), retained
+//   mcold/<sn>/firmware server -> device   a file name to install (ota.h), retained
+//   mcold/<sn>/ota/state device -> server  what came of it, retained
 //
 // Broker and login are in NVS (namespace "mqtt"), never in the image.
 //
@@ -75,6 +77,9 @@ void uplink_status(UplinkStatus *out);
 static const int UPLINK_BATCH = 16;              // records per batch
 static const uint32_t UPLINK_ACK_TIMEOUT_MS = 15000;     // first wait for an ACK
 static const uint32_t UPLINK_ACK_WAIT_MAX_MS = 300000;   // the longest, when silent
+// On battery with nothing to send, a session anyway this often: a status,
+// and a firmware message, for a box that is not on a trip.
+static const uint32_t UPLINK_CHECKIN_MS = 6 * 3600000;
 
 // Hand an ACK in as though the server had sent it: for the bench, before
 // the server side exists. It goes through every check a real one does.

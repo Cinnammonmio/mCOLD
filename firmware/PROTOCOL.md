@@ -185,8 +185,14 @@ A value the device does not have is **absent or `null`, never 0**.
          "alarms":["TEMP_HIGH"],"acked":false},
  "power":{"soc":78,"mv":3987,"ma":-12,"charge":"none","external":false},
  "gnss":{"fix":false,"age_s":null},
- "storage":{"used_pct":1}}
+ "storage":{"used_pct":1},
+ "fw":{"ver":"0.7.0-dev.1","slot":"ota_1"},
+ "net":{"connected":true,"ssid":"Office","rssi":-59,"ip":"192.168.1.147",
+        "mac":"28:84:85:27:9A:74"}}
 ```
+
+`fw` is the running firmware and the OTA slot it runs from; `net.ssid`,
+`rssi` and `ip` are there only while connected.
 
 `READ_LOG_CHUNK` returns records exactly as the device stored them, one
 JSON object each, `{"seq":5,"type":2,"data":"<base64>"}`, where `data` is
@@ -221,6 +227,8 @@ broker and login set in its NVS. All topics are under `mcold/<sn>/`:
 | `mcold/<sn>/ack` | **server → device** | 1 | no | `{"trip":T,"upto":S}` |
 | `mcold/<sn>/status` | device → server | 0 | yes | `GET_STATUS` result (section 4) |
 | `mcold/<sn>/online` | device → server | 1 | yes | `"1"` while connected; `"0"` when a battery session ends, or from the broker (last will) if the device drops |
+| `mcold/<sn>/firmware` | **server → device** | 1 | **yes** | a file name to install, e.g. `mCOLD_0.7.1.bin` (below) |
+| `mcold/<sn>/ota/state` | device → server | 1 | yes | what came of it (below) |
 
 Subscribing to `mcold/+/rec` gets every device's records.
 
@@ -297,6 +305,42 @@ When the log fills, the device first deletes trips the server has
 acknowledged in full -- no data lost. Only if there are none does it
 delete the oldest unacknowledged trip, and then it records the loss.
 
+### Firmware updates (OTA)
+
+Built and tested 2026-10-04, the way eTEMP V2 does it: the server names
+a file, and the box downloads it itself.
+
+1. Put the image on the file server, in the folder the box knows (its
+   base URL, in NVS; `ota base URL` at the console). The build leaves it
+   as `.pio/build/mcold/mCOLD_<version>.bin`.
+2. Publish the file name to `mcold/<sn>/firmware`, **retained** -- a box
+   on battery is asleep almost all the time and only sees it at its next
+   session. A whole `https://...` URL is accepted too.
+3. Watch `mcold/<sn>/ota/state`:
+   ```json
+   {"ver":"0.7.1","state":"downloading","pct":40}
+   {"ver":"0.7.1","state":"rebooting","from":"0.7.0"}
+   {"ver":"0.7.1","state":"ok","from":"0.7.0"}
+   {"file":"mCOLD_0.7.1.bin","state":"failed","reason":"..."}
+   {"file":"mCOLD_0.7.1.bin","state":"deferred","reason":"trip"}
+   {"ver":"0.7.1","state":"rolled_back","running":"0.7.0"}
+   {"file":"...","ver":"0.7.0","state":"skipped","reason":"not newer","running":"0.7.0"}
+   ```
+4. After `ok`, clear the retained message (publish an empty retained
+   payload). A name the box has already handled is ignored anyway, so
+   leaving it costs nothing but a few bytes per session.
+
+The box checks everything itself; the server needs to know none of it:
+the image header (same project, newer version), the image's SHA-256,
+the **signature** (RSA-3072, checked against the key of the image it is
+running -- an image not signed with the project key is refused), and
+after the reboot it must reach the broker within 3 minutes or the
+bootloader goes back to the old image, which then says `rolled_back`.
+It waits (`deferred`) while a trip runs or the battery is under 30 %,
+and goes ahead by itself once both allow. On battery with nothing to
+send it still checks in every 6 hours, so a box between trips sees a
+firmware message too.
+
 ### Open questions for the server team
 
 1. Accept the topics and the ACK (or say what to change).
@@ -304,5 +348,5 @@ delete the oldest unacknowledged trip, and then it records the loss.
    included, crosses the network in clear, and one shared login means
    anyone holding it can publish as any box -- including false ACKs that
    make devices delete data they never delivered. §10.4 asks for TLS.
-3. OTA: a file server for images (HTTPS), or images over MQTT? Either
-   way images will be signed and checked on the device.
+3. ~~OTA: a file server or MQTT?~~ Answered by the eTEMP way: the
+   server sends the file name, the box fetches it (above).

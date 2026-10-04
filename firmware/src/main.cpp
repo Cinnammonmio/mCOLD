@@ -56,6 +56,7 @@
 #include "health.h"
 #include "leds.h"
 #include "nfc.h"
+#include "ota.h"
 #include "pm.h"
 #include "power.h"
 #include "rails.h"
@@ -1345,7 +1346,12 @@ void print_help(void) {
   printf("  soc set P       bench: set the count to P %%\n");
   printf("  amps [S]        battery current for S seconds: mean, min, max\n");
   printf("  hiz [S] | off   bench: charger input off S s (300), box runs on its cell\n");
-  printf("  poweroff        bench: the battery-empty switch-off; replug USB to restart\n\n");
+  printf("  poweroff        bench: the battery-empty switch-off; replug USB to restart\n");
+  printf("  ota             firmware slots, update state, base URL\n");
+  printf("  ota base URL    where file names from the server are fetched (http/https)\n");
+  printf("  ota FILE|URL [force]  install now; force skips the version and trip\n");
+  printf("                  checks, never the signature\n");
+  printf("  ota rollback-test  the next new image will not confirm: watch it roll back\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
@@ -1530,6 +1536,23 @@ void run_command(char *line) {
     printf("  %s\n", port > 0 && port < 65536 && uplink_set_server(host, (uint16_t)port, user, pass)
                          ? "stored; connecting" : "mqtt set HOST PORT [USER PASS]");
   }
+  else if (!strcmp(line, "ota")) ota_print();
+  else if (!strncmp(line, "ota base ", 9)) {
+    printf("  %s\n", ota_set_base(line + 9) ? "stored" : "ota base http(s)://host/path (under 128)");
+  } else if (!strcmp(line, "ota rollback-test")) {
+    ota_test_rollback();
+    printf("  the next new image will not confirm itself; it rolls back after %lu s\n",
+           (unsigned long)(OTA_VERIFY_MS / 1000));
+  } else if (!strncmp(line, "ota ", 4)) {
+    char name[160];
+    char opt[8] = "";
+    if (sscanf(line + 4, "%159s %7s", name, opt) < 1) {
+      printf("  ota FILE|URL [force]\n");
+    } else {
+      ota_request(name, false, !strcmp(opt, "force"));
+      printf("  asked; 'ota' shows how it goes\n");
+    }
+  }
   else if (!strcmp(line, "ble on")) {
     ble_enable(true);
     ble_window(BLE_TAP_WINDOW_MS);
@@ -1687,6 +1710,7 @@ extern "C" void app_main(void) {
     auth_init(sn);     // a new key; the NFC task puts it on the tag
     ble_start(sn);     // after NVS (bonds) and rpc (what it carries)
     net_start();       // Wi-Fi, if credentials are set
+    ota_start();       // a new image on probation, or a rollback to report
     uplink_start(sn);  // MQTT once Wi-Fi is up
     // A full log gives up what the server already has first.
     trip_set_retention({uplink_fully_acked, uplink_forget});

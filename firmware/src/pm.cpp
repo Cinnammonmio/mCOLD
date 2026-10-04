@@ -153,7 +153,7 @@ void apply_light_sleep(void) {
 
 const char *const DUTY_NAMES[] = {"sensors", "power", "trip",   "display",
                                   "nfc",     "uplink", "gnss", "indicate"};
-const char *const HOLD_NAMES[] = {"ble", "nfc field", "gnss", "uplink", "display", "indicate", "console"};
+const char *const HOLD_NAMES[] = {"ble", "nfc field", "gnss", "uplink", "display", "indicate", "console", "ota"};
 
 uint32_t awake_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 

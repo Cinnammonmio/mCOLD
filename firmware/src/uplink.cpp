@@ -16,6 +16,7 @@
 #include "board.h"
 #include "flashlog.h"
 #include "net.h"
+#include "ota.h"
 #include "pm.h"
 #include "config.h"
 #include "timekeep.h"
@@ -29,7 +30,7 @@ char g_host[64] = "";
 uint16_t g_port = 1883;
 char g_user[40] = "";
 char g_pass[72] = "";
-char t_rec[48], t_ack[48], t_status[48], t_online[48];
+char t_rec[48], t_ack[48], t_status[48], t_online[48], t_fw[48], t_ota[56];
 
 esp_mqtt_client_handle_t g_client = nullptr;
 volatile bool g_mqtt = false;
@@ -57,14 +58,18 @@ struct Plan {
   bool last_ok;
   uint32_t sessions;
   uint32_t last_ack;        // mono_ms() of the last ACK accepted
+  uint32_t checkin_at;      // mono_ms() a session is due with nothing to send; 0: now
 };
-const uint32_t PLAN_MAGIC = 0x55504C31;   // "UPL1"
+const uint32_t PLAN_MAGIC = 0x55504C32;   // "UPL2"
 RTC_DATA_ATTR Plan g_plan;
 #define g_last_ack g_plan.last_ack
 
 const uint32_t SESSION_MAX_MS = 45000;    // join, broker, a few batches
 const uint32_t SESSION_ACK_MS = 10000;    // an ACK later than this waits for the next
 const uint32_t SESSION_BACKOFF_MAX_MS = 4 * 3600000;
+// After the broker answers, long enough for a retained firmware message
+// to arrive before a session with nothing to send ends.
+const uint32_t SESSION_SETTLE_MS = 1500;
 
 // Runs through deep sleep (timekeep.h), so times kept across one compare.
 uint32_t now_ms(void) { return mono_ms(); }
@@ -152,8 +157,10 @@ void on_mqtt(void *, esp_event_base_t, int32_t id, void *data) {
     case MQTT_EVENT_CONNECTED:
       g_mqtt = true;
       esp_mqtt_client_subscribe(g_client, t_ack, 1);
+      esp_mqtt_client_subscribe(g_client, t_fw, 1);
       esp_mqtt_client_publish(g_client, t_online, "1", 1, 1, 1);
       printf("[uplink] connected to %s:%u\n", g_host, g_port);
+      ota_on_connected();       // what a new image proves itself by
       if (g_task) xTaskNotifyGive(g_task);
       break;
     case MQTT_EVENT_DISCONNECTED:
@@ -167,6 +174,14 @@ void on_mqtt(void *, esp_event_base_t, int32_t id, void *data) {
       if (e->topic_len == (int)strlen(t_ack) && !strncmp(e->topic, t_ack, e->topic_len) &&
           e->data_len == e->total_data_len) {
         on_ack(e->data, e->data_len);
+      } else if (e->topic_len == (int)strlen(t_fw) && !strncmp(e->topic, t_fw, e->topic_len) &&
+                 e->data_len == e->total_data_len && e->data_len < 160) {
+        // Just a file name (or a URL); everything else is the OTA module's.
+        char name[160];
+        memcpy(name, e->data, e->data_len);
+        name[e->data_len] = 0;
+        if (e->data_len) printf("[uplink] firmware named by the server: %s\n", name);
+        ota_request(name, true, false);
       }
       break;
     default:
@@ -281,6 +296,17 @@ void publish_status(void) {
   free(st);
 }
 
+// The OTA module's latest word, once each, retained.
+uint32_t g_ota_sent = 0;
+void publish_ota(void) {
+  char s[200];
+  uint32_t serial;
+  if (!ota_outbox(s, sizeof(s), &serial) || serial == g_ota_sent) return;
+  if (esp_mqtt_client_publish(g_client, t_ota, s, 0, 1, 1) < 0) return;
+  g_ota_sent = serial;
+  ota_outbox_sent(serial);
+}
+
 void stop_client(void) {
   if (!g_client) return;
   esp_mqtt_client_stop(g_client);
@@ -307,6 +333,7 @@ struct Session {
   bool reached;             // the broker answered
   bool status_sent;
   uint32_t acks_before;     // g_acks when it began
+  uint32_t mqtt_at;         // when the broker answered; 0: not yet
 };
 Session g_ses = {};
 
@@ -334,6 +361,8 @@ void end_session(bool all_sent) {
   if (wait > SESSION_BACKOFF_MAX_MS) wait = SESSION_BACKOFF_MAX_MS;
   g_plan.next_at = t + (uint32_t)wait;
   if (!g_plan.next_at) g_plan.next_at = 1;
+  g_plan.checkin_at = t + UPLINK_CHECKIN_MS;
+  if (!g_plan.checkin_at) g_plan.checkin_at = 1;
   printf("[uplink] session over after %lu ms: %s; next in %lu s\n",
          (unsigned long)(t - g_ses.at),
          !g_ses.reached ? "broker not reached" : all_sent ? "everything acknowledged"
@@ -351,20 +380,30 @@ void battery_pass(void) {
     // not one period later. Ten seconds at most: a trip task that never
     // reports must not stop the upload.
     if (!pm_is_done(Duty::Trip) && esp_timer_get_time() < 10000000) return;
-    const uint32_t n = g_host[0] && net_configured() ? pending() : 0;
-    const bool due = n && (!g_plan.next_at || (int32_t)(t - g_plan.next_at) >= 0);
-    if (!due) {
+    const bool can = g_host[0] && net_configured();
+    const uint32_t n = can ? pending() : 0;
+    // Records waiting, on their schedule (which backs off); a check-in now
+    // and then with nothing to send, so a status and a firmware message
+    // still reach a box that is not on a trip; and at once for a new image
+    // that has to reach the broker to be kept.
+    const bool records = n && (!g_plan.next_at || (int32_t)(t - g_plan.next_at) >= 0);
+    const bool checkin = can && (!g_plan.checkin_at || (int32_t)(t - g_plan.checkin_at) >= 0);
+    const bool urgent = can && ota_needs_broker();
+    if (!records && !checkin && !urgent) {
       stop_client();          // left over from USB power
       net_want(false);
-      pm_next(Duty::Uplink, n ? g_plan.next_at : 0);
+      uint32_t at = n ? g_plan.next_at : 0;
+      if (can && (!at || (int32_t)(g_plan.checkin_at - at) < 0)) at = g_plan.checkin_at;
+      pm_next(Duty::Uplink, at);
       pm_done(Duty::Uplink);
       return;
     }
-    g_ses = {true, t, false, false, g_acks};
+    g_ses = {true, t, false, false, g_acks, 0};
     pm_hold(Hold::Uplink, true);
     pm_no_light_sleep(true);    // Wi-Fi and the broker, without naps in between
     net_want(true);
-    printf("[uplink] session: %lu records waiting\n", (unsigned long)n);
+    printf("[uplink] session: %lu records waiting%s\n", (unsigned long)n,
+           urgent ? ", a new image to confirm" : (!records ? " (check-in)" : ""));
   }
 
   NetStatus ns;
@@ -372,10 +411,14 @@ void battery_pass(void) {
   if (!g_started && ns.connected) start_client();
   if (g_mqtt) {
     g_ses.reached = true;
+    if (!g_ses.mqtt_at) g_ses.mqtt_at = t ? t : 1;
     if (!g_ses.status_sent) {
       publish_status();
       g_ses.status_sent = true;
     }
+    publish_ota();
+    // A download needs the radio; the OTA module has its own time limits.
+    if (ota_busy()) return;
     xSemaphoreTake(g_mx, portMAX_DELAY);
     const Flight f = g_flight;
     xSemaphoreGive(g_mx);
@@ -385,12 +428,14 @@ void battery_pass(void) {
     }
     if (!f.on) {
       if (!pending()) {
+        if (t - g_ses.mqtt_at < SESSION_SETTLE_MS) return;
         end_session(true);
         return;
       }
       send_batch();
     }
   }
+  if (ota_busy()) return;
   if (t - g_ses.at >= SESSION_MAX_MS) end_session(false);
 }
 
@@ -417,6 +462,7 @@ void task(void *) {
     net_status(&ns);
     if (!g_started && g_host[0] && ns.connected) start_client();
     if (!g_mqtt) continue;
+    publish_ota();
 
     // Status on change, and every five minutes regardless.
     TripStatus s;
@@ -453,9 +499,11 @@ void uplink_start(const char *sn) {
   snprintf(t_ack, sizeof(t_ack), "mcold/%s/ack", g_sn);
   snprintf(t_status, sizeof(t_status), "mcold/%s/status", g_sn);
   snprintf(t_online, sizeof(t_online), "mcold/%s/online", g_sn);
+  snprintf(t_fw, sizeof(t_fw), "mcold/%s/firmware", g_sn);
+  snprintf(t_ota, sizeof(t_ota), "mcold/%s/ota/state", g_sn);
   g_mx = xSemaphoreCreateMutex();
   load();
-  if (!pm_warm() || g_plan.magic != PLAN_MAGIC) g_plan = {PLAN_MAGIC, 0, 0, false, 0, 0};
+  if (!pm_warm() || g_plan.magic != PLAN_MAGIC) g_plan = {PLAN_MAGIC, 0, 0, false, 0, 0, 0};
   xTaskCreatePinnedToCore(task, "uplink", 6144, nullptr, 2, &g_task, 0);
 }
 

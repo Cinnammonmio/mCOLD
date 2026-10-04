@@ -126,6 +126,7 @@ and nowhere else.
 | `tools/ble_client.py` | reference client for the app team; runs from a PC with Bluetooth |
 | `net.*` | Wi-Fi: up to 5 networks, joins the strongest; SNTP sets the clock |
 | `uplink.*` | MQTT: record batches out, application ACKs in (PROTOCOL.md section 6) |
+| `ota.*` | firmware updates: file name from the server, download, checks, rollback (PROTOCOL.md section 6) |
 | `main.cpp` | 9 tasks + supervisor; console: `help` lists the commands |
 
 Checked on the board by a person, 2026-10-02: tap → motion event;
@@ -152,7 +153,7 @@ plus the authorization key) and rewrites only bytes that change.
 | Not written yet | |
 |---|---|
 | HUSB238A | answers at 0x42; PD policy is §5.5 |
-| USB MSC, OTA, SD | deferred from P6 |
+| USB MSC, SD | deferred from P6 |
 
 ---
 
@@ -417,6 +418,26 @@ So `main.cpp` ignores motion events while the buzzer sounds and for
 that, every alarm beep would log itself as a shock. A real knock inside
 that window is lost too. P3 should know this when it sets shock alarms.
 
+### PlatformIO does not sign: tools/sign_app.py does
+
+`idf.py` pads (`--secure-pad-v2`) and signs the app when signed apps are
+on; PlatformIO runs `elf2image` itself and does neither. Without the
+padding the signature block is not where the checker looks; without the
+signature the running image has no key to check an update against, and
+every OTA fails with "No signatures were found for the running app".
+`tools/sign_app.py` (an `extra_scripts` post-script) adds both, and
+refuses to finish the build without the key. espsecure needs
+`cryptography` and `ecdsa` in `~/.platformio/penv` (installed
+2026-10-04; a fresh PlatformIO install needs them again).
+
+### A new image must not deep-sleep before it is confirmed
+
+With rollback on, a new image boots "pending verify"; any reset before
+`esp_ota_mark_app_valid_cancel_rollback()` -- and a deep-sleep wake is a
+reset -- makes the bootloader treat it as failed and go back. `ota.cpp`
+holds `Hold::Ota` until the broker answers (or 3 minutes pass), and the
+uplink opens a session at once for it, records or not.
+
 ### The USB isolator browns the board out
 
 Any load step — the SD/GNSS rail, the buzzer, an e-paper refresh —
@@ -560,18 +581,20 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
     broker got the message, not that the server stored it (§9.5). The
     server must publish an ACK naming device, trip and sequence range,
     on a topic the device subscribes to, before the device may reclaim.
-- **OTA over MQTT** is possible, two ways, and either needs the
-  rollback that the `ota_0`/`ota_1` layout already allows:
-  1. *Recommended:* MQTT carries only the command (version, URL,
-     SHA-256, size); the image comes over HTTPS with `esp_https_ota`.
-     Needs a file server.
-  2. Image in chunks over MQTT itself, written with `esp_ota_write`,
-     each chunk sequenced and acknowledged. Works with only the
-     broker, but costs more code and is slower.
-  On a plaintext broker with a shared login, anyone who has that login
-  can push firmware to every box. So **signed images are not optional**:
-  the device must check the signature before it boots a new image
-  (Secure Boot v2 / signed app verification in ESP-IDF).
+- **OTA works** (2026-10-04, `ota.*`): the server publishes a file name
+  on `mcold/<sn>/firmware` (retained), the box fetches it from the team's
+  file server (the base URL eTEMP uses, in NVS) and checks header,
+  SHA-256 and signature; rollback if the new image does not reach the
+  broker in 3 minutes. Tested on the bench through MQTTX: a wrongly
+  signed image refused ("signature bad"), 0.7.0-dev -> 0.7.0-dev.1 in
+  about 15 s of download, confirmed. Not yet tried: a real rollback
+  (`ota rollback-test`), and an update on battery.
+- **The OTA signing key** is `firmware/keys/ota_signing.pem`, gitignored.
+  A box accepts only images signed with the key its *running* image was
+  signed with, so losing the key means every box in the field has to be
+  reflashed over USB. **Keep a copy off this PC.** No eFuse is burned:
+  USB flashing always works, and hardware secure boot stays a P8
+  decision.
 - BLE UUIDs and the NDEF schema need the iOS app team. Note: **iOS
   cannot see a BLE MAC**, so the device must advertise its SN and the
   app must match on that. The app team has confirmed the MAC is only a

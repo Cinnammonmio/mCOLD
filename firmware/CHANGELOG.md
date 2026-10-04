@@ -38,6 +38,25 @@ To cut a release:
 
 P7, power: in progress.
 
+- **OTA** (`ota.*`), the eTEMP V2 way: the server publishes a file name
+  on `mcold/<sn>/firmware` (retained), the box downloads it from the
+  file server (base URL in NVS, `ota base URL`) straight into the other
+  slot. Checked before it is booted: same project and a newer version
+  from the image header, the image's SHA-256, and an RSA-3072 signature
+  against the key of the running image. Booted on probation: kept once
+  it reaches the broker, rolled back by the bootloader if not within
+  3 minutes. Not during a trip or under 30 % battery (it waits, then
+  goes ahead). Results on `mcold/<sn>/ota/state`, retained. Console:
+  `ota`, `ota base URL`, `ota FILE|URL [force]`, `ota rollback-test`.
+  Tested through MQTTX: a wrongly signed image refused, 0.7.0-dev to
+  0.7.0-dev.1 and confirmed.
+- Images are signed after the build by `tools/sign_app.py` (key in
+  `keys/`, gitignored), which also leaves `mCOLD_<version>.bin` for the
+  server. Signed apps without hardware secure boot: no eFuse burned.
+- `status` carries `fw` (version, slot) and `net` (SSID, RSSI, IP, MAC).
+- On battery with nothing to send, a check-in session every 6 hours, so
+  a status and a firmware message still reach a box between trips.
+
 - **Deep sleep between jobs on battery** (`pm.*`). Each wake runs as a
   short boot: every module does one pass and reports (`duties`), anything
   a person or a session is doing keeps the chip up (`holds`), and it

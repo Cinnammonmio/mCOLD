@@ -12,4 +12,6 @@ build/
 # commit. See secrets.example.ini for the shape.
 secrets.ini
 *.pem
+# The OTA signing key (tools/sign_app.py) and anything beside it.
+keys/
 *.key

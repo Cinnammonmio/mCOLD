@@ -2,6 +2,8 @@
 
 #include <cJSON.h>
 #include <esp_app_desc.h>
+#include <esp_mac.h>
+#include <esp_ota_ops.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -227,6 +229,28 @@ cJSON *c_status(uint32_t id, const cJSON *, RpcSession *) {
   cJSON *st = cJSON_AddObjectToObject(o, "storage");
   cJSON_AddNumberToObject(st, "used_pct",
                           ls.sectors ? (ls.used * 100 + ls.sectors - 1) / ls.sectors : 0);
+
+  // Which firmware, so the server knows who has taken an update.
+  cJSON *fw = cJSON_AddObjectToObject(o, "fw");
+  cJSON_AddStringToObject(fw, "ver", esp_app_get_description()->version);
+  const esp_partition_t *rp = esp_ota_get_running_partition();
+  cJSON_AddStringToObject(fw, "slot", rp ? rp->label : "?");
+
+  NetStatus n;
+  net_status(&n);
+  uint8_t mac[6] = {};
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  char ms[18];
+  snprintf(ms, sizeof(ms), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
+           mac[4], mac[5]);
+  cJSON *ne = cJSON_AddObjectToObject(o, "net");
+  cJSON_AddBoolToObject(ne, "connected", n.connected);
+  if (n.connected) {
+    cJSON_AddStringToObject(ne, "ssid", n.ssid);
+    cJSON_AddNumberToObject(ne, "rssi", n.rssi);
+    cJSON_AddStringToObject(ne, "ip", n.ip);
+  }
+  cJSON_AddStringToObject(ne, "mac", ms);
   return o;
 }
 

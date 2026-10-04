@@ -78,3 +78,19 @@ CONFIG_BOOTLOADER_LOG_LEVEL=2
 # what is used is decided at run time (esp_pm_configure).
 CONFIG_PM_ENABLE=y
 CONFIG_FREERTOS_USE_TICKLESS_IDLE=y
+
+# OTA (src/ota.h). A new image boots on probation and is kept only once
+# it reaches the broker; otherwise the bootloader goes back.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+# Images must be signed (RSA-3072, the Secure Boot V2 scheme) to be
+# accepted as an update. No eFuse is burned and the bootloader does not
+# check at power-on: this guards the network path, and USB flashing still
+# works. The signing is done by tools/sign_app.py after the build, with a
+# key kept off the repository, so the IDF build itself signs nothing.
+CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y
+CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
+CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=n
+# The signature, not the transport, is what makes an image acceptable, so
+# a plain-HTTP file server is allowed too (https is used when given).
+CONFIG_ESP_HTTPS_OTA_ALLOW_HTTP=y
