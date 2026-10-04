@@ -38,6 +38,18 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Wi-Fi with DHCP or a fixed address, a temperature adjustment, and no
+  broker from outside** (decided 2026-10-05). Each known network has
+  `dhcp` or `ip`/`gateway`/`subnet`/`dns`, as eTEMP has it -- in the
+  settings document, `SET_WIFI` and `wifi ip` at the console; the fixed
+  address is set once associated. `temp_adj_c100` (eTEMP's tempAdj) is
+  added after the factory calibration, which is now the console's only;
+  it is trip-locked and the trip header (format 4) records it. The MQTT
+  broker can no longer be set from the app or the server, and the trial
+  is gone with it. Checked on the board: a fixed 192.168.1.233 joined and
+  reached the broker, back to DHCP; bad addresses refused; +5.00 C showed
+  as +5.00 C. 0.7.0-dev.8.
+
 - **The app gets the settings by itself** (decided 2026-10-05): a
   SETTINGS event on EVENT as soon as the app subscribes, again on AUTH
   and whenever a setting changes from anywhere -- every config key, which

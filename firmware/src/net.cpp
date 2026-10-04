@@ -25,7 +25,11 @@ const char *NS = "net";
 struct Known {
   char ssid[33];
   char pass[65];
+  // Fixed address, network byte order; ip 0: DHCP.
+  uint32_t ip, gw, mask, dns;
 };
+esp_netif_t *g_sta = nullptr;
+Known g_join;                   // the network being joined, with its address
 Known g_nets[NET_MAX];
 int g_n = 0;
 SemaphoreHandle_t g_mx = nullptr;
@@ -83,6 +87,16 @@ void load(void) {
     if (nvs_get_str(h, ks, k.ssid, &n) != ESP_OK || !k.ssid[0]) continue;
     n = sizeof(k.pass);
     if (nvs_get_str(h, kp, k.pass, &n) != ESP_OK) k.pass[0] = 0;
+    char ki[4];
+    snprintf(ki, sizeof(ki), "i%d", i);
+    uint32_t a[4];
+    n = sizeof(a);
+    if (nvs_get_blob(h, ki, a, &n) == ESP_OK && n == sizeof(a)) {
+      k.ip = a[0];
+      k.gw = a[1];
+      k.mask = a[2];
+      k.dns = a[3];
+    }
     g_nets[g_n++] = k;
   }
   nvs_close(h);
@@ -96,12 +110,21 @@ bool save(void) {
     char ks[4], kp[4];
     snprintf(ks, sizeof(ks), "s%d", i);
     snprintf(kp, sizeof(kp), "p%d", i);
+    char ki[4];
+    snprintf(ki, sizeof(ki), "i%d", i);
     if (i < g_n) {
       ok = ok && nvs_set_str(h, ks, g_nets[i].ssid) == ESP_OK &&
            nvs_set_str(h, kp, g_nets[i].pass) == ESP_OK;
+      if (g_nets[i].ip) {
+        const uint32_t a[4] = {g_nets[i].ip, g_nets[i].gw, g_nets[i].mask, g_nets[i].dns};
+        ok = ok && nvs_set_blob(h, ki, a, sizeof(a)) == ESP_OK;
+      } else {
+        nvs_erase_key(h, ki);
+      }
     } else {
       nvs_erase_key(h, ks);   // absent is fine
       nvs_erase_key(h, kp);
+      nvs_erase_key(h, ki);
     }
   }
   ok = ok && nvs_commit(h) == ESP_OK;
@@ -157,6 +180,10 @@ void join(const Known &k, const uint8_t *bssid, uint8_t channel) {
     wc.sta.channel = channel;
   }
   esp_wifi_set_config(WIFI_IF_STA, &wc);
+  // DHCP unless this network has a fixed address; the fixed one is set
+  // once associated (WIFI_EVENT_STA_CONNECTED), as ESP-IDF wants it.
+  g_join = k;
+  if (g_sta && !k.ip) esp_netif_dhcpc_start(g_sta);
   snprintf(g_cur, sizeof(g_cur), "%s", k.ssid);
   g_connecting = true;
   g_connect_at = now_ms();
@@ -233,8 +260,27 @@ void attempt(void) {
   join(list[pick], nullptr, 0);
 }
 
+void set_fixed_ip(void) {
+  if (!g_sta || !g_join.ip) return;
+  esp_netif_dhcpc_stop(g_sta);
+  esp_netif_ip_info_t info = {};
+  info.ip.addr = g_join.ip;
+  info.gw.addr = g_join.gw;
+  info.netmask.addr = g_join.mask;
+  if (esp_netif_set_ip_info(g_sta, &info) != ESP_OK) {
+    printf("[net] fixed address refused by the stack\n");
+    return;
+  }
+  esp_netif_dns_info_t d = {};
+  d.ip.type = ESP_IPADDR_TYPE_V4;
+  d.ip.u_addr.ip4.addr = g_join.dns ? g_join.dns : g_join.gw;
+  esp_netif_set_dns_info(g_sta, ESP_NETIF_DNS_MAIN, &d);
+}
+
 void on_event(void *, esp_event_base_t base, int32_t id, void *data) {
-  if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
+  if (base == WIFI_EVENT && id == WIFI_EVENT_STA_CONNECTED) {
+    set_fixed_ip();     // a fixed address; DHCP needs nothing here
+  } else if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
     const bool was = g_connected;
     g_connected = false;
     g_connecting = false;
@@ -313,7 +359,7 @@ void apply_ntp(void) {
 bool bring_up(void) {
   esp_netif_init();
   esp_event_loop_create_default();
-  esp_netif_create_default_wifi_sta();
+  g_sta = esp_netif_create_default_wifi_sta();
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   if (esp_wifi_init(&cfg) != ESP_OK) {
     printf("[net] Wi-Fi did not start\n");
@@ -323,6 +369,7 @@ bool bring_up(void) {
   // not to store its own copy.
   esp_wifi_set_storage(WIFI_STORAGE_RAM);
   esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, on_event, nullptr);
+  esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED, on_event, nullptr);
   esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, nullptr);
   esp_wifi_set_mode(WIFI_MODE_STA);
   // Time from the network once it is up; SNTP waits for an address by
@@ -415,6 +462,7 @@ bool net_add(const char *ssid, const char *pass) {
     }
     snprintf(g_nets[i].ssid, sizeof(g_nets[i].ssid), "%s", ssid);
     snprintf(g_nets[i].pass, sizeof(g_nets[i].pass), "%s", pass ? pass : "");
+    // A new network starts on DHCP; a known one keeps its address.
     if (!save()) return false;
   }
   // A changed password for the network in use: rejoin with it.
@@ -436,6 +484,62 @@ bool net_remove(const char *ssid) {
     if (!save()) return false;
   }
   if (g_connected && !strcmp(g_cur, ssid)) esp_wifi_disconnect();
+  return true;
+}
+
+namespace {
+bool quad(const char *s, uint32_t *out) {
+  esp_ip4_addr_t a;
+  if (!s || !*s || esp_netif_str_to_ip4(s, &a) != ESP_OK) return false;
+  *out = a.addr;
+  return true;
+}
+void unquad(uint32_t a, char *out) {
+  if (!a) {
+    out[0] = 0;
+    return;
+  }
+  esp_ip4_addr_t x;
+  x.addr = a;
+  snprintf(out, 16, IPSTR, IP2STR(&x));
+}
+}  // namespace
+
+bool net_set_ip(const char *ssid, const NetIp &ip) {
+  uint32_t a = 0, g = 0, m = 0, d = 0;
+  if (!ip.dhcp) {
+    if (!quad(ip.ip, &a) || !quad(ip.gateway, &g) || !quad(ip.subnet, &m)) return false;
+    if (ip.dns[0] && !quad(ip.dns, &d)) return false;
+    // A mask is ones then zeros, and the gateway is on the same subnet.
+    const uint32_t inv = ~__builtin_bswap32(m);   // host order, inverted: 0..0 1..1
+    if (inv == 0xFFFFFFFFu || (inv & (inv + 1)) || (a & m) != (g & m)) return false;
+  }
+  {
+    Lock l;
+    int i = 0;
+    while (i < g_n && strcmp(g_nets[i].ssid, ssid)) i++;
+    if (i == g_n) return false;
+    g_nets[i].ip = a;
+    g_nets[i].gw = g;
+    g_nets[i].mask = m;
+    g_nets[i].dns = d;
+    if (!save()) return false;
+  }
+  // In use: join again with the new address.
+  if (g_connected && !strcmp(g_cur, ssid)) esp_wifi_disconnect();
+  g_fast.magic = 0;
+  return true;
+}
+
+bool net_get_ip(int i, NetIp *out) {
+  Lock l;
+  if (i < 0 || i >= g_n) return false;
+  *out = {};
+  out->dhcp = g_nets[i].ip == 0;
+  unquad(g_nets[i].ip, out->ip);
+  unquad(g_nets[i].gw, out->gateway);
+  unquad(g_nets[i].mask, out->subnet);
+  unquad(g_nets[i].dns, out->dns);
   return true;
 }
 

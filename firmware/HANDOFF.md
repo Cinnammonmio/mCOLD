@@ -127,7 +127,7 @@ and nowhere else.
 | `net.*` | Wi-Fi: up to 5 networks, joins the strongest; SNTP sets the clock |
 | `uplink.*` | MQTT: record batches out, application ACKs in (PROTOCOL.md section 6) |
 | `logrow.*` | the row (record.h) as the table everyone sees: the server's JSON, the CSV, the trip's file name |
-| `settings.*` | the settings document from the app (APPLY_CONFIG) and the server (MQTT config topic): which keys, Wi-Fi, broker on trial, OTA base |
+| `settings.*` | the settings document from the app (APPLY_CONFIG) and the server (MQTT config topic): which keys, Wi-Fi with DHCP or a fixed address, OTA base; the broker is the console's |
 | `ota.*` | firmware updates: file name from the server, download, checks, rollback (PROTOCOL.md section 6) |
 | `main.cpp` | 9 tasks + supervisor; console: `help` lists the commands |
 

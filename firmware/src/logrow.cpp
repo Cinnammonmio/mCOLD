@@ -50,6 +50,7 @@ size_t row_encode(const LogRow &r, const RowHeader *h, const RowSummary *s, uint
     w.u32(h->cal_version);
     w.str(h->fw, 16);
     w.str(h->sn, 24);
+    w.i32(h->temp_adj_c100);
   } else if (r.event == RE_TRIP_STOP && s) {
     w.u8(s->reason);
     w.u32(s->samples);
@@ -81,7 +82,9 @@ bool row_decode(uint8_t type, const uint8_t *p, size_t len, LogRow *r, RowHeader
   r->battery = rd.u8();
   r->internet = rd.u8();
   r->detail = rd.i32();
-  if (r->event == RE_TRIP_START && h && len >= ROW_START_LEN && rd.u8() == ROW_HEADER_FORMAT) {
+  uint8_t fmt = 0;
+  if (r->event == RE_TRIP_START && h && len >= ROW_START_LEN &&
+      ((fmt = rd.u8()) == 3 || fmt == ROW_HEADER_FORMAT)) {
     h->trip = rd.u32();
     h->tempmin_c10 = rd.i16();
     h->tempmax_c10 = rd.i16();
@@ -96,6 +99,7 @@ bool row_decode(uint8_t type, const uint8_t *p, size_t len, LogRow *r, RowHeader
     h->fw[16] = 0;
     rd.str(h->sn, 24);
     h->sn[24] = 0;
+    h->temp_adj_c100 = fmt >= 4 ? rd.i32() : 0;
     h->valid = true;
   } else if (r->event == RE_TRIP_STOP && s && len >= ROW_STOP_LEN) {
     s->reason = rd.u8();

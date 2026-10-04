@@ -49,11 +49,6 @@ bool uplink_set_server(const char *host, uint16_t port, const char *user,
                        const char *pass);
 bool uplink_configured(void);
 
-// A new broker on trial (settings.h): the old one is kept, and comes back
-// by itself if the box cannot reach the new one within UPLINK_TRIAL_MS --
-// a typo sent over MQTT must not cut the box off. Reaching it keeps it.
-bool uplink_try_server(const char *host, uint16_t port, const char *user, const char *pass);
-static const uint32_t UPLINK_TRIAL_MS = 15 * 60000;
 
 // Records of `trip` the server has confirmed: seq < this are stored.
 uint32_t uplink_acked(uint32_t trip);
@@ -72,8 +67,6 @@ struct UplinkStatus {
   bool connected;          // to the broker; says nothing about the server
   char host[64];
   uint16_t port;
-  char user[40];
-  bool trial;              // the broker is on trial (uplink_try_server)
   uint32_t batches_sent;
   uint32_t acks;           // application ACKs accepted
   uint32_t acks_rejected;  // malformed, unknown trip, or beyond the log

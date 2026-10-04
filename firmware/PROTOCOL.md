@@ -59,8 +59,8 @@ One primary service. All UUIDs share the base
   app's settings page is always the box's:
   `{"ev":"SETTINGS","config":{...every key...},"editable":[...],
   "trip_locked":[...],"server_rev":1,"network":{...}}`. `network`
-  (Wi-Fi names, broker host/port/user, OTA base; never a password) only
-  after AUTH. About 1.1 KB, so it arrives in several fragments.
+  (each Wi-Fi network with its DHCP or fixed address, the OTA base; never
+  a password) only after AUTH. About 1.1 KB, so it arrives in several fragments.
 
 ### Authorization: tap to authorize
 
@@ -172,8 +172,8 @@ A value the device does not have is **absent or `null`, never 0**.
 | `STOP_TRIP` | ✎ | | `trip` |
 | `ACK_ALARM` | ✎ | | `alarms` still active |
 | `LIST_TRIPS` | | | `trips`: `[{"trip", "last_seq", "sent"}]`, oldest first; `sent`: the server has every row |
-| `APPLY_CONFIG` | ✎ | `config`, `wifi`, `mqtt`, `ota_base` (each optional) | `applied`, `errors`: the settings document of `docs/device-settings.md`, the same one the server sends on `mcold/v1/<sn>/config`; only the keys listed there |
-| `GET_NETWORK` | ✎ | | `wifi` (names), `mqtt` (`host`, `port`, `user`, `on_trial`), `ota_base`: no passwords; needs AUTH |
+| `APPLY_CONFIG` | ✎ | `config`, `wifi`, `ota_base` (each optional; `mqtt` is refused: console only) | `applied`, `errors`: the settings document of `docs/device-settings.md`, the same one the server sends on `mcold/v1/<sn>/config`; only the keys listed there |
+| `GET_NETWORK` | ✎ | | `wifi`: `[{"ssid","dhcp"[,"ip","gateway","subnet","dns"]}]`, `ota_base`: no passwords; needs AUTH |
 | `GET_SETTINGS` | | | the SETTINGS event's content, asked for; `network` only after AUTH |
 | `MARK_DELIVERED` | ✎ | `trip` | `trip`, `rows`: the app gave this finished trip to the server itself; the box will not upload it (`ALREADY_ACTIVE` while it runs) |
 | `GET_TRIP_SUMMARY` | | `trip` | thresholds, `samples`, `min`, `max`, `alarms`, `stopped` |
@@ -183,7 +183,7 @@ A value the device does not have is **absent or `null`, never 0**.
 | `REBOOT` | ✎ | | (answered, then the device restarts) |
 | `GET_SYNC_STATUS` | | | `wifi` (connected, ssid, rssi, `known`: names only), `server` (broker, `pending` records, `last_ack_s`) |
 | `SYNC_NOW` | ✎ | | upload now rather than at the next pass |
-| `SET_WIFI` | ✎ | `ssid`, `pass` (empty for open) | adds a network or changes its password; up to 5; joins the strongest in range |
+| `SET_WIFI` | ✎ | `ssid`, `pass` (empty for open; may be left out for a known network), `dhcp`, `ip`, `gateway`, `subnet`, `dns` | adds a network or changes its password and/or address (DHCP or fixed, as eTEMP has it); up to 5; joins the strongest in range |
 | `DEL_WIFI` | ✎ | `ssid` | forgets a network |
 | `GET_USB_SNAPSHOT_STATUS` | | | `NOT_SUPPORTED` until the USB drive |
 

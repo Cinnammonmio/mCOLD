@@ -4,8 +4,10 @@
 //
 //   {"rev": 3,                                   (MQTT: applied once per rev)
 //    "config":   {"upload_period_s": 600, ...},  (settings.cpp: which keys)
-//    "wifi":     {"add": [{"ssid": "WH-2", "pass": "..."}], "del": ["Old"]},
-//    "mqtt":     {"host": "...", "port": 1883, "user": "...", "pass": "..."},
+//    "wifi":     {"add": [{"ssid": "WH-2", "pass": "...", "dhcp": false,
+//                          "ip": "192.168.1.50", "gateway": "192.168.1.1",
+//                          "subnet": "255.255.255.0", "dns": "8.8.8.8"}],
+//                 "del": ["Old"]},
 //    "ota_base": "https://..."}
 //
 // Every part is optional. Each key is checked before it is stored and
@@ -17,9 +19,8 @@
 // calibration and the sample period cannot change while a trip runs --
 // the trip's header says what they were for every row in it.
 //
-// A new broker is taken on trial (uplink.h): if the box cannot reach it
-// within UPLINK_TRIAL_MS it goes back to the old one and says so, so a
-// typo sent over MQTT cannot cut a box off for good.
+// The MQTT broker is not among them (decided 2026-10-05): it is set at
+// the console, where the person setting it can see whether it works.
 #pragma once
 
 #include <cJSON.h>
@@ -35,9 +36,13 @@ bool settings_remote_key(const char *key);
 // Refused while a trip runs.
 bool settings_trip_locked(const char *key);
 
-// The network settings as they stand, without secrets: Wi-Fi names,
-// broker host/port/user, OTA base URL.
+// The network settings as they stand, without secrets: each Wi-Fi
+// network's name and address settings, the OTA base URL.
 void settings_network(cJSON *out);
+
+// One Wi-Fi entry of the document ({"ssid", "pass", "dhcp", "ip", ...}),
+// for SET_WIFI as well. False with the reason in `why`.
+bool settings_wifi_entry(const cJSON *entry, const char **why);
 
 // Everything the app shows on its settings page (decided 2026-10-05):
 // `config` (every key and its value), `editable` (what the app may set),

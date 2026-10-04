@@ -1543,6 +1543,23 @@ void run_command(char *line) {
     } else {
       printf("  refused: SSID 1-32, password 8-63 or none, at most %d networks\n", NET_MAX);
     }
+  } else if (!strncmp(line, "wifi ip ", 8)) {
+    // wifi ip SSID dhcp | wifi ip SSID IP GATEWAY SUBNET [DNS]
+    char ssid[40] = "";
+    NetIp ip = {};
+    char a[4][24] = {};
+    const int n = sscanf(line + 8, "%39s %23s %23s %23s %23s", ssid, a[0], a[1], a[2], a[3]);
+    ip.dhcp = n == 2 && !strcmp(a[0], "dhcp");
+    snprintf(ip.ip, sizeof(ip.ip), "%s", a[0]);
+    snprintf(ip.gateway, sizeof(ip.gateway), "%s", a[1]);
+    snprintf(ip.subnet, sizeof(ip.subnet), "%s", a[2]);
+    snprintf(ip.dns, sizeof(ip.dns), "%s", a[3]);
+    if ((ip.dhcp || n >= 4) && net_set_ip(ssid, ip)) {
+      settings_touch();
+      printf("  %s: %s\n", ssid, ip.dhcp ? "DHCP" : "fixed address; used at the next join");
+    } else {
+      printf("  wifi ip SSID dhcp | wifi ip SSID IP GATEWAY SUBNET [DNS]  (a known SSID)\n");
+    }
   } else if (!strncmp(line, "wifi del ", 9)) {
     char ssid[40] = "", pass[2];
     wifi_args(line + 9, ssid, sizeof(ssid), pass, sizeof(pass));

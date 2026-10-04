@@ -1,10 +1,10 @@
 ---
 name: Service-Manual
 lang: en
-version: 0.3
+version: 0.4
 status: draft
-date: 2026-10-04
-firmware: 0.7.0-dev
+date: 2026-10-05
+firmware: 0.7.0-dev.8
 hardware: foam V1.0.1
 ---
 
@@ -73,12 +73,16 @@ even on USB — set it back to 0 first.
 | `led I R G B` · `ledtest [S] [N]` · `beep MS` | Lights and buzzer by hand |
 | `config` · `config set K V` · `config reset` | Settings (section 5) |
 | `trip` · `trip start [L H [HYST DWELL]]` · `trip stop` · `trip ack` · `trip dump [N]` | Trips from the bench |
+| `trip csv [ID]` | A trip as its CSV file (`TRIP_<SN>_<YYMMDDhhmm>.csv`) |
 | `log` · `logtest` | Trip log status; power-cut self-test (14 cases) |
 | `screen` · `screen N` · `screen rot 1\|3` | Redraw, design pages, orientation |
 | `screen cal` | Six frames 3 px apart: count those visible per side, inset = (6 − count) × 3 |
 | `wifi` / `sync` | Wi-Fi and upload status |
 | `wifi add SSID PASS` · `wifi del SSID` | Known networks (up to 5) |
-| `mqtt set HOST PORT [USER PASS]` | Broker and login |
+| `wifi ip SSID dhcp` · `wifi ip SSID IP GATEWAY SUBNET [DNS]` | A network's address: DHCP or fixed |
+| `mqtt set HOST PORT [USER PASS]` | Broker and login (the console is the only way to set it) |
+| `ota` · `ota base URL` · `ota FILE\|URL [force]` | Firmware update state, file server, install now |
+| `flash` | Restart into download mode, to flash over USB |
 | `ble [on\|off]` | BLE status; `on` advertises 60 s |
 | `rpc {json}` | Any PROTOCOL.md request, authorized |
 | `sleep` · `sleep clear` | Power manager state, wake record |
@@ -97,6 +101,8 @@ Bench-only (power measurement and tests):
 | `pin N 0\|1\|in` | Take a pin over as plain GPIO (until reboot) |
 | `log write N` · `log read` · `log erase` | Bench trip records |
 | `ack {json}` | Inject a server ACK |
+| `cfgdoc {json}` | Inject a server settings document (`docs/device-settings.md`) |
+| `ota rollback-test` | The next new image will not confirm itself |
 
 ## 5. Settings
 
@@ -109,6 +115,7 @@ range and whether it is the default.
 | `cal_offset_c100` | −1000–1000 | 0 | Temperature offset, 0.01 °C |
 | `cal_gain_ppm` | 900000–1100000 | 1000000 | Temperature gain |
 | `cal_version` / `cal_date` | — | 0 | Calibration record |
+| `temp_adj_c100` | −1000–1000 | 0 | User adjustment added after the calibration, 0.01 °C (eTEMP's tempAdj); settable from the app and the server |
 | `accel_wake_ths` | 1–63 | 2 | Motion threshold, ×31 mg |
 | `led_bright_pct` | 1–100 | 20 | Side light brightness cap |
 | `led_front_pct` | 1–100 | 2 | Front lights brightness cap |
@@ -130,7 +137,10 @@ range and whether it is the default.
 | `light_sleep` | 0–1 | 0 | Trial: light sleep between tasks while awake, on battery |
 
 Wi-Fi and broker credentials are separate (`wifi add`, `mqtt set`) and never
-appear in documents or the repository.
+appear in documents or the repository. Which keys the app and the server may
+set, and the settings document they use, are in `docs/device-settings.md`;
+the calibration (`cal_*`), the battery limits and the bench switches are the
+console's only.
 
 ## 6. Provisioning a new box
 
@@ -219,7 +229,7 @@ ALARM ACK, TIME SET, LOSS, POWER OFF), START, STOP.
 - Battery: cell datasheet, charge current and limits, fuel-gauge model, runtime
 - Root cause of the ~130 mA awake current
 - Charger / PD policy, HUSB238A register map, PD 9 V
-- OTA, USB drive with CSV, SD archive (deferred)
+- USB drive with CSV (phases F2-F4), SD archive (deferred)
 - Dock (6 boxes), factory provisioning tool, production logging, secure boot / flash encryption (P8)
 - Temperature calibration procedure and accuracy
 - Four-colour display, shock alarm, door sensor

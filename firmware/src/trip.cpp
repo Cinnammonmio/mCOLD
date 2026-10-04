@@ -294,7 +294,10 @@ void clear_alarm(uint8_t a) {
 
 float calibrated(float c) {
   const Config &k = config();
-  return c * (float)k.cal_gain_ppm / 1e6f + (float)k.cal_offset_c100 / 100.0f;
+  // The factory calibration, then the user's adjustment on top (eTEMP's
+  // tempAdj, decided 2026-10-05): the number on the glass and in every row.
+  return c * (float)k.cal_gain_ppm / 1e6f + (float)k.cal_offset_c100 / 100.0f +
+         (float)k.temp_adj_c100 / 100.0f;
 }
 
 void evaluate_temp(float c_cal, uint32_t t) {
@@ -528,6 +531,7 @@ TripErr trip_start(const TripParams &p, uint32_t *id_out) {
   h.cal_offset_c100 = config().cal_offset_c100;
   h.cal_gain_ppm = config().cal_gain_ppm;
   h.cal_version = (uint32_t)config().cal_version;
+  h.temp_adj_c100 = config().temp_adj_c100;
   snprintf(h.fw, sizeof(h.fw), "%s", esp_app_get_description()->version);
   snprintf(h.sn, sizeof(h.sn), "%s", g_sn);
 

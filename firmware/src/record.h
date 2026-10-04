@@ -33,7 +33,7 @@
 //
 // TRIP_START rows go on (the trip's header):
 //
-//  32  u8   header format (3)
+//  32  u8   header format (4; 3 had no temp adjustment)
 //  33  u32  trip id
 //  37  i16  tempmin, alarm below, 0.1 C
 //  39  i16  tempmax, alarm above, 0.1 C
@@ -46,7 +46,8 @@
 //  57  u32  calibration version
 //  61  c16  firmware version, NUL padded
 //  77  c24  device SN, NUL padded
-// 101
+// 101  i32  temp adjustment, 0.01 C (format 4)
+// 105
 //
 // TRIP_STOP rows go on (the summary):
 //
@@ -71,7 +72,7 @@ enum RecordType : uint8_t {
   REC_ROW = 0x10,
 };
 
-static const uint8_t ROW_HEADER_FORMAT = 3;
+static const uint8_t ROW_HEADER_FORMAT = 4;
 
 // What the row records. The names are the `event` column (logrow.cpp).
 enum RowEvent : uint8_t {
@@ -113,7 +114,7 @@ enum Link : uint8_t { LINK_OFFLINE = 0, LINK_WIFI_ONLY = 1, LINK_ONLINE = 2 };
 
 static const uint32_t STAMP_LEN = 11;
 static const uint32_t ROW_LEN = 32;
-static const uint32_t ROW_START_LEN = 101;
+static const uint32_t ROW_START_LEN = 101;   // format 3; format 4 is 105
 static const uint32_t ROW_STOP_LEN = 47;
 static const uint16_t U16_NONE = 0xFFFF;
 static const int16_t I16_NONE = INT16_MIN;

@@ -70,6 +70,7 @@ constexpr Field FIELDS[] = {
     F(sleep_usb, 0, 1, 0, ""),
     F(sleep_meas, 0, 1, 0, ""),
     F(light_sleep, 0, 1, 0, ""),
+    F(temp_adj_c100, -1000, 1000, 0, "0.01 C"),
 };
 #undef F
 

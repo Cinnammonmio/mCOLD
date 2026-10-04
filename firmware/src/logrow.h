@@ -44,6 +44,7 @@ struct RowHeader {
   uint32_t cal_version;
   char fw[17];
   char sn[25];
+  int32_t temp_adj_c100;    // format 4; 0 in format 3
 };
 
 struct RowSummary {

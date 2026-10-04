@@ -45,9 +45,7 @@ char *g_cfg_doc = nullptr;
 portMUX_TYPE g_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
 // What came of the last one: kept in NVS until it has gone out.
 uint32_t g_cfg_serial = 0, g_cfg_sent = 0;
-// A broker on trial, and until when (mono_ms).
-bool g_trial = false;
-uint32_t g_trial_until = 0;
+
 
 esp_mqtt_client_handle_t g_client = nullptr;
 volatile bool g_mqtt = false;
@@ -134,8 +132,6 @@ void load(void) {
   if (nvs_get_str(h, "pass", g_pass, &n) != ESP_OK) g_pass[0] = 0;
   uint16_t p;
   if (nvs_get_u16(h, "port", &p) == ESP_OK) g_port = p;
-  uint8_t t = 0;
-  g_trial = nvs_get_u8(h, "trial", &t) == ESP_OK && t;
   nvs_close(h);
 }
 
@@ -466,56 +462,6 @@ void publish_cfg(void) {
   cfg_put("report", nullptr);
 }
 
-// A broker on trial: kept once reached, given up when the time runs out.
-void trial_tick(void) {
-  if (!g_trial) return;
-  if (g_mqtt) {
-    nvs_handle_t h;
-    if (nvs_open("mqtt", NVS_READWRITE, &h) == ESP_OK) {
-      nvs_erase_key(h, "trial");
-      nvs_commit(h);
-      nvs_close(h);
-    }
-    if (nvs_open("mqtt_old", NVS_READWRITE, &h) == ESP_OK) {
-      nvs_erase_all(h);
-      nvs_commit(h);
-      nvs_close(h);
-    }
-    g_trial = false;
-    printf("[uplink] new broker %s reached: kept\n", g_host);
-    return;
-  }
-  if (!g_trial_until) g_trial_until = now_ms() + UPLINK_TRIAL_MS;
-  if ((int32_t)(now_ms() - g_trial_until) < 0) return;
-  // Not reached in time: back to the one that worked.
-  char host[64] = "", user[40] = "", pass[72] = "";
-  uint16_t port = 1883;
-  nvs_handle_t h;
-  bool have = false;
-  if (nvs_open("mqtt_old", NVS_READONLY, &h) == ESP_OK) {
-    size_t n = sizeof(host);
-    have = nvs_get_str(h, "host", host, &n) == ESP_OK;
-    n = sizeof(user);
-    nvs_get_str(h, "user", user, &n);
-    n = sizeof(pass);
-    nvs_get_str(h, "pass", pass, &n);
-    nvs_get_u16(h, "port", &port);
-    nvs_close(h);
-  }
-  printf("[uplink] new broker %s not reached in %lu min: back to %s\n", g_host,
-         (unsigned long)(UPLINK_TRIAL_MS / 60000), have ? host : "(none kept)");
-  g_trial = false;
-  g_trial_until = 0;
-  if (have) uplink_set_server(host, port, user, pass);   // clears the trial flag too
-  settings_touch();
-  cJSON *rep = cJSON_CreateObject();
-  cJSON_AddNumberToObject(rep, "rev", cfg_rev());
-  cJSON_AddStringToObject(rep, "state", "mqtt_reverted");
-  cJSON_AddStringToObject(rep, "why", "the new broker was not reached: back on the old one");
-  cfg_report(rep);
-  cJSON_Delete(rep);
-}
-
 // The OTA module's latest word, once each, retained.
 uint32_t g_ota_sent = 0;
 void publish_ota(void) {
@@ -598,7 +544,6 @@ void end_session(bool all_sent) {
 
 void battery_pass(void) {
   const uint32_t t = now_ms();
-  trial_tick();
   if (!g_ses.on) {
     // After this wake's sample, so the record just written goes now and
     // not one period later. Ten seconds at most: a trip task that never
@@ -701,8 +646,7 @@ void task(void *) {
     net_status(&ns);
     if (!g_started && g_host[0] && ns.connected) start_client();
     set_link(g_mqtt ? LINK_ONLINE : ns.connected ? LINK_WIFI_ONLY : LINK_OFFLINE);
-    trial_tick();
-    if (!g_mqtt) continue;
+      if (!g_mqtt) continue;
     publish_ota();
     apply_cfg_doc();
     publish_cfg();
@@ -771,7 +715,6 @@ bool uplink_set_server(const char *host, uint16_t port, const char *user,
   }
   nvs_handle_t h;
   if (nvs_open("mqtt", NVS_READWRITE, &h) != ESP_OK) return false;
-  nvs_erase_key(h, "trial");      // set by hand: no trial
   const bool ok = nvs_set_str(h, "host", host) == ESP_OK &&
                   nvs_set_u16(h, "port", port) == ESP_OK &&
                   nvs_set_str(h, "user", user ? user : "") == ESP_OK &&
@@ -793,33 +736,6 @@ bool uplink_set_server(const char *host, uint16_t port, const char *user,
 
 bool uplink_configured(void) { return g_host[0] != 0; }
 
-bool uplink_try_server(const char *host, uint16_t port, const char *user, const char *pass) {
-  if (!host || !*host || strlen(host) >= sizeof(g_host) || !port ||
-      (user && strlen(user) >= sizeof(g_user)) || (pass && strlen(pass) >= sizeof(g_pass))) {
-    return false;
-  }
-  // The one that works now, kept to come back to (unless a trial is
-  // already running: then the old one is still the one that worked).
-  nvs_handle_t h;
-  if (!g_trial && g_host[0] && nvs_open("mqtt_old", NVS_READWRITE, &h) == ESP_OK) {
-    nvs_set_str(h, "host", g_host);
-    nvs_set_u16(h, "port", g_port);
-    nvs_set_str(h, "user", g_user);
-    nvs_set_str(h, "pass", g_pass);
-    nvs_commit(h);
-    nvs_close(h);
-  }
-  if (!uplink_set_server(host, port, user, pass)) return false;
-  if (nvs_open("mqtt", NVS_READWRITE, &h) == ESP_OK) {
-    nvs_set_u8(h, "trial", 1);
-    nvs_commit(h);
-    nvs_close(h);
-  }
-  g_trial = true;
-  g_trial_until = now_ms() + UPLINK_TRIAL_MS;
-  settings_touch();
-  return true;
-}
 
 uint32_t uplink_acked(uint32_t trip) { return ack_get(trip); }
 
@@ -863,8 +779,6 @@ void uplink_status(UplinkStatus *out) {
   out->connected = g_mqtt;
   snprintf(out->host, sizeof(out->host), "%s", g_host);
   out->port = g_port;
-  snprintf(out->user, sizeof(out->user), "%s", g_user);
-  out->trial = g_trial;
   out->batches_sent = g_batches;
   out->acks = g_acks;
   out->acks_rejected = g_rejected;

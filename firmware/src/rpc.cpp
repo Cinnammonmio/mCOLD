@@ -631,12 +631,10 @@ cJSON *c_sync_now(uint32_t id, const cJSON *, RpcSession *) {
 }
 
 cJSON *c_set_wifi(uint32_t id, const cJSON *req, RpcSession *) {
-  const cJSON *s = cJSON_GetObjectItemCaseSensitive(req, "ssid");
-  const cJSON *p = cJSON_GetObjectItemCaseSensitive(req, "pass");
-  if (!cJSON_IsString(s) || (p && !cJSON_IsString(p)) ||
-      !net_add(s->valuestring, p ? p->valuestring : "")) {
-    return fail(id, "BAD_ARGS", "ssid 1-32 bytes, pass empty or 8-63, at most 5 networks");
-  }
+  // The same entry as the settings document's: ssid, pass, and dhcp or
+  // ip/gateway/subnet/dns.
+  const char *why = nullptr;
+  if (!settings_wifi_entry(req, &why)) return fail(id, "BAD_ARGS", why);
   settings_touch();
   cJSON *o = ok(id);
   cJSON_AddNumberToObject(o, "known", net_count());

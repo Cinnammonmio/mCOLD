@@ -39,6 +39,18 @@ void net_stop(void);
 // list is full.
 bool net_add(const char *ssid, const char *pass);
 bool net_remove(const char *ssid);
+
+// How a network gives the box its address, per network as eTEMP has it
+// (decided 2026-10-05): DHCP, or a fixed address with its gateway, subnet
+// mask and DNS server. Dotted quads; dns may be empty (then the gateway).
+struct NetIp {
+  bool dhcp;
+  char ip[16], gateway[16], subnet[16], dns[16];
+};
+// False for a network not in the list, or an address that does not parse
+// (or a gateway outside the subnet). Takes effect at the next join.
+bool net_set_ip(const char *ssid, const NetIp &ip);
+bool net_get_ip(int i, NetIp *out);
 int net_count(void);
 // The i-th known SSID (never the password), for listing.
 bool net_known(int i, char *ssid, int n);

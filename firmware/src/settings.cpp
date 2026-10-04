@@ -20,14 +20,16 @@ namespace {
 const char *const REMOTE[] = {
     "sample_period_s", "upload_period_s", "gnss_period_s",  "idle_wake_s",
     "tz_offset_min",   "led_front_pct",   "led_bright_pct", "led_status_s",
-    "buzzer_enabled",  "accel_wake_ths",  "cal_offset_c100", "cal_gain_ppm",
-    "cal_version",     "cal_date",
+    "buzzer_enabled",  "accel_wake_ths",  "temp_adj_c100",
 };
+// The factory calibration (cal_*) is the console's: the user's correction
+// is temp_adj_c100, as eTEMP has it (decided 2026-10-05).
 
 // A trip's header carries these; changing them under a running trip would
 // make its rows say something the header does not.
 const char *const TRIP_LOCKED[] = {
-    "sample_period_s", "cal_offset_c100", "cal_gain_ppm", "cal_version", "cal_date",
+    "sample_period_s", "temp_adj_c100", "cal_offset_c100", "cal_gain_ppm", "cal_version",
+    "cal_date",
 };
 
 template <size_t N>
@@ -82,6 +84,58 @@ void apply_config(const cJSON *cfg, cJSON *applied, cJSON *errors) {
   }
 }
 
+// One network: its password (kept if absent for a known one) and how it
+// gives the box an address -- "dhcp": true, or ip/gateway/subnet[/dns].
+void str16(const cJSON *o, const char *k, char *out) {
+  const cJSON *v = cJSON_GetObjectItemCaseSensitive(o, k);
+  snprintf(out, 16, "%s", cJSON_IsString(v) ? v->valuestring : "");
+}
+
+}  // namespace
+
+bool settings_wifi_entry(const cJSON *e, const char **why) {
+  const cJSON *s = cJSON_GetObjectItemCaseSensitive(e, "ssid");
+  const cJSON *p = cJSON_GetObjectItemCaseSensitive(e, "pass");
+  if (!cJSON_IsString(s)) {
+    *why = "each entry needs an ssid";
+    return false;
+  }
+  bool known = false;
+  for (int i = 0; i < net_count(); i++) {
+    char n[33];
+    known = known || (net_known(i, n, sizeof(n)) && !strcmp(n, s->valuestring));
+  }
+  if (cJSON_IsString(p) || !known) {
+    if (!known && !cJSON_IsString(p)) {
+      *why = "a new network needs pass (\"\" for an open one)";
+      return false;
+    }
+    if (!net_add(s->valuestring, p->valuestring)) {
+      *why = "ssid 1-32 bytes, pass empty or 8-63, at most 5 networks";
+      return false;
+    }
+  }
+  const cJSON *dhcp = cJSON_GetObjectItemCaseSensitive(e, "dhcp");
+  const cJSON *ip = cJSON_GetObjectItemCaseSensitive(e, "ip");
+  if (dhcp || ip) {
+    NetIp n = {};
+    n.dhcp = cJSON_IsTrue(dhcp) || (!dhcp && !ip);
+    if (!n.dhcp) {
+      str16(e, "ip", n.ip);
+      str16(e, "gateway", n.gateway);
+      str16(e, "subnet", n.subnet);
+      str16(e, "dns", n.dns);
+    }
+    if (!net_set_ip(s->valuestring, n)) {
+      *why = "dhcp true, or ip, gateway, subnet (and dns) as dotted quads on one subnet";
+      return false;
+    }
+  }
+  return true;
+}
+
+namespace {
+
 void apply_wifi(const cJSON *w, cJSON *applied, cJSON *errors) {
   if (!cJSON_IsObject(w)) {
     err(errors, "wifi", "must be {\"add\": [...], \"del\": [...]}");
@@ -103,34 +157,12 @@ void apply_wifi(const cJSON *w, cJSON *applied, cJSON *errors) {
   if (add) {
     cJSON_ArrayForEach(it, add) {
       const cJSON *s = cJSON_GetObjectItemCaseSensitive(it, "ssid");
-      const cJSON *p = cJSON_GetObjectItemCaseSensitive(it, "pass");
-      if (!cJSON_IsString(s)) {
-        err(errors, "wifi add", "each entry needs an ssid");
-        continue;
-      }
       char what[48];
-      snprintf(what, sizeof(what), "wifi add %s", s->valuestring);
-      if (net_add(s->valuestring, cJSON_IsString(p) ? p->valuestring : "")) did(applied, what);
-      else err(errors, what, "ssid 1-32 bytes, pass empty or 8-63, at most 5 networks");
+      snprintf(what, sizeof(what), "wifi add %s", cJSON_IsString(s) ? s->valuestring : "?");
+      const char *why = nullptr;
+      if (settings_wifi_entry(it, &why)) did(applied, what);
+      else err(errors, what, why);
     }
-  }
-}
-
-void apply_mqtt(const cJSON *m, cJSON *applied, cJSON *errors) {
-  const cJSON *h = cJSON_GetObjectItemCaseSensitive(m, "host");
-  const cJSON *u = cJSON_GetObjectItemCaseSensitive(m, "user");
-  const cJSON *p = cJSON_GetObjectItemCaseSensitive(m, "pass");
-  const cJSON *port = cJSON_GetObjectItemCaseSensitive(m, "port");
-  const int pt = cJSON_IsNumber(port) ? (int)port->valuedouble : 1883;
-  if (!cJSON_IsString(h) || pt < 1 || pt > 65535) {
-    err(errors, "mqtt", "host (string), port 1-65535, user and pass (strings)");
-    return;
-  }
-  if (uplink_try_server(h->valuestring, (uint16_t)pt, cJSON_IsString(u) ? u->valuestring : "",
-                        cJSON_IsString(p) ? p->valuestring : "")) {
-    did(applied, "mqtt (on trial: kept once the box reaches it)");
-  } else {
-    err(errors, "mqtt", "too long, or not stored");
   }
 }
 
@@ -181,10 +213,8 @@ bool settings_apply(const cJSON *doc, cJSON *report) {
     if (cJSON_IsString(o) && ota_set_base(o->valuestring)) did(applied, "ota_base");
     else err(errors, "ota_base", "http(s)://host/path, under 128");
   }
-  // The broker last: everything else is stored before the connection is
-  // handed to a server that may not answer.
-  const cJSON *m = cJSON_GetObjectItemCaseSensitive(doc, "mqtt");
-  if (m) apply_mqtt(m, applied, errors);
+  // The broker is not set from outside (decided 2026-10-05): the console's.
+  if (cJSON_GetObjectItemCaseSensitive(doc, "mqtt")) err(errors, "mqtt", "console only");
   if (cJSON_GetArraySize(applied)) settings_touch();
   return cJSON_GetArraySize(errors) == 0;
 }
@@ -193,15 +223,19 @@ void settings_network(cJSON *out) {
   cJSON *w = cJSON_AddArrayToObject(out, "wifi");
   for (int i = 0; i < net_count(); i++) {
     char s[33];
-    if (net_known(i, s, sizeof(s))) cJSON_AddItemToArray(w, cJSON_CreateString(s));
+    NetIp ip;
+    if (!net_known(i, s, sizeof(s)) || !net_get_ip(i, &ip)) continue;
+    cJSON *e = cJSON_CreateObject();
+    cJSON_AddStringToObject(e, "ssid", s);
+    cJSON_AddBoolToObject(e, "dhcp", ip.dhcp);
+    if (!ip.dhcp) {
+      cJSON_AddStringToObject(e, "ip", ip.ip);
+      cJSON_AddStringToObject(e, "gateway", ip.gateway);
+      cJSON_AddStringToObject(e, "subnet", ip.subnet);
+      cJSON_AddStringToObject(e, "dns", ip.dns);
+    }
+    cJSON_AddItemToArray(w, e);
   }
-  UplinkStatus us;
-  uplink_status(&us);
-  cJSON *m = cJSON_AddObjectToObject(out, "mqtt");
-  cJSON_AddStringToObject(m, "host", us.host);
-  cJSON_AddNumberToObject(m, "port", us.port);
-  cJSON_AddStringToObject(m, "user", us.user);
-  cJSON_AddBoolToObject(m, "on_trial", us.trial);
   char base[128];
   if (ota_get_base(base, sizeof(base))) cJSON_AddStringToObject(out, "ota_base", base);
   else cJSON_AddNullToObject(out, "ota_base");

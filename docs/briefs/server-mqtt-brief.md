@@ -1,10 +1,10 @@
 ---
 name: Server-Brief_MQTT
 lang: th
-version: 0.9
+version: 0.10
 status: draft
 date: 2026-10-04
-firmware: 0.7.0-dev.6
+firmware: 0.7.0-dev.8
 ---
 
 # mCOLD — สิ่งที่ฝั่ง Server ต้องทำ (MQTT)
@@ -207,16 +207,20 @@ publish เอกสารตั้งค่าที่ `mcold/v1/<sn>/config` 
 
 ```json
 {"rev":3,
- "config":{"upload_period_s":600,"led_front_pct":2},
- "wifi":{"add":[{"ssid":"Warehouse-2","pass":"..."}],"del":["OldNet"]},
- "mqtt":{"host":"...","port":1883,"user":"...","pass":"..."},
+ "config":{"upload_period_s":600,"temp_adj_c100":-50},
+ "wifi":{"add":[{"ssid":"Warehouse-2","pass":"...","dhcp":true},
+                {"ssid":"Office","pass":"...","dhcp":false,"ip":"192.168.1.50",
+                 "gateway":"192.168.1.1","subnet":"255.255.255.0","dns":"8.8.8.8"}],
+         "del":["OldNet"]},
  "ota_base":"https://drive.siamatic.co.th/media/firmwares"}
 ```
 
 - ส่งแค่ส่วนที่จะเปลี่ยน · **`rev` ต้องเพิ่มทุกครั้ง** กล่องใช้แต่ละ rev ครั้งเดียว
-- ผลกลับมาที่ `mcold/<sn>/config/state` (`ok` / `partial` / `refused` / `mqtt_reverted`) พร้อมเหตุผลของค่าที่ไม่ได้ตั้ง
-- ค่าบางตัว (รอบบันทึก, สอบเทียบ) เปลี่ยนไม่ได้ระหว่าง trip — ส่ง rev ใหม่หลังจบ trip
-- broker ใหม่ทดลอง 15 นาที ต่อไม่ได้กลับไปใช้ตัวเดิมเอง
+- ผลกลับมาที่ `mcold/<sn>/config/state` (`ok` / `partial` / `refused`) พร้อมเหตุผลของค่าที่ไม่ได้ตั้ง
+- **Wi-Fi แบบ eTEMP:** `dhcp` true/false, `ip`, `gateway`, `subnet`, `dns` ตั้งแยกต่อเครือข่าย
+- **ปรับอุณหภูมิ `temp_adj_c100`** (แบบ tempAdj ของ eTEMP) หน่วย 0.01 °C บวกเพิ่มจากค่าที่วัด
+- ค่าบางตัว (รอบบันทึก, temp adjust) เปลี่ยนไม่ได้ระหว่าง trip — ส่ง rev ใหม่หลังจบ trip
+- **MQTT broker ตั้งจาก server ไม่ได้** ตั้งที่ตัวเครื่องผ่าน console เท่านั้น
 - รายการค่าทั้งหมด: `docs/device-settings.md` · แอปใช้เอกสารเดียวกันผ่าน BLE (`APPLY_CONFIG`)
 
-⚠️ เอกสารนี้มีรหัส Wi-Fi/MQTT: บนพอร์ต 1883 ที่ไม่เข้ารหัส ใครดักฟังก็เห็น — เป็นอีกเหตุผลที่ต้องเปิด TLS (ข้อ 6)
+⚠️ เอกสารนี้มีรหัส Wi-Fi: บนพอร์ต 1883 ที่ไม่เข้ารหัส ใครดักฟังก็เห็น — เป็นอีกเหตุผลที่ต้องเปิด TLS (ข้อ 6)
