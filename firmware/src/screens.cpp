@@ -56,9 +56,10 @@ const int BATT_W = 11;
 const int BATT_H = 16;
 
 const GFXfont *CAPS = &mColdCaps11;     // footer %, labels
-// The header: medium weight, and with lower case, because the SN has it
+// The header: regular weight, and with lower case, because the SN has it
 // (mCDV1-...). Bold 12 left the SN within 22 px of the date (2026-10-04);
-// medium 11 is lighter and narrower, 30 px apart.
+// medium 11 hinted the 1 to a 2 px stem beside 1 px digits; regular 11
+// has every stem at 1 px, and leaves 32 px.
 const GFXfont *HEAD = &mColdHead11;
 const GFXfont *BODY = &mColdBody13;     // sentences on takeover screens
 const GFXfont *READING = &mColdRead15;  // min/max and charge-row values
