@@ -114,7 +114,16 @@ Measured with the charger in HIZ: asleep ≤ 0.25 mA; awake ~130 mA
   app, the records and the low-battery alarm; the switch-off stays on
   the cell voltage. New settings `batt_mah` (1500), `sleep_ua` (250);
   console `soc`, `soc set P`; `health` shows counted and gauge side by
-  side. Not yet run on the board.
+  side.
+- The count is checked against the voltage (decided 2026-10-04, the cell's
+  1500 mAh not being trusted): after a sleep of 4 min or more the rested
+  voltage, plus what the wake's current takes off it (150 mOhm), reads an
+  OCV table (generic LiPo, to be replaced by this cell's) and pulls the
+  count towards it -- hard on the steep ends, gently in the flat middle,
+  not within 2 h of charging. Two reliable points (charge done, a rested
+  voltage on a steep part, the switch-off voltage) 30 % or more apart
+  give the capacity from the charge counted between them. On the board:
+  starts at 100 % "charge done" (gauge 95.6 %).
 - Review fixes: GNSS due but unavailable, and a dwell run out with no
   probe readings, no longer hold the chip awake; pm ignores wake times
   over 30 s in the past; the battery switch-off holds the chip up until

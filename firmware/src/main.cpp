@@ -1359,6 +1359,14 @@ void run_command(char *line) {
       printf("  %.1f %%  %.0f of %.0f mAh (%s)  anchor: %s\n", s.percent, s.remaining_mah,
              s.capacity_mah, s.capacity_learned ? "learned" : "rated, config batt_mah",
              s.anchor);
+      if (s.ocv_percent >= 0) printf("  last rested voltage reads %.0f %%\n", s.ocv_percent);
+      if (s.ref_percent >= 0) {
+        printf("  capacity measured from the %.0f %% point on%s\n", s.ref_percent,
+               s.last_capacity_estimate > 0 ? "" : " (needs a second point 30 % away)");
+      }
+      if (s.last_capacity_estimate > 0) {
+        printf("  last capacity estimate %.0f mAh\n", s.last_capacity_estimate);
+      }
       if (s.drawn_since_full_mah >= 0) {
         printf("  drawn since the last full charge: %.0f mAh\n", s.drawn_since_full_mah);
       } else {

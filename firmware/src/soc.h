@@ -6,17 +6,26 @@
 // second, and right after a full charge the cell's surface charge
 // relaxes, so the percent falls fast near the top and wanders with load.
 //
-// Counted instead (coulomb counting): the INA226 measures the current in
-// and out of the cell while the chip is awake; while it sleeps the INA226
-// is off, and the sleep is charged at config `sleep_ua` for as long as it
-// lasted. Anchors keep the count honest:
+// Counted instead (coulomb counting), and checked against the voltage:
 //
-//   charge done (BQ25601)       -> 100 %
-//   first reading, or the kept count disagreeing with the gauge by more
-//   than 15 % (charged with the power switch off, a new cell)  -> the
-//                                  gauge's percent, once
-//   switched off at batt_off_mv after a full charge -> the capacity is
-//                                  learned from what was drawn since
+//   counting   the INA226 measures the current in and out of the cell
+//              while the chip is awake; while it sleeps the INA226 is off,
+//              and the sleep is charged at config `sleep_ua`. Smooth and
+//              right in the short run; drifts in the long run, and needs
+//              the capacity.
+//   voltage    after a sleep the cell has rested, so its voltage (plus
+//              what this wake's current takes off it) reads off an OCV
+//              table. Never drifts, needs no capacity, but is poor where
+//              the curve is flat. It pulls the count towards it, hard on
+//              the steep ends and gently in the flat middle.
+//   capacity   is not trusted from the label (decided 2026-10-04): two
+//              reliable points -- charge done (100 %), a rested voltage on
+//              a steep part of the curve, the switch-off voltage (~5 %) --
+//              at least 30 % apart, with the charge counted between them,
+//              give it. batt_mah is only the starting guess.
+//
+// The gauge's own percent is used once, to start (or when the kept count
+// disagrees with it by more than 15 %: charged with the switch off).
 //
 // Kept through sleep and resets in RTC memory, and in NVS every 1 % so a
 // power switch-off does not lose it. The low-battery switch-off itself
@@ -49,6 +58,9 @@ struct SocStatus {
   bool capacity_learned;
   float drawn_since_full_mah;  // -1: no full charge seen yet
   const char *anchor;       // how the count was last set
+  float ocv_percent;        // the last rested-voltage reading; -1: none yet
+  float ref_percent;        // the reference point a capacity is measured from; -1: none
+  float last_capacity_estimate;  // 0: none this boot
 };
 void soc_status(SocStatus *out);
 
