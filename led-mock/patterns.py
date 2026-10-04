@@ -25,10 +25,13 @@ GRID = (222, 224, 228)
 
 # LED colours as the firmware sends them, drawn at full strength so they
 # can be told apart; the front pixels really run at 2 % and the side at 20 %.
+# Two families (2026-10-04): warnings keep place and colour -- red is the
+# cargo, amber the box; everything calm is blue, violet or cyan.
 RED = (198, 44, 38)
-GREEN = (30, 158, 74)
 AMBER = (224, 152, 16)
-BLUE = (42, 108, 186)
+BLUE = (40, 84, 214)
+VIOLET = (128, 60, 210)
+CYAN = (24, 170, 214)
 WHITE = (244, 244, 240)
 
 
@@ -39,16 +42,19 @@ def font(weight, size):
 # (label, note, colour, sequence): (ms, on) pairs, "on" may be "breathe".
 # Front patterns: indicate.cpp PATS. Side: chargeled.cpp render().
 PATTERNS = [
-    ("TICK", "front · trip running (alive)", GREEN, [(40, True)]),
-    ("BLINK", "front · one acknowledgement", BLUE, [(120, True)]),
-    ("DOUBLE", "front · cargo alarm", RED, [(80, True), (120, False), (80, True)]),
-    ("TRIPLE", "front · device problem; trip started (green)", AMBER,
+    ("TICK", "front · trip running (alive)", CYAN, [(40, True)]),
+    ("BLINK", "front · acknowledged, trip stopped (blue); tap (violet)", BLUE, [(120, True)]),
+    ("DOUBLE", "front · cargo alarm -- always red, always left", RED,
+     [(80, True), (120, False), (80, True)]),
+    ("TRIPLE", "front · box problem -- always amber, always right", AMBER,
      [(80, True), (70, False), (80, True), (70, False), (80, True)]),
-    ("SWEEP", "front · boot: left → middle → right, 80 ms each", WHITE,
-     [(80, True), (0, False), (80, True), (0, False), (80, True)]),
-    ("BREATHE", "side · charging (amber) / ≥ 80 % (green), 12–100 %", AMBER,
+    ("TRIPLE", "front · trip started", CYAN,
+     [(80, True), (70, False), (80, True), (70, False), (80, True)]),
+    ("SWEEP", "front · boot: blue, violet, cyan, 80 ms each", None,
+     [(80, BLUE), (0, False), (80, VIOLET), (0, False), (80, CYAN)]),
+    ("BREATHE", "side · charging (blue) / ≥ 80 % (cyan), 12–100 %", BLUE,
      [(2000, "breathe")]),
-    ("STEADY", "side · charge full", GREEN, [(2000, True)]),
+    ("STEADY", "side · charge full", CYAN, [(2000, True)]),
     ("SLOW BLINK", "side · power in, not charging: 120 ms every 2 s", AMBER,
      [(120, True), (1880, False)]),
     ("FAULT BLINK", "side · charge fault: 120 ms every 1 s", RED,
@@ -97,13 +103,15 @@ def vocabulary():
                                 for j, p in enumerate(color))
                     d.rectangle([(bx0, y + 8), (bx1, y + 25)], fill=bar)
             elif on:
-                d.rectangle([(x0, y + 8), (max(x1, x0 + 2), y + 25)], fill=color,
-                            outline=MUTED if color is WHITE else None)
+                seg = on if isinstance(on, tuple) else color
+                d.rectangle([(x0, y + 8), (max(x1, x0 + 2), y + 25)], fill=seg,
+                            outline=MUTED if seg is WHITE else None)
             t += ms
         if name == "SWEEP":
             for k, lbl in enumerate(("L", "M", "R")):
                 x = left + width * (k * 80 + 40) / SPAN
-                d.text((x, y + 17), lbl, font=font("SemiBold", 9), fill=INK, anchor="mm")
+                d.text((x, y + 17), lbl, font=font("SemiBold", 9), fill=(255, 255, 255),
+                       anchor="mm")
         total = sum(ms for ms, _ in seq)
         d.text((left + width + 12, y + 16), f"{total} ms", font=font("Light", 11),
                fill=MUTED, anchor="lm")
@@ -122,7 +130,7 @@ def led_map():
     d.rounded_rectangle([(40, 92), (430, 290)], 14, outline=(200, 202, 206), width=2)
     d.text((52, 104), "FRONT · 2 %", font=font("SemiBold", 11), fill=MUTED)
     front = [("LED3", "index 3", RED, "CARGO", "สินค้า: alarm อุณหภูมิ"),
-             ("LED2", "index 2", GREEN, "ALIVE", "trip ทำงาน"),
+             ("LED2", "index 2", CYAN, "ALIVE", "trip ทำงาน"),
              ("LED1", "index 1", AMBER, "DEVICE", "เครื่องมีปัญหา")]
     for i, (name, idx, color, role, note) in enumerate(front):
         cx = 108 + i * 124
@@ -137,10 +145,10 @@ def led_map():
 
     d.rounded_rectangle([(470, 92), (718, 290)], 14, outline=(200, 202, 206), width=2)
     d.text((482, 104), "SIDE · 20 %", font=font("SemiBold", 11), fill=MUTED)
-    d.ellipse([(577, 140), (611, 174)], fill=AMBER, outline=(255, 255, 255), width=2)
+    d.ellipse([(577, 140), (611, 174)], fill=BLUE, outline=(255, 255, 255), width=2)
     d.text((594, 190), "LED4", font=font("SemiBold", 12), fill=INK, anchor="ma")
     d.text((594, 206), "index 0 · XL-4020RGBC", font=font("Light", 10), fill=MUTED, anchor="ma")
-    d.text((594, 224), "CHARGE", font=font("SemiBold", 10), fill=AMBER, anchor="ma")
+    d.text((594, 224), "CHARGE", font=font("SemiBold", 10), fill=BLUE, anchor="ma")
     d.text((594, 240), "สว่างเฉพาะตอนเสียบสาย", font=font("Light", 10), fill=MUTED, anchor="ma")
 
     img.save(OUT / "led_map.png")
@@ -155,7 +163,7 @@ def led_map():
 # three 150 ms beeps 300 ms apart.
 DOUBLE = [(0, 80), (200, 80)]
 TRIPLE = [(0, 80), (150, 80), (300, 80)]
-SWEEP = [(0, 80, WHITE, "L"), (80, 80, WHITE, "M"), (160, 80, WHITE, "R")]
+SWEEP = [(0, 80, BLUE, "L"), (80, 80, VIOLET, "M"), (160, 80, CYAN, "R")]
 
 
 def bars(spans, colour):
@@ -164,30 +172,30 @@ def bars(spans, colour):
 
 SECTIONS = [
     ("เปิดเครื่องและการแตะ", [
-        ("เปิดเครื่อง", "ครั้งเดียวตอนบูต", {"L": WHITE, "M": WHITE, "R": WHITE},
-         SWEEP + [(390, 120, GREEN, "")], []),
-        ("เปิดเครื่อง เครื่องมีปัญหา", "ไฟขวาแทนการกะพริบเขียว", {"L": WHITE, "M": WHITE, "R": AMBER},
+        ("เปิดเครื่อง", "ครั้งเดียวตอนบูต", {"L": BLUE, "M": VIOLET, "R": CYAN},
+         SWEEP + [(390, 120, CYAN, "")], []),
+        ("เปิดเครื่อง เครื่องมีปัญหา", "ไฟขวาแทนการกะพริบฟ้า", {"L": BLUE, "M": VIOLET, "R": AMBER},
          SWEEP + bars([(390 + t, n) for t, n in TRIPLE], AMBER), []),
-        ("แตะ NFC", "ทันที", {"L": WHITE, "M": WHITE, "R": WHITE},
-         [(0, 120, WHITE, "")], []),
-        ("มีคนขยับกล่อง", "แสดงสถานะ 1 ครั้ง · ไม่เกิน 4 ครั้ง/ชม.", {"M": GREEN},
-         [(0, 40, GREEN, "")], []),
+        ("แตะ NFC", "ทันที", {"L": VIOLET, "M": VIOLET, "R": VIOLET},
+         [(0, 120, VIOLET, "")], []),
+        ("มีคนขยับกล่อง", "แสดงสถานะ 1 ครั้ง · ไม่เกิน 4 ครั้ง/ชม.", {"M": CYAN},
+         [(0, 40, CYAN, "")], []),
     ]),
     ("Trip", [
-        ("เริ่ม trip", "ทันที", {"M": GREEN}, bars(TRIPLE, GREEN), []),
-        ("trip ทำงาน", "ทุก 15 นาที", {"M": GREEN}, [(0, 40, GREEN, "")], []),
-        ("หยุด trip", "ทันที", {"M": GREEN}, [(0, 120, GREEN, "")], []),
+        ("เริ่ม trip", "ทันที", {"M": CYAN}, bars(TRIPLE, CYAN), []),
+        ("trip ทำงาน", "ทุก 15 นาที", {"M": CYAN}, [(0, 40, CYAN, "")], []),
+        ("หยุด trip", "ทันที", {"M": BLUE}, [(0, 120, BLUE, "")], []),
     ]),
-    ("Alarm และปัญหาของเครื่อง", [
+    ("Alarm และปัญหาของเครื่อง · ตำแหน่งและสีคงที่", [
         ("alarm อุณหภูมิ", "ทันที แล้วทุกรอบตื่น (5 นาที)", {"L": RED},
          bars(DOUBLE, RED), [(280, 150), (580, 150), (880, 150)]),
         ("รับทราบ alarm", "ทันที · เสียงหยุด", {"L": BLUE}, [(0, 120, BLUE, "")], []),
         ("เครื่องมีปัญหา", "ทันที แล้วทุก 15 นาที", {"R": AMBER}, bars(TRIPLE, AMBER), []),
     ]),
     ("ไฟข้างเครื่อง · การชาร์จ", [
-        ("กำลังชาร์จ", "ตลอดการชาร์จ", {"S": AMBER}, [(0, 2000, AMBER, "breathe")], []),
-        ("ชาร์จเกือบเต็ม (≥ 80%)", "ตลอดการชาร์จ", {"S": GREEN}, [(0, 2000, GREEN, "breathe")], []),
-        ("ชาร์จเต็ม", "ติดค้าง", {"S": GREEN}, [(0, 2000, GREEN, "")], []),
+        ("กำลังชาร์จ", "ตลอดการชาร์จ", {"S": BLUE}, [(0, 2000, BLUE, "breathe")], []),
+        ("ชาร์จเกือบเต็ม (≥ 80%)", "ตลอดการชาร์จ", {"S": CYAN}, [(0, 2000, CYAN, "breathe")], []),
+        ("ชาร์จเต็ม", "ติดค้าง", {"S": CYAN}, [(0, 2000, CYAN, "")], []),
         ("มีไฟเข้าแต่ไม่ชาร์จ", "ทุก 2 วินาที", {"S": AMBER}, [(0, 120, AMBER, "")], []),
         ("ชาร์จผิดปกติ", "ทุก 1 วินาที · บี๊บ 1 ครั้งตอนเริ่ม", {"S": RED},
          [(0, 120, RED, ""), (1000, 120, RED, "")], [(0, 150)]),
@@ -229,7 +237,7 @@ def states():
     img = Image.new("RGB", (x_r + 28, h), PAPER)
     d = ImageDraw.Draw(img)
     d.text((28, 26), "When each light shows", font=font("SemiBold", 19), fill=INK)
-    d.text((28, 50), "บนแบต เครื่องหลับระหว่างรอบ ไฟจึงติดเฉพาะตอนตื่น · ตาม firmware 0.7",
+    d.text((28, 50), "บนแบต เครื่องหลับระหว่างรอบ ไฟจึงติดเฉพาะตอนตื่น · แดง/เหลือง = เตือน (ตำแหน่งคงที่) · น้ำเงิน/ม่วง/ฟ้า = ปกติ",
            font=font("Light", 12), fill=MUTED)
     for x, t in ((ev_x, "เหตุการณ์"), (dev_x - 4, "ตำแหน่ง"), (tl_x, "รูปแบบ")):
         d.text((x, 82), t, font=font("SemiBold", 11), fill=MUTED)
@@ -271,7 +279,7 @@ def states():
                                 outline=MUTED if col is WHITE else None)
                     if mark:
                         d.text(((x0 + x1) / 2, by + 9), mark, font=font("SemiBold", 9),
-                               fill=INK, anchor="mm")
+                               fill=(255, 255, 255), anchor="mm")
             for t0, n in beeps:
                 x0 = tl_x + tl_w * t0 / SPAN_S
                 x1 = tl_x + tl_w * (t0 + n) / SPAN_S

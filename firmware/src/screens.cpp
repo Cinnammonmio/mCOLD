@@ -5,23 +5,49 @@
 #include <string.h>
 
 #include "fonts_mcold.h"
+#include "fonts_head.h"
 
 namespace {
 
 // ---- the grid, straight from render.py --------------------------------
 
-const int W = CANVAS_W;
-const int H = CANVAS_H;
+// The case's bezel covers a few pixels on every side (2026-10-04), so
+// the layout is drawn into the area it leaves visible: the insets are
+// config epd_inset_t/b/l/r, measured with `screen cal`. Everything below
+// is relative to that area; with no insets it is render.py's grid.
+int INS_T = 0, INS_B = 0, INS_L = 0, INS_R = 0;
+int W = CANVAS_W;
+int H = CANVAS_H;
 const int BAR = 17;          // header bar height
-const int RULE = 100;        // footer divider
+int RULE = 100;              // footer divider
 const int M = 8;             // side margin
-const int EDGE_R = W - M;
+int EDGE_R = W - M;
 const int GAP = 7;           // between footer icons
 const int BASE_BAR = 12;     // header baseline
-const int BASE_HERO = 80;    // temperature, fixed on every monitor screen
-const int BASE_BOTTOM = 96;  // min/max, or a caps note when there is no trip
-const int BASE_FOOT = 118;   // footer percentages
-const int ICON_BOTTOM = 120; // footer icons stop one row above this
+int BASE_HERO = 80;          // temperature, fixed on every monitor screen
+int BASE_BOTTOM = 96;        // min/max, or a caps note when there is no trip
+int BASE_FOOT = 118;         // footer percentages
+int ICON_BOTTOM = 120;       // footer icons stop one row above this
+
+void layout(void) {
+  W = CANVAS_W - INS_L - INS_R;
+  H = CANVAS_H - INS_T - INS_B;
+  EDGE_R = W - M;
+  RULE = H - 22;
+  BASE_FOOT = H - 4;
+  ICON_BOTTOM = H - 2;
+  BASE_BOTTOM = RULE - 4;
+  BASE_HERO = RULE - 20;
+}
+
+// Every template starts here: blank panel, origin at the safe area.
+void begin(Canvas &c) {
+  c.ox = 0;
+  c.oy = 0;
+  c.clear();
+  c.ox = INS_L;
+  c.oy = INS_T;
+}
 const int HERO_CAP = 57;     // cap height of the 80 px hero
 const float TRACK = 1;       // whole pixels: fractional advances smear
 const int BATT_LOW = 20;     // % at or below -> battery in accent
@@ -29,7 +55,10 @@ const int MEM_HIGH = 90;     // % used at or above -> storage in accent
 const int BATT_W = 11;
 const int BATT_H = 16;
 
-const GFXfont *CAPS = &mColdCaps11;     // header, footer %, labels
+const GFXfont *CAPS = &mColdCaps11;     // footer %, labels
+// The header: bold, and with lower case, because the SN has it
+// (mCDV1-...) and white-on-black at 11 px semibold read thin (2026-10-04).
+const GFXfont *HEAD = &mColdHead12;
 const GFXfont *BODY = &mColdBody13;     // sentences on takeover screens
 const GFXfont *READING = &mColdRead15;  // min/max and charge-row values
 const GFXfont *STATUS = &mColdStat13;   // charge state word
@@ -216,8 +245,8 @@ void header(Canvas &c, const char *device, const char *clock) {
   // Inverted. Ink spread thins reversed text, which is why the header is
   // the one small text set in SemiBold.
   c.fill_rect(0, 0, W, BAR, Ink::Black);
-  text(c, M, BASE_BAR, device, CAPS, Ink::White, TRACK);
-  text(c, EDGE_R, BASE_BAR, clock, CAPS, Ink::White, TRACK, true);
+  text(c, M, BASE_BAR, device, HEAD, Ink::White);
+  text(c, EDGE_R, BASE_BAR, clock, HEAD, Ink::White, 0, true);
 }
 
 // The battery: a cell on end, four blocks. Blocks are counted at a
@@ -347,12 +376,16 @@ float rich(Canvas *c, float x, int y, const char *s, const GFXfont *f, Ink ink,
 void scr_monitor(Canvas &c, const char *device, const char *clock,
                  const Foot &f, const char *temp, const char *lo,
                  const char *hi, const char *note, bool red, bool alarm) {
-  c.clear();
+  begin(c);
   header(c, device, clock);
   const Ink hero = (red || alarm) ? Ink::Accent : Ink::Black;
   const float unit_w = 13 + width("C", HERO_UNIT);
   const float w_num = width(temp, HERO);
-  const float x = (W - (w_num + 5 + unit_w)) / 2;
+  // The number is centred on its own; the unit hangs off its right side
+  // (2026-10-04), so the reading sits in the middle of the panel whatever
+  // its width -- unless the unit would then run off the edge.
+  float x = (W - w_num) / 2;
+  if (x + w_num + 5 + unit_w > EDGE_R) x = EDGE_R - (w_num + 5 + unit_w);
   text(c, x, BASE_HERO, temp, HERO, hero);
   unit(c, (int)lroundf(x + w_num + 5), BASE_HERO - HERO_CAP, hero);
   if (lo && hi) {
@@ -368,7 +401,7 @@ void scr_monitor(Canvas &c, const char *device, const char *clock,
 void scr_charge(Canvas &c, const char *device, const char *clock,
                 const Foot &f, int soc, const char *state, const Row *rows,
                 int nrows) {
-  c.clear();
+  begin(c);
   header(c, device, clock);
   char s[8];
   snprintf(s, sizeof(s), "%d%%", soc);
@@ -386,7 +419,7 @@ void scr_charge(Canvas &c, const char *device, const char *clock,
 void scr_takeover(Canvas &c, const char *device, const char *clock,
                   const Foot &f, const char *title, const char *sub,
                   const char *data, bool alarm, bool red_title) {
-  c.clear();
+  begin(c);
   header(c, device, clock);
   text(c, M, 54, title, TITLE, red_title ? Ink::Accent : Ink::Black);
   text(c, M, 76, sub, BODY, Ink::Black);
@@ -398,7 +431,7 @@ void scr_takeover(Canvas &c, const char *device, const char *clock,
 void scr_detail(Canvas &c, const char *device, const char *clock,
                 const Foot &f, const char *title, const char *state,
                 const Row *rows, int nrows) {
-  c.clear();
+  begin(c);
   header(c, device, clock);
   text(c, M, 36, title, CAPS, Ink::Black, TRACK);
   if (state) text(c, EDGE_R, 36, state, CAPS, Ink::Black, TRACK, true);
@@ -424,6 +457,30 @@ const char *const DEMO_NAMES[SCR_DEMO_PAGES] = {
 
 const char *scr_demo_name(int p) {
   return (p >= 0 && p < SCR_DEMO_PAGES) ? DEMO_NAMES[p] : "?";
+}
+
+void scr_set_insets(int top, int bottom, int left, int right) {
+  INS_T = top;
+  INS_B = bottom;
+  INS_L = left;
+  INS_R = right;
+  layout();
+}
+
+void scr_calibrate(Canvas &c) {
+  c.ox = c.oy = 0;
+  c.clear();
+  // Six nested frames, 3 px apart, on the physical panel: count, on each
+  // side, the frames that can be seen; the hidden ones say how much the
+  // bezel covers there.
+  for (int k = 0; k < 6; k++) {
+    const int d = k * 3;
+    c.rect(d, d, CANVAS_W - 2 * d, CANVAS_H - 2 * d, Ink::Black);
+  }
+  text(c, 26, 46, "COUNT THE FRAMES", CAPS, Ink::Black, TRACK);
+  text(c, 26, 62, "YOU CAN SEE ON EACH SIDE", CAPS, Ink::Black, TRACK);
+  text(c, 26, 82, "6 = NOTHING HIDDEN", CAPS, Ink::Black, TRACK);
+  text(c, 26, 98, "EACH MISSING = 3 PX", CAPS, Ink::Black, TRACK);
 }
 
 void scr_demo(Canvas &c, int p) {

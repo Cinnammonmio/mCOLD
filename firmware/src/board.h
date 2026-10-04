@@ -61,6 +61,13 @@
 #define PIN_PG_N        4     // BQ25601 PG#, LOW = power good
 #define PIN_PMIC_IRQ_N  5     // BQ25601 INT# and HUSB238A INT_N, wired together
 
+// ---- Device serial number ------------------------------------------
+// Set at the factory (console `sn set`, NVS "sys"/"sn"), e.g.
+// mCDV1-L0169-1069-001: the box's name everywhere -- screen, BLE, NFC,
+// MQTT topics and client id, trip records. Buffers hold SN_LEN - 1
+// characters; MQTT client ids should stay within 23.
+#define SN_LEN 32
+
 // ---- I2C addresses, 7-bit ------------------------------------------
 #define ADDR_LIS2DW12  0x18
 #define ADDR_MAX17048  0x36

@@ -1,9 +1,9 @@
 ---
 name: User-Manual_EN
 lang: en
-version: 0.1
+version: 0.2
 status: draft
-date: 2026-10-03
+date: 2026-10-04
 firmware: 0.7.0-dev
 ---
 
@@ -35,8 +35,8 @@ the whole journey. From the start of a trip to its end it:
 
 ## 3. Switching on and off
 
-**On:** slide the switch. The three front lights sweep white from left to
-right, then blink green together: the box is ready. Three amber blinks on
+**On:** slide the switch. The three front lights sweep blue, violet and
+cyan from left to right, then blink cyan together: the box is ready. Three amber blinks on
 the right light instead mean a part inside is not working properly.
 
 **Off:** slide the switch back. Everything stops; the clock keeps running
@@ -53,9 +53,9 @@ Plug in USB-C to charge. The side light shows:
 
 | Side light | Meaning |
 |---|---|
-| Yellow, breathing | Charging |
-| Green, breathing | Nearly full (80% and over) |
-| Green, steady | Full |
+| Blue, breathing | Charging |
+| Cyan, breathing | Nearly full (80% and over) |
+| Cyan, steady | Full |
 | Yellow, slow blink | Power in, but not charging |
 | Red, blinking | Charging fault (one beep) |
 | Off | Not plugged in |
@@ -78,7 +78,7 @@ carries on.
 
 | Where | Shows |
 |---|---|
-| Top bar | Box ID and the time (local) |
+| Top bar | Serial number and the local date and time, e.g. 04/10 22:50 |
 | Centre | Latest temperature (°C), large |
 | Below it | Min / max of this trip, or "NO ACTIVE TRIP" |
 | Bottom left | Wi-Fi, server, GNSS and trip icons |
@@ -96,13 +96,17 @@ cable going in or out. A refresh takes about 2 seconds.
 
 ## 6. Lights and sound
 
+**Red and amber are always warnings, always in the same place:** red on
+the left light is the goods, amber on the right is the box. Blue, violet
+and cyan are the box running normally.
+
 | Light | Pattern | Meaning |
 |---|---|---|
-| All three front | White sweep, then green blink | Switched on, ready |
-| All three front | One white blink | NFC tap received |
-| Middle | Three green blinks | Trip started |
-| Middle | Short green blink every 15 min | Trip running normally |
-| Middle | One green blink | Trip stopped |
+| All three front | Blue-violet-cyan sweep, then cyan blink | Switched on, ready |
+| All three front | One violet blink | NFC tap received |
+| Middle | Three cyan blinks | Trip started |
+| Middle | Short cyan blink every 15 min | Trip running normally |
+| Middle | One blue blink | Trip stopped |
 | Left | Two red blinks + three beeps | Temperature alarm |
 | Left | One blue blink | Alarm acknowledged |
 | Right | Three amber blinks | A problem with the box: probe, low battery, clock without time |
@@ -116,7 +120,7 @@ When someone lifts or moves the box, it shows its status lights briefly
 
 The acceptable temperature range (for example 2–8 °C) is set when each
 trip starts, so the same box can carry different goods. When the trip has
-started, the middle light blinks green three times and the screen shows
+started, the middle light blinks cyan three times and the screen shows
 the trip icon.
 
 A trip will not start if another trip is running, the battery is too low,
@@ -142,12 +146,12 @@ it; the alarm history is kept in full.
 
 ### Stopping a trip
 
-The middle light blinks green once, and the screen shows the trip's
+The middle light blinks blue once, and the screen shows the trip's
 summary for about an hour.
 
 ## 8. Connections
 
-**NFC:** tap a phone on the NFC point. The front lights blink white and
+**NFC:** tap a phone on the NFC point. The front lights blink violet and
 the box opens Bluetooth for the app for 60 seconds. The tap is also the
 permission: no pairing, no code.
 

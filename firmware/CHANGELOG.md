@@ -131,6 +131,20 @@ Measured with the charger in HIZ: asleep ≤ 0.25 mA; awake ~130 mA
 - Light sleep while awake, measured on the bench with BLE off and GNSS
   idle: 130-134 mA off, 126-131 mA on -- no real gain. The ~90 mA above
   the ~40 mA floor is not the CPU waiting, so it stays off.
+- **Serial number from the factory** (`sn set S`, NVS "sys"/"sn"), e.g.
+  `mCDV1-L0169-1069-001`: the BLE name, the NFC record, the MQTT client id
+  and topics, the screen, the trip records. Buffers 32; the trip header
+  is format 2 with a 24-byte SN (was 12). `MCOLD-xxxx` until set.
+- Screen: the reading centred on its own, the unit hanging off its right;
+  the header in a new bold 12 px face with lower case (tools/genfont.py)
+  and the local date with the time (`04/10 22:50`); everything drawn
+  inside the area the case leaves visible, `epd_inset_t/b/l/r`, measured
+  with `screen cal` (six frames 3 px apart).
+- Lights in two families: warnings keep their place and colour (red left
+  for the cargo, amber right for the box, the side light's amber and red);
+  everything calm is blue, violet or cyan -- the boot sweep, the tap, trip
+  start/running/stop, acknowledgement, charging. led-mock and the manuals
+  follow.
 - Review fixes: GNSS due but unavailable, and a dwell run out with no
   probe readings, no longer hold the chip awake; pm ignores wake times
   over 30 s in the past; the battery switch-off holds the chip up until

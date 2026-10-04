@@ -211,7 +211,8 @@ by an older app, only not yet understood.
 against the team's broker; the server side -- above all the ACK -- is
 what is missing.
 
-The device connects as client id `<sn>` (e.g. `MCOLD-9A74`) to the
+The device connects as client id `<sn>` -- the factory serial number,
+e.g. `mCDV1-L0169-1069-001`; `MCOLD-xxxx` until one is set -- to the
 broker and login set in its NVS. All topics are under `mcold/<sn>/`:
 
 | Topic | Direction | QoS | Retained | Payload |

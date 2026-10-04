@@ -25,6 +25,11 @@ struct Canvas {
   // Two bits a pixel, row-major in landscape: 250 x 122 = 7,625 bytes.
   uint8_t px[(CANVAS_W * CANVAS_H + 3) / 4];
 
+  // Every drawing call is shifted by this: a layout drawn for a smaller
+  // area lands inside the part of the panel the case leaves visible.
+  // get() and the panel driver see physical pixels, unshifted.
+  int ox = 0, oy = 0;
+
   void clear(Ink c = Ink::White);
   void pixel(int x, int y, Ink c);
   Ink get(int x, int y) const;

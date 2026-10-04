@@ -19,7 +19,7 @@
 // Record types and their payloads after the stamp:
 //
 // TRIP_START (0x01)                         TRIP_STOP (0x04)
-//  11 u8   header format (1)                 11 u8   reason (1 console, 2 app)
+//  11 u8   header format (2; 1 had c12 SN)   11 u8   reason (1 console, 2 app)
 //  12 u32  trip id                           12 u32  samples written
 //  16 i16  temp alarm low, 0.1 C             16 i16  min valid temp, 0.01 C
 //  18 i16  temp alarm high, 0.1 C            18 i16  max valid temp, 0.01 C
@@ -32,7 +32,7 @@
 //  34 i32  calibration gain, ppm
 //  38 u32  calibration version
 //  42 c16  firmware version, NUL padded
-//  58 c12  device SN, NUL padded
+//  58 c24  device SN, NUL padded (c12 in format 1)
 //
 // SAMPLE (0x02), one per sample period
 //  11 u8   temp status (TempStatus; 0 ok)

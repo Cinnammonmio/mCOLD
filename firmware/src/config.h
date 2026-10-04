@@ -41,6 +41,10 @@ struct Config {
   int32_t soc_source;         // the percent shown: 0 voltage (OCV table), 1 counted
   int32_t buzzer_enabled;     // 0 silences alarm sounds
   int32_t tz_offset_min;      // local time for the display only; records are UTC
+  int32_t epd_inset_t;        // panel pixels the case hides: top (screen cal)
+  int32_t epd_inset_b;        //   bottom
+  int32_t epd_inset_l;        //   left
+  int32_t epd_inset_r;        //   right
   int32_t sleep_en;           // 0 keeps the box awake on battery (bench, measurement)
   int32_t idle_wake_s;        // on battery, the longest sleep with nothing due
   int32_t gnss_period_s;      // on battery, during a trip: one GNSS session this often

@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "board.h"
 #include "flashlog.h"
 #include "net.h"
 #include "pm.h"
@@ -23,7 +24,7 @@
 
 namespace {
 
-char g_sn[16] = "";
+char g_sn[SN_LEN] = "";
 char g_host[64] = "";
 uint16_t g_port = 1883;
 char g_user[40] = "";

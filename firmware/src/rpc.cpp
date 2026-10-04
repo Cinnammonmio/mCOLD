@@ -14,6 +14,7 @@
 #include <string.h>
 #include <time.h>
 
+#include "board.h"
 #include "auth.h"
 #include "config.h"
 #include "flashlog.h"
@@ -28,7 +29,7 @@
 
 namespace {
 
-char g_sn[16] = "";
+char g_sn[SN_LEN] = "";
 PowerStatus g_pwr = {};
 bool g_have_pwr = false;
 portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;

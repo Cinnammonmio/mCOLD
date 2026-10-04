@@ -24,6 +24,9 @@
 
 void display_start(const char *sn);
 
+// The visible area from config epd_inset_*; after a change, redraw.
+void display_apply_insets(void);
+
 // Latest power reading, from the power task.
 void display_note_power(const PowerStatus &ps);
 

@@ -42,10 +42,14 @@ const PatDef PATS[] = {
 struct Rgb {
   uint8_t r, g, b;
 };
+// Two families (decided 2026-10-04). Warnings keep their place and their
+// colour: red on the left is the cargo, amber on the right is the box.
+// Everything else -- the box saying it is fine, or that it heard you --
+// is blue, violet or cyan: colours that do not read as danger.
 const Rgb RED = {255, 0, 0};
-const Rgb GREEN = {0, 255, 0};
-const Rgb BLUE = {0, 0, 255};
-const Rgb WHITE = {255, 255, 255};
+const Rgb BLUE = {0, 40, 255};
+const Rgb VIOLET = {150, 0, 255};
+const Rgb CYAN = {0, 200, 255};
 // Amber is red plus green; the mix depends on the diffuser, to be tuned
 // once the case exists.
 const Rgb AMBER = {255, 150, 0};
@@ -140,9 +144,11 @@ void play_row(Pat p, Rgb c) {
 // SWEEP: left to right across the front, by position. (The design names
 // it LED1->2->3, written when LED1 was thought to be on the left; it is on
 // the right.)
-void sweep(Rgb c) {
+void sweep(void) {
+  // Blue, violet, cyan from left to right.
+  static const Rgb COL[3] = {BLUE, VIOLET, CYAN};
   Track t[3];
-  for (int i = 0; i < 3; i++) t[i] = {ROW[i], Pat::Step, c, (uint16_t)(i * 80)};
+  for (int i = 0; i < 3; i++) t[i] = {ROW[i], Pat::Step, COL[i], (uint16_t)(i * 80)};
   play(t, 3);
 }
 
@@ -177,18 +183,18 @@ void play_status(const TripStatus &s) {
   if (s.active && (s.alarms_active & CARGO_ALARMS)) {
     t[n++] = {LED_CARGO, Pat::Double, RED, 0};
   }
-  if (s.active) t[n++] = {LED_ALIVE, Pat::Tick, GREEN, 0};
+  if (s.active) t[n++] = {LED_ALIVE, Pat::Tick, CYAN, 0};
   if (device_fault(s)) t[n++] = {LED_DEVICE, Pat::Triple, AMBER, 0};
   play(t, n);
 }
 
 void boot_cue(void) {
-  sweep(WHITE);
+  sweep();
   vTaskDelay(pdMS_TO_TICKS(150));
   TripStatus s;
   trip_status(&s);
   if (device_fault(s)) play_one(LED_DEVICE, Pat::Triple, AMBER);
-  else play_row(Pat::Blink, GREEN);
+  else play_row(Pat::Blink, CYAN);
 }
 
 void open_window(bool counted) {
@@ -251,7 +257,7 @@ void task(void *) {
       if (cue == (int)Cue::Boot) boot_cue();
       if (cue == (int)Cue::NfcTap) {
         open_window(false);          // a person is holding the box
-        play_row(Pat::Blink, WHITE);
+        play_row(Pat::Blink, VIOLET);
       }
     }
 
@@ -259,9 +265,9 @@ void task(void *) {
     TripStatus s;
     trip_status(&s);
     if (s.active && !prev.active) {
-      play_one(LED_ALIVE, Pat::Triple, GREEN);         // START_TRIP
+      play_one(LED_ALIVE, Pat::Triple, CYAN);          // START_TRIP
     } else if (!s.active && prev.active) {
-      play_one(LED_ALIVE, Pat::Blink, GREEN);          // STOP_TRIP
+      play_one(LED_ALIVE, Pat::Blink, BLUE);           // STOP_TRIP
     }
     const uint16_t raised = s.alarms_active & (uint16_t)~prev.alarms_active;
     if (s.active && (raised & CARGO_ALARMS)) {

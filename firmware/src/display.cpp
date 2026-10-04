@@ -41,7 +41,7 @@ const uint16_t CARGO_ALARMS =
 // In PSRAM: 7.6 KB that only the CPU touches, and internal RAM is short.
 EXT_RAM_BSS_ATTR Canvas g_draw;
 SemaphoreHandle_t g_epd = nullptr;   // one refresh at a time
-char g_sn[16] = "MCOLD";
+char g_sn[SN_LEN] = "MCOLD";
 // Checked by eye on 2026-10-02: 3 is upright on this board (bring-up
 // used 1, which shows the frame upside down; the bench also used 3).
 volatile int g_rot = 3;
@@ -75,15 +75,17 @@ void clock_str(char *out, size_t n) {
   TimeStamp t;
   time_now(&t);
   if (t.quality == TimeSource::None) {
-    // No time is "--:--", never 00:00: a frame claiming a time it cannot
+    // No time is dashes, never 00:00: a frame claiming a time it cannot
     // know is worse than one that admits it.
-    snprintf(out, n, "--:--");
+    snprintf(out, n, "--/-- --:--");
     return;
   }
   const time_t local = (time_t)(t.utc_ms / 1000) + config().tz_offset_min * 60;
   struct tm tm;
   gmtime_r(&local, &tm);
-  snprintf(out, n, "%02d:%02d", tm.tm_hour, tm.tm_min);
+  // Day/month and time (2026-10-04): a box looked at after a long trip
+  // should say which day its picture is from.
+  snprintf(out, n, "%02d/%02d %02d:%02d", tm.tm_mday, tm.tm_mon + 1, tm.tm_hour, tm.tm_min);
 }
 
 Foot footer_state(const TripStatus &s, const PowerStatus &p, bool have_p) {
@@ -282,7 +284,7 @@ void task(void *) {
       const bool due = !g_shown_at ||
                        now_ms() - g_shown_at >= DISPLAY_MIN_S * 1000;
       if (g_force || usb_changed || (content != g_shown_hash && (urgent || due))) {
-        char clock[8];
+        char clock[16];
         clock_str(clock, sizeof(clock));
         build(s, clock);
         pm_hold(Hold::Display, true);
@@ -317,8 +319,14 @@ void task(void *) {
 
 }  // namespace
 
+void display_apply_insets(void) {
+  const Config &k = config();
+  scr_set_insets(k.epd_inset_t, k.epd_inset_b, k.epd_inset_l, k.epd_inset_r);
+}
+
 void display_start(const char *sn) {
   snprintf(g_sn, sizeof(g_sn), "%s", sn ? sn : "MCOLD");
+  display_apply_insets();
   g_epd = xSemaphoreCreateMutex();
   xTaskCreatePinnedToCore(task, "display", 4096, nullptr, 1, nullptr, 1);
 }
@@ -356,7 +364,7 @@ void display_battery_off(float cell_volts) {
   p = g_pwr;
   have = g_have_pwr;
   portEXIT_CRITICAL(&g_mux);
-  char clock[8], data[40];
+  char clock[16], data[40];
   clock_str(clock, sizeof(clock));
   snprintf(data, sizeof(data), "CELL %.2f V", cell_volts);
   // Capitals: the title font is cut to ' '..'Z' (fonts_mcold.h), and a

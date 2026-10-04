@@ -46,14 +46,17 @@ void render(ChargeLed m, uint32_t t) {
   switch (m) {
     case ChargeLed::Off:
       break;
+    // Charging is good news, in the calm family (2026-10-04): blue while
+    // it fills, cyan near the top and when full. Amber and red stay for
+    // the two cases that want a person to look.
     case ChargeLed::Charging:
-      k = breathe(t); r = AMBER_R; g = AMBER_G;
+      k = breathe(t); g = 40; b = 255;
       break;
     case ChargeLed::Topping:
-      k = breathe(t); g = 255;
+      k = breathe(t); g = 200; b = 255;
       break;
     case ChargeLed::Full:
-      k = 1; g = 255;
+      k = 1; g = 200; b = 255;
       break;
     case ChargeLed::NotCharging:
       k = (t % 2000) < 120 ? 1 : 0; r = AMBER_R; g = AMBER_G;
@@ -135,9 +138,9 @@ ChargeLed chargeled_mode(void) { return g_mode; }
 const char *chargeled_name(ChargeLed m) {
   switch (m) {
     case ChargeLed::Off:         return "off";
-    case ChargeLed::Charging:    return "charging (breathe yellow)";
-    case ChargeLed::Topping:     return "topping up (breathe green)";
-    case ChargeLed::Full:        return "full (steady green)";
+    case ChargeLed::Charging:    return "charging (breathe blue)";
+    case ChargeLed::Topping:     return "topping up (breathe cyan)";
+    case ChargeLed::Full:        return "full (steady cyan)";
     case ChargeLed::NotCharging: return "input, not charging (yellow blink)";
     case ChargeLed::Fault:       return "charge fault (red blink)";
   }

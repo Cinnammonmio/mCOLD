@@ -24,6 +24,7 @@
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <nvs.h>
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -797,12 +798,46 @@ void print_gnss(void) {
          (unsigned long)((now_ms() - f.at_ms) / 1000));
 }
 
+// The SN the factory gave the box (NVS "sys"/"sn"); until one is set,
+// bring-up's MCOLD-xxxx from the MAC. iOS cannot see a BLE MAC, so this
+// name is how the app finds the box after reading the tag.
+bool sn_valid(const char *s) {
+  const size_t n = strlen(s);
+  if (n < 4 || n >= SN_LEN) return false;
+  for (size_t i = 0; i < n; i++) {
+    const char c = s[i];
+    if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+          c == '-' || c == '_' || c == '.')) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void device_sn(char *out, size_t n) {
-  // Bring-up's format. iOS cannot see a BLE MAC, so this name is how the
-  // app finds the box after reading the tag; the MAC is only a tiebreak.
+  nvs_handle_t h;
+  if (nvs_open("sys", NVS_READONLY, &h) == ESP_OK) {
+    char s[SN_LEN] = "";
+    size_t len = sizeof(s);
+    const bool ok = nvs_get_str(h, "sn", s, &len) == ESP_OK && sn_valid(s);
+    nvs_close(h);
+    if (ok) {
+      snprintf(out, n, "%s", s);
+      return;
+    }
+  }
   uint8_t m[6] = {0};
   esp_read_mac(m, ESP_MAC_WIFI_STA);
   snprintf(out, n, "MCOLD-%02X%02X", m[4], m[5]);
+}
+
+bool sn_store(const char *s) {
+  if (!sn_valid(s)) return false;
+  nvs_handle_t h;
+  if (nvs_open("sys", NVS_READWRITE, &h) != ESP_OK) return false;
+  const bool ok = nvs_set_str(h, "sn", s) == ESP_OK && nvs_commit(h) == ESP_OK;
+  nvs_close(h);
+  return ok;
 }
 
 void print_nfc(void) {
@@ -1064,6 +1099,9 @@ void config_changed(const char *key, int32_t v) {
     leds_set_brightness((int)v);
   } else if (!strcmp(key, "led_front_pct")) {
     leds_set_front_brightness((int)v);
+  } else if (!strncmp(key, "epd_inset_", 10)) {
+    display_apply_insets();
+    display_refresh();
   }
 }
 
@@ -1143,6 +1181,17 @@ void screen_command(const char *args) {
   if (!*args || !strcmp(args, "live")) {
     display_refresh();
     printf("  live display, redrawing now\n");
+    return;
+  }
+  if (!strcmp(args, "cal")) {
+    // Measuring the bezel: count the frames visible on each side, then
+    // config set epd_inset_t/b/l/r to (6 - count) x 3 for that side.
+    display_hold(true);
+    scr_calibrate(g_canvas);
+    const bool ok = display_show(g_canvas);
+    printf("  %s: count the frames on each side; inset = (6 - frames) x 3 px\n"
+           "  config set epd_inset_t|b|l|r N, then 'screen' to go back\n",
+           ok ? "calibration frames shown" : "PANEL DID NOT ANSWER");
     return;
   }
   if (!strncmp(args, "rot ", 4)) {
@@ -1285,11 +1334,13 @@ void print_help(void) {
   printf("  screen          redraw the e-paper now (live view)\n");
   printf("  screen N        design demo page N (0-13); 'screen' to go back\n");
   printf("  screen rot 1|3  the two landscape orientations\n");
+  printf("  screen cal      frames for measuring what the case hides (epd_inset_*)\n");
   printf("  rpc {json}      a protocol request (PROTOCOL.md), as authorized\n");
   printf("  ble [on|off]    BLE state; 'on' advertises for 60 s\n");
   printf("  sleep           power manager: why awake, next wake, recent wakes\n");
   printf("  sleep clear     start the wake record again\n");
   printf("  sleep test S    deep-sleep S seconds now, timer wake only (even on USB)\n");
+  printf("  sn [set S]      the device serial number (factory: set, then reboot)\n");
   printf("  soc             counted state of charge, capacity, anchor\n");
   printf("  soc set P       bench: set the count to P %%\n");
   printf("  amps [S]        battery current for S seconds: mean, min, max\n");
@@ -1350,6 +1401,19 @@ void run_command(char *line) {
   else if (!strncmp(line, "rpc ", 4)) rpc_command(line + 4);
   else if (!strcmp(line, "ble")) print_ble();
   else if (!strcmp(line, "sleep")) pm_print();
+  else if (!strcmp(line, "sn")) {
+    char sn[SN_LEN];
+    device_sn(sn, sizeof(sn));
+    printf("  %s\n", sn);
+  } else if (!strncmp(line, "sn set ", 7)) {
+    // Factory: the name on the label. Everything that carries the SN
+    // read it at boot, so it takes effect at the next one.
+    if (sn_store(line + 7)) {
+      printf("  SN %s stored; reboot to use it everywhere\n", line + 7);
+    } else {
+      printf("  refused: 4-%d characters, letters, digits, - _ .\n", SN_LEN - 1);
+    }
+  }
   else if (!strcmp(line, "soc")) {
     SocStatus s;
     soc_status(&s);
@@ -1615,7 +1679,7 @@ extern "C" void app_main(void) {
   }
   soc_init();          // after config and power_init, before the first reading
   {
-    char sn[16];
+    char sn[SN_LEN];
     device_sn(sn, sizeof(sn));
     trip_init(sn);     // resumes a trip a reset interrupted
     display_start(sn); // like indicate: reads state, owns none

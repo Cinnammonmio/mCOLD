@@ -9,13 +9,14 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "board.h"
 #include "nfc.h"
 #include "pm.h"
 #include "timekeep.h"
 
 namespace {
 
-char g_sn[16] = "";
+char g_sn[SN_LEN] = "";
 // Kept through deep sleep: "a new key at every boot" means every real
 // boot. Rotating at every wake would rewrite the tag every five minutes
 // and invalidate a key a phone read a minute ago for no reason.

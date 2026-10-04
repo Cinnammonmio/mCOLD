@@ -49,6 +49,13 @@ void scr_detail(Canvas &c, const char *device, const char *clock,
                 const Foot &f, const char *title, const char *state,
                 const Row *rows, int nrows);
 
+// The part of the panel the case leaves visible, in pixels hidden on
+// each side (config epd_inset_*). Every template draws inside it.
+void scr_set_insets(int top, int bottom, int left, int right);
+
+// Six nested frames 3 px apart, for measuring those insets by eye.
+void scr_calibrate(Canvas &c);
+
 // The fourteen design states with the mockup's sample data, for checking
 // the panel against display-mock/out/. 0..13 = A1..A6, B1..B6, C1, C2.
 void scr_demo(Canvas &c, int page);

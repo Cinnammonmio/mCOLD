@@ -10,6 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "board.h"
 #include "config.h"
 #include "features.h"
 #include "flashlog.h"
@@ -24,7 +25,7 @@ namespace {
 const char *NS = "trip";
 
 SemaphoreHandle_t g_mx = nullptr;
-char g_sn[16] = "";
+char g_sn[SN_LEN] = "";
 
 // ---- trip state ------------------------------------------------------
 
@@ -497,7 +498,7 @@ TripErr trip_start(const TripParams &p, uint32_t *id_out) {
   uint8_t buf[LOG_PAYLOAD_MAX];
   Writer w(buf, sizeof(buf));
   stamp(w);
-  w.u8(1);
+  w.u8(2);       // header format 2: the SN field is 24 bytes (was 12)
   w.u32(id);
   w.i16(p.low_c10);
   w.i16(p.high_c10);
@@ -510,7 +511,7 @@ TripErr trip_start(const TripParams &p, uint32_t *id_out) {
   w.i32(config().cal_gain_ppm);
   w.u32((uint32_t)config().cal_version);
   w.str(esp_app_get_description()->version, 16);
-  w.str(g_sn, 12);
+  w.str(g_sn, 24);
 
   // Header first, then the NVS flag that says a trip is running. A crash
   // between the two leaves a header with no trip running, which reads as

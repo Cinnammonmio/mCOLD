@@ -52,7 +52,7 @@ uint16_t h_status, h_rsp, h_evt;
 
 // ---- state -------------------------------------------------------------
 
-char g_sn[16] = "";
+char g_sn[SN_LEN] = "";
 uint8_t g_own_addr = 0;
 volatile bool g_synced = false;
 bool g_up = false;              // the NimBLE stack has been started
