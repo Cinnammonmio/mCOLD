@@ -54,6 +54,7 @@
 #include "uplink.h"
 #include "gnss.h"
 #include "health.h"
+#include "logrow.h"
 #include "leds.h"
 #include "nfc.h"
 #include "ota.h"
@@ -1002,77 +1003,47 @@ void print_trip(void) {
   printf("\n\n");
 }
 
-// One record per line, decoded per record.h.
+// One row per line, decoded per record.h.
 bool dump_visit(const LogRecord &r, void *) {
-  Reader rd(r.payload, r.len);
-  const uint32_t utc = rd.u32();
-  const uint8_t q = rd.u8();
-  const uint16_t boot = rd.u16();
-  const uint32_t tick = rd.u32();
-  char when[24] = "no time";
-  if (q) {
-    const time_t s = (time_t)utc;
-    struct tm tm;
-    gmtime_r(&s, &tm);
-    strftime(when, sizeof(when), "%m-%d %H:%M:%S", &tm);
+  LogRow row;
+  RowHeader h;
+  RowSummary sum;
+  if (!row_decode(r.type, r.payload, r.len, &row, &h, &sum)) {
+    printf("  %5lu  type %02X, %u bytes (old record format)\n", (unsigned long)r.seq, r.type,
+           r.len);
+    return true;
   }
-  printf("  %5lu  %-14s b%u+%lus  ", (unsigned long)r.seq, when, boot,
-         (unsigned long)(tick / 1000));
-  switch (r.type) {
-    case REC_TRIP_START: {
-      rd.u8();
-      rd.u32();
-      const int16_t lo = rd.i16(), hi = rd.i16();
-      printf("START   alarms %.1f..%.1f C", lo / 10.0, hi / 10.0);
-      break;
-    }
-    case REC_SAMPLE: {
-      const uint8_t st = rd.u8();
-      rd.u16();
-      const int16_t c = rd.i16();
-      rd.u8();       // door state: not fitted while MCOLD_DOOR is off
-      rd.u16();      // door openings
-      const uint16_t motion = rd.u16();
-      rd.n = 30;
-      const uint16_t age = rd.u16();
-      rd.n = 36;
-      const uint8_t soc = rd.u8();
-      rd.n = 40;
-      const uint16_t alarms = rd.u16();
-      if (st == 0 && c != I16_NONE) printf("SAMPLE  %6.2f C", c / 100.0);
-      else printf("SAMPLE  temp -- (%s)", temp_status_name((TempStatus)st));
-      printf("  motion %u  fix %s  soc %s%u  alarms %04X", motion,
-             age == U16_NONE ? "none" : "aged", soc == 0xFF ? "-" : "",
-             soc == 0xFF ? 0 : soc, alarms);
-      break;
-    }
-    case REC_EVENT: {
-      const uint8_t code = rd.u8();
-      static const char *const NAMES[] = {
-          "?", "RESUMED", "DOOR OPEN", "DOOR CLOSE", "MOTION", "PROBE FAULT",
-          "PROBE OK", "ALARM", "ALARM CLEAR", "ALARM ACK", "TIME SET", "LOSS",
-          "POWER OFF"};
-      printf("EVENT   %s", code < sizeof(NAMES) / sizeof(NAMES[0]) ? NAMES[code] : "?");
-      if (code == EV_POWER_OFF) {
-        printf(" (battery low, cell %u mV)", rd.u16());
-      } else if (code == EV_ALARM_RAISE || code == EV_ALARM_CLEAR) {
-        printf(" %s", alarm_name(rd.u8()));
-      } else if (code == EV_DOOR_CLOSE) {
-        printf(" after %lu ms", (unsigned long)rd.u32());
-      } else if (code == EV_RESUMED) {
-        printf(" (reset reason %u)", rd.u8());
-      }
-      break;
-    }
-    case REC_TRIP_STOP: {
-      rd.u8();
-      printf("STOP    %lu samples", (unsigned long)rd.u32());
-      break;
-    }
-    default:
-      printf("type %02X, %u bytes", r.type, r.len);
-  }
+  char when[24] = "no time", al[40], det[40];
+  if (row.time_q) row_time_str(row.utc, config().tz_offset_min, when, sizeof(when));
+  row_alarm_str(row.alarms, al, sizeof(al));
+  row_detail_str(row, det, sizeof(det));
+  printf("  %5lu  %-19s %-12s", (unsigned long)r.seq, when, row_event_name(row.event));
+  if (row.temp_c100 != I16_NONE) printf(" %6.2f C", row.temp_c100 / 100.0);
+  else printf("   --   ");
+  printf("  m%-3u b%s%u%%  %s  %s", row.motion, row.battery == 0xFF ? "-" : "",
+         row.battery == 0xFF ? 0 : row.battery, row_gnss_name(row.gnss), row_link_name(row.internet));
+  if (al[0]) printf("  [%s]", al);
+  if (det[0]) printf("  %s", det);
+  if (h.valid) printf("  tempmin %.1f tempmax %.1f", h.tempmin_c10 / 10.0, h.tempmax_c10 / 10.0);
+  if (sum.valid) printf("  %lu samples", (unsigned long)sum.samples);
   printf("\n");
+  return true;
+}
+
+// The trip as the CSV file it will be (logrow.h): header line, then rows.
+struct CsvCtx {
+  RowHeader h;
+  char sn[SN_LEN];
+};
+bool csv_visit(const LogRecord &r, void *ctx) {
+  CsvCtx *c = (CsvCtx *)ctx;
+  LogRow row;
+  RowHeader h;
+  if (!row_decode(r.type, r.payload, r.len, &row, &h, nullptr)) return true;
+  if (h.valid) c->h = h;
+  char line[320];
+  row_csv(row, r.trip, r.seq, c->sn, c->h, config().tz_offset_min, line, sizeof(line));
+  printf("%s\n", line);
   return true;
 }
 
@@ -1089,6 +1060,35 @@ void trip_dump(int n) {
          (unsigned long)from, (unsigned long)last);
   flashlog_read(id, from, dump_visit, nullptr, nullptr);
   printf("\n");
+}
+
+// The whole trip (the last, or `id`) as CSV, with the file name it gets.
+struct FirstRow {
+  LogRow r;
+  RowHeader h;
+  bool have;
+};
+bool first_row(const LogRecord &r, void *ctx) {
+  FirstRow *f = (FirstRow *)ctx;
+  f->have = row_decode(r.type, r.payload, r.len, &f->r, &f->h, nullptr) && f->h.valid;
+  return false;
+}
+
+void trip_csv(uint32_t id) {
+  if (!id) id = trip_last_id();
+  CsvCtx c = {};
+  device_sn(c.sn, sizeof(c.sn));
+  FirstRow f = {};
+  flashlog_read(id, 0, first_row, &f, nullptr);
+  if (!f.have) {
+    printf("  trip %08lX: no rows in this format\n", (unsigned long)id);
+    return;
+  }
+  char name[48], head[200];
+  row_file_name(c.sn, f.r, id, config().tz_offset_min, name, sizeof(name));
+  row_csv_header(head, sizeof(head));
+  printf("# %s\n%s\n", name, head);
+  flashlog_read(id, 0, csv_visit, &c, nullptr);
 }
 
 // Settings that take effect the moment they are stored, from the console
@@ -1248,8 +1248,10 @@ void trip_command(const char *args) {
     printf("  alarms acknowledged (they stay in the log)\n");
   } else if (!strncmp(args, "dump", 4)) {
     trip_dump(atoi(args + 4));
+  } else if (!strncmp(args, "csv", 3)) {
+    trip_csv((uint32_t)strtoul(args + 3, nullptr, 0));
   } else {
-    printf("  trip | trip start LOW HIGH | trip stop | trip ack | trip dump [N]\n");
+    printf("  trip | trip start LOW HIGH | trip stop | trip ack | trip dump [N] | trip csv [ID]\n");
   }
 }
 
@@ -1331,7 +1333,8 @@ void print_help(void) {
   printf("                  raise after DWELL s out of range\n");
   printf("  trip stop       end it, with a summary record\n");
   printf("  trip ack        acknowledge alarms (history is kept)\n");
-  printf("  trip dump [N]   the last N records, decoded\n");
+  printf("  trip dump [N]   the last N rows, decoded\n");
+  printf("  trip csv [ID]   a trip (the last) as its CSV file, with the file name\n");
   printf("  screen          redraw the e-paper now (live view)\n");
   printf("  screen N        design demo page N (0-13); 'screen' to go back\n");
   printf("  screen rot 1|3  the two landscape orientations\n");

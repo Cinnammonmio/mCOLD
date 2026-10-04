@@ -126,6 +126,7 @@ and nowhere else.
 | `tools/ble_client.py` | reference client for the app team; runs from a PC with Bluetooth |
 | `net.*` | Wi-Fi: up to 5 networks, joins the strongest; SNTP sets the clock |
 | `uplink.*` | MQTT: record batches out, application ACKs in (PROTOCOL.md section 6) |
+| `logrow.*` | the row (record.h) as the table everyone sees: the server's JSON, the CSV, the trip's file name |
 | `ota.*` | firmware updates: file name from the server, download, checks, rollback (PROTOCOL.md section 6) |
 | `main.cpp` | 9 tasks + supervisor; console: `help` lists the commands |
 

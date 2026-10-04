@@ -1,4 +1,4 @@
-// What a trip writes to the log, byte for byte.
+// What a trip writes to the log, byte for byte (record format 3).
 //
 // §9.4: a documented binary layout, little-endian, never a C struct
 // copied out of memory (padding and field order are the compiler's,
@@ -6,57 +6,61 @@
 // and that value is never one a real reading could take -- an invalid
 // temperature is INT16_MIN, not 0, because 0 C is a real temperature.
 //
-// Every payload starts with the same 11-byte stamp:
+// One kind of record, the ROW (decided 2026-10-05): a sample and every
+// event are the same row -- what happened, and the state of the box at
+// that moment (temperature, alarms, position, motion, battery, link) --
+// so the log, the server and a CSV file are one table with the same
+// columns. logrow.h turns a row into those columns.
 //
-//   0  u32  utc_s        seconds since 1970 UTC; meaningless if quality 0
+// ROW (type 0x10), every record:
+//
+//   0  u32  utc_s        seconds since 1970 UTC; meaningless if time_q 0
 //   4  u8   time_q       TimeSource: 0 none, 1 rtc, 2 gnss, 3 host, 4 ntp
 //   5  u16  boot         boot counter (low 16 bits)
-//   7  u32  tick_ms      ms since that boot
+//   7  u32  tick_ms      ms since that boot -- with boot, orders rows whose
+//                        UTC cannot be trusted, and re-times them later
+//  11  u8   event        RowEvent
+//  12  i16  temp         calibrated, 0.01 C; INT16_MIN none
+//  14  u8   alarms       active, bit per Alarm
+//  15  u8   gnss         GnssState: 0 none, 1 last (an older fix), 2 fix
+//  16  i32  latitude     1e-7 degree (0 with gnss none)
+//  20  i32  longitude    1e-7 degree
+//  24  u16  motion       motion events since the previous row
+//  26  u8   battery      state of charge, %; 0xFF unknown
+//  27  u8   internet     Link: result of the last upload attempt
+//  28  i32  detail       per event (RowEvent)
+//  32       -- end of the row
 //
-// so every record can be ordered (boot, tick) even when its UTC cannot
-// be trusted, and re-timed later when it can.
+// TRIP_START rows go on (the trip's header):
 //
-// Record types and their payloads after the stamp:
+//  32  u8   header format (3)
+//  33  u32  trip id
+//  37  i16  tempmin, alarm below, 0.1 C
+//  39  i16  tempmax, alarm above, 0.1 C
+//  41  u16  hysteresis, 0.1 C
+//  43  u16  dwell, s
+//  45  u16  sample period, s
+//  47  u16  config schema
+//  49  i32  calibration offset, 0.01 C
+//  53  i32  calibration gain, ppm
+//  57  u32  calibration version
+//  61  c16  firmware version, NUL padded
+//  77  c24  device SN, NUL padded
+// 101
 //
-// TRIP_START (0x01)                         TRIP_STOP (0x04)
-//  11 u8   header format (2; 1 had c12 SN)   11 u8   reason (1 console, 2 app)
-//  12 u32  trip id                           12 u32  samples written
-//  16 i16  temp alarm low, 0.1 C             16 i16  min valid temp, 0.01 C
-//  18 i16  temp alarm high, 0.1 C            18 i16  max valid temp, 0.01 C
-//  20 u16  hysteresis, 0.1 C                 20 u16  alarms raised
-//  22 u16  dwell, s                          22 u16  door openings
-//  24 u16  door open alarm, s                24 u32  door open total, s
-//  26 u16  sample period, s                  28 u32  motion events
-//  28 u16  config schema
-//  30 i32  calibration offset, 0.01 C
-//  34 i32  calibration gain, ppm
-//  38 u32  calibration version
-//  42 c16  firmware version, NUL padded
-//  58 c24  device SN, NUL padded (c12 in format 1)
+// TRIP_STOP rows go on (the summary):
 //
-// SAMPLE (0x02), one per sample period
-//  11 u8   temp status (TempStatus; 0 ok)
-//  12 u16  temp raw, MAX6675 counts of 0.25 C; 0xFFFF none
-//  14 i16  temp calibrated, 0.01 C; INT16_MIN none
-//  16 u8   door: 0 unknown, 1 closed, 2 open
-//  17 u16  door openings so far this trip
-//  19 u16  motion events since the previous sample
-//  21 u8   gnss flags: bit0 fix in the latest session, bit1 any fix ever
-//  22 i32  latitude, 1e-7 degree
-//  26 i32  longitude, 1e-7 degree
-//  30 u16  fix age, s; 0xFFFF none or older
-//  32 u8   satellites used
-//  33 u8   hdop x10; 0xFF unknown
-//  34 u16  cell voltage, mV; 0 unknown
-//  36 u8   state of charge, %; 0xFF unknown
-//  37 i16  battery current, mA, + into the cell; INT16_MIN unknown
-//  39 u8   charge state (ChargeState)
-//  40 u16  alarms active (bit per Alarm)
-//  42 u16  devices not healthy (bit per Dev: degraded or failed)
+//  32  u8   reason (1 console, 2 app)
+//  33  u32  samples written
+//  37  i16  lowest sampled temperature, 0.01 C; INT16_MIN none
+//  39  i16  highest, 0.01 C
+//  41  u16  alarms raised
+//  43  u32  motion events
+//  47
 //
-// EVENT (0x03)
-//  11 u8   event code (EventCode)
-//  12 ...  event data, per code (see EventCode)
+// Format 1 and 2 logs (types 0x01-0x04: separate header, sample and
+// event records) are not read any more. A trip in that format is left
+// alone: never uploaded, reclaimed when the space is needed.
 #pragma once
 
 #include <stddef.h>
@@ -64,38 +68,53 @@
 #include <string.h>
 
 enum RecordType : uint8_t {
-  REC_TRIP_START = 0x01,
-  REC_SAMPLE = 0x02,
-  REC_EVENT = 0x03,
-  REC_TRIP_STOP = 0x04,
+  REC_ROW = 0x10,
 };
 
-enum EventCode : uint8_t {
-  EV_RESUMED = 1,       // u8 reset reason: the trip carried on after a reset
-  EV_DOOR_OPEN = 2,     //
-  EV_DOOR_CLOSE = 3,    // u32 how long it was open, ms
-  EV_MOTION = 4,        // u8 WAKE_UP_SRC of the first event, u16 events
-                        //   in the burst so far (more follow in samples)
-  EV_PROBE_FAULT = 5,   // u8 TempStatus
-  EV_PROBE_OK = 6,      //
-  EV_ALARM_RAISE = 7,   // u8 Alarm, i16 value that raised it (unit per alarm)
-  EV_ALARM_CLEAR = 8,   // u8 Alarm
-  EV_ALARM_ACK = 9,     // u16 alarms active when acknowledged
-  EV_TIME_SET = 10,     // u8 source, u32 utc_s before (0 if unknown)
-  EV_LOSS = 11,         // u32 trip deleted, u32 its records, u8 reason
-  EV_POWER_OFF = 12,    // u16 cell mV: battery too low, the box switched itself off
+static const uint8_t ROW_HEADER_FORMAT = 3;
+
+// What the row records. The names are the `event` column (logrow.cpp).
+enum RowEvent : uint8_t {
+  RE_TRIP_START = 1,
+  RE_TRIP_STOP = 2,
+  RE_SAMPLE = 3,       // every sample period
+  RE_ALARM_HIGH = 4,   // above tempmax for longer than dwell
+  RE_ALARM_LOW = 5,    // below tempmin for longer than dwell
+  RE_ALARM_PROBE = 6,  // no valid temperature for longer than allowed
+  RE_ALARM_CLEAR = 7,  // detail: the Alarm that cleared
+  RE_ALARM_ACK = 8,    // detail: the alarm bits acknowledged
+  RE_SHOCK = 9,        // above the shock threshold (not detected yet: no threshold set)
+  RE_PROBE_FAULT = 10, // detail: TempStatus
+  RE_PROBE_OK = 11,
+  RE_USB_IN = 12,
+  RE_USB_OUT = 13,
+  RE_POWER_ON = 14,    // the trip carried on after a reset; detail: reset reason
+  RE_POWER_OFF = 15,   // battery too low, the box switched itself off; detail: cell mV
+  RE_BATTERY_LOW = 16, // detail: state of charge, %
+  RE_TIME_SET = 17,    // detail: UTC seconds before (as u32; 0 if unknown)
+  RE_DATA_LOST = 18,   // a trip deleted to make room; detail: its id
+  RE_COUNT
 };
 
 enum Alarm : uint8_t {
   AL_TEMP_HIGH = 0,
   AL_TEMP_LOW = 1,
   AL_PROBE = 2,         // no valid temperature for longer than allowed
-  AL_DOOR = 3,          // door open longer than allowed
+  AL_DOOR = 3,          // kept for the bit position; this product has no door
   AL_BATTERY = 4,       // low battery
   AL_COUNT
 };
 
+enum GnssState : uint8_t { GNSS_NONE = 0, GNSS_LAST = 1, GNSS_FIX = 2 };
+
+// The last upload attempt, not the radio this instant: on battery Wi-Fi
+// is off between sessions, and "offline" on every row would say nothing.
+enum Link : uint8_t { LINK_OFFLINE = 0, LINK_WIFI_ONLY = 1, LINK_ONLINE = 2 };
+
 static const uint32_t STAMP_LEN = 11;
+static const uint32_t ROW_LEN = 32;
+static const uint32_t ROW_START_LEN = 101;
+static const uint32_t ROW_STOP_LEN = 47;
 static const uint16_t U16_NONE = 0xFFFF;
 static const int16_t I16_NONE = INT16_MIN;
 
@@ -132,7 +151,7 @@ struct Writer {
   }
 };
 
-// The matching reader, for the console and, later, the uploader.
+// The matching reader.
 struct Reader {
   const uint8_t *p;
   size_t len;

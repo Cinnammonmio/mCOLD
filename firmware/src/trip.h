@@ -10,7 +10,7 @@
 // The rules this module exists to keep (§8):
 //
 //   A reset in the middle of a trip resumes that trip and says so in the
-//   log (EV_RESUMED). It never quietly starts a new one, and never drops
+//   log (a POWER_ON row). It never quietly starts a new one, and never drops
 //   the old one.
 //
 //   An alarm is raised, cleared and acknowledged as events. Acknowledging
@@ -90,6 +90,9 @@ void trip_note_motion(const AccelEvent &ev);
 void trip_note_power(const PowerStatus &ps);
 void trip_note_door(DoorState now, uint32_t previous_lasted_ms);
 void trip_note_time_set(TimeSource src, uint32_t utc_before);
+// The result of the last upload attempt (record.h Link): the internet
+// column of every row from now on.
+void trip_note_link(uint8_t link);
 
 // Time-based alarms (door held open, probe gone). Call about once a
 // second.
@@ -136,7 +139,3 @@ static const uint32_t TRIP_PROBE_ALARM_MS = 60000;
 static const float TRIP_BATT_LOW_PCT = 15.0f;
 static const float TRIP_BATT_OK_PCT = 20.0f;
 
-// Motion is recorded as one event per burst, at most this often; the
-// count in between goes into the samples. A box being carried fires the
-// detector many times a second, and the log is not for that.
-static const uint32_t TRIP_MOTION_EVENT_MS = 60000;

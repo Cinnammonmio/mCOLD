@@ -6,7 +6,6 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
-#include <mbedtls/base64.h>
 #include <mqtt_client.h>
 #include <nvs.h>
 #include <stdio.h>
@@ -15,6 +14,7 @@
 
 #include "board.h"
 #include "flashlog.h"
+#include "logrow.h"
 #include "net.h"
 #include "ota.h"
 #include "pm.h"
@@ -62,8 +62,9 @@ struct Plan {
   uint32_t sessions;
   uint32_t last_ack;        // mono_ms() of the last ACK accepted
   uint32_t checkin_at;      // mono_ms() a session is due with nothing to send; 0: now
+  uint8_t link;             // record.h Link: how the last session went
 };
-const uint32_t PLAN_MAGIC = 0x55504C32;   // "UPL2"
+const uint32_t PLAN_MAGIC = 0x55504C33;   // "UPL3"
 RTC_DATA_ATTR Plan g_plan;
 #define g_last_ack g_plan.last_ack
 
@@ -207,11 +208,18 @@ void start_client(void) {
   c.session.last_will.qos = 1;
   c.session.last_will.retain = 1;
   c.buffer.size = 1024;
-  c.buffer.out_size = 4096;           // a full batch
+  c.buffer.out_size = 8192;           // a full batch: 16 rows of ~330 bytes
   g_client = esp_mqtt_client_init(&c);
   if (!g_client) return;
   esp_mqtt_client_register_event(g_client, MQTT_EVENT_ANY, on_mqtt, nullptr);
   if (esp_mqtt_client_start(g_client) == ESP_OK) g_started = true;
+}
+
+// The internet column of the trip's rows: how the last attempt went.
+void set_link(uint8_t l) {
+  if (l == g_plan.link) return;
+  g_plan.link = l;
+  trip_note_link(l);
 }
 
 // ---- outgoing batches -------------------------------------------------------
@@ -220,21 +228,49 @@ struct Batch {
   cJSON *arr;
   int n;
   uint32_t last;
+  RowHeader h;
+  int tz;
 };
 
+// Each record as the row the server stores: the same columns as the CSV
+// (logrow.h), nothing to decode.
 bool collect(const LogRecord &r, void *ctx) {
   Batch *b = (Batch *)ctx;
-  unsigned char b64[160];
-  size_t olen = 0;
-  mbedtls_base64_encode(b64, sizeof(b64), &olen, r.payload, r.len);
-  b64[olen] = 0;
-  cJSON *e = cJSON_CreateObject();
-  cJSON_AddNumberToObject(e, "seq", r.seq);
-  cJSON_AddNumberToObject(e, "type", r.type);
-  cJSON_AddStringToObject(e, "data", (const char *)b64);
-  cJSON_AddItemToArray(b->arr, e);
+  LogRow row;
+  if (row_decode(r.type, r.payload, r.len, &row, nullptr, nullptr)) {
+    cJSON_AddItemToArray(b->arr, row_json(row, r.trip, r.seq, g_sn, b->h, b->tz));
+  }
   b->last = r.seq;
   return ++b->n < UPLINK_BATCH;
+}
+
+// The trip's header row (its tempmin/tempmax go on every row). False for
+// a trip in the old record format, which is not uploaded.
+struct First {
+  bool row;
+  RowHeader h;
+};
+bool first_visit(const LogRecord &r, void *ctx) {
+  First *f = (First *)ctx;
+  LogRow row;
+  f->row = row_decode(r.type, r.payload, r.len, &row, &f->h, nullptr) && f->h.valid;
+  return false;
+}
+bool trip_header(uint32_t trip, RowHeader *h) {
+  First f = {};
+  flashlog_read(trip, 0, first_visit, &f, nullptr);
+  if (f.row) *h = f.h;
+  return f.row;
+}
+
+// A trip from before the row format: marked as delivered, so it neither
+// blocks the upload nor stays forever -- the space goes first when needed.
+bool skip_legacy(uint32_t trip, uint32_t last) {
+  RowHeader h;
+  if (trip_header(trip, &h)) return false;
+  ack_put(trip, last + 1);
+  printf("[uplink] trip %08lX is in the old record format: not uploaded\n", (unsigned long)trip);
+  return true;
 }
 
 // The next trip with records the server has not confirmed. Oldest first,
@@ -247,7 +283,7 @@ bool pick(uint32_t *trip, uint32_t *from) {
   const int n = flashlog_trips(trips, 64);
   uint32_t last;
   if (s.active && !g_last_was_live && flashlog_last_seq(s.id, &last) &&
-      last >= ack_get(s.id)) {
+      last >= ack_get(s.id) && !skip_legacy(s.id, last)) {
     *trip = s.id;
     *from = ack_get(s.id);
     g_last_was_live = true;
@@ -256,7 +292,7 @@ bool pick(uint32_t *trip, uint32_t *from) {
   for (int i = 0; i < n && i < 64; i++) {
     if (trips[i] > TRIP_ID_REAL_MAX) continue;      // bench records stay home
     const uint32_t a = ack_get(trips[i]);
-    if (flashlog_last_seq(trips[i], &last) && last >= a) {
+    if (flashlog_last_seq(trips[i], &last) && last >= a && !skip_legacy(trips[i], last)) {
       *trip = trips[i];
       *from = a;
       g_last_was_live = s.active && trips[i] == s.id;
@@ -272,8 +308,9 @@ void send_batch(void) {
   cJSON *o = cJSON_CreateObject();
   cJSON_AddStringToObject(o, "sn", g_sn);
   cJSON_AddNumberToObject(o, "trip", trip);
-  cJSON_AddNumberToObject(o, "schema", 1);
-  Batch b = {cJSON_AddArrayToObject(o, "records"), 0, from};
+  cJSON_AddNumberToObject(o, "schema", ROW_HEADER_FORMAT);
+  Batch b = {cJSON_AddArrayToObject(o, "rows"), 0, from, {}, config().tz_offset_min};
+  trip_header(trip, &b.h);
   flashlog_read(trip, from, collect, &b, nullptr);
   if (!b.n) {
     cJSON_Delete(o);
@@ -337,6 +374,7 @@ struct Session {
   bool status_sent;
   uint32_t acks_before;     // g_acks when it began
   uint32_t mqtt_at;         // when the broker answered; 0: not yet
+  bool wifi;                // got onto Wi-Fi
 };
 Session g_ses = {};
 
@@ -349,6 +387,7 @@ void end_session(bool all_sent) {
   }
   stop_client();
   net_want(false);
+  set_link(g_ses.reached ? LINK_ONLINE : g_ses.wifi ? LINK_WIFI_ONLY : LINK_OFFLINE);
   const uint32_t t = now_ms();
   g_plan.sessions++;
   // A session that got the server to confirm something -- or had nothing
@@ -401,7 +440,7 @@ void battery_pass(void) {
       pm_done(Duty::Uplink);
       return;
     }
-    g_ses = {true, t, false, false, g_acks, 0};
+    g_ses = {true, t, false, false, g_acks, 0, false};
     pm_hold(Hold::Uplink, true);
     pm_no_light_sleep(true);    // Wi-Fi and the broker, without naps in between
     net_want(true);
@@ -411,6 +450,7 @@ void battery_pass(void) {
 
   NetStatus ns;
   net_status(&ns);
+  if (ns.connected) g_ses.wifi = true;
   if (!g_started && ns.connected) start_client();
   if (g_mqtt) {
     g_ses.reached = true;
@@ -464,6 +504,7 @@ void task(void *) {
     NetStatus ns;
     net_status(&ns);
     if (!g_started && g_host[0] && ns.connected) start_client();
+    set_link(g_mqtt ? LINK_ONLINE : ns.connected ? LINK_WIFI_ONLY : LINK_OFFLINE);
     if (!g_mqtt) continue;
     publish_ota();
 
@@ -506,7 +547,7 @@ void uplink_start(const char *sn) {
   snprintf(t_ota, sizeof(t_ota), TOPIC_ROOT "%s/ota/state", g_sn);
   g_mx = xSemaphoreCreateMutex();
   load();
-  if (!pm_warm() || g_plan.magic != PLAN_MAGIC) g_plan = {PLAN_MAGIC, 0, 0, false, 0, 0, 0};
+  if (!pm_warm() || g_plan.magic != PLAN_MAGIC) g_plan = {PLAN_MAGIC, 0, 0, false, 0, 0, 0, LINK_OFFLINE};
   xTaskCreatePinnedToCore(task, "uplink", 6144, nullptr, 2, &g_task, 0);
 }
 

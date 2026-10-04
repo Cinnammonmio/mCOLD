@@ -195,9 +195,9 @@ A value the device does not have is **absent or `null`, never 0**.
 `rssi` and `ip` are there only while connected.
 
 `READ_LOG_CHUNK` returns records exactly as the device stored them, one
-JSON object each, `{"seq":5,"type":2,"data":"<base64>"}`, where `data` is
-the record payload laid out as in `src/record.h` (little-endian, the
-11-byte stamp first). `next` is the sequence to ask for next, or `null`
+JSON object each, `{"seq":5,"type":16,"data":"<base64>"}`, where `data` is
+the row laid out as in `src/record.h` (record format 3: type 16, every
+record a ROW -- the same columns the server gets, section 6). `next` is the sequence to ask for next, or `null`
 when there is no more. The app keeps the byte layout, not the device's
 interpretation of it -- so a record from a newer firmware is not lost
 by an older app, only not yet understood.
@@ -237,15 +237,61 @@ Subscribing to `mcold/v1/+/rec` gets every device's records.
 ### Batches
 
 ```json
-{"sn":"MCOLD-9A74","trip":8,"schema":1,"from":0,"to":15,
- "records":[{"seq":0,"type":1,"data":"<base64>"}, ...]}
+{"sn":"mCDV1-L0169-1069-001","trip":11,"schema":3,"from":0,"to":15,
+ "rows":[
+  {"trip":11,"seq":1,"sn":"mCDV1-L0169-1069-001","timestamp":"02:47:27 05/10/2026",
+   "utc":1791143247,"event":"SAMPLE","temp":4.25,"tempmin":2,"tempmax":8,"alarm":"",
+   "timeok":true,"gnssstate":"last","latitude":13.7563,"longitude":100.5018,"motion":0,
+   "battery":97,"internet":"online","detail":""},
+  {"trip":11,"seq":2,"sn":"mCDV1-L0169-1069-001","timestamp":"02:47:28 05/10/2026",
+   "utc":1791143248,"event":"ALARM_HIGH","temp":8.5,"tempmin":2,"tempmax":8,"alarm":"HIGH",
+   ...}, ...]}
 ```
 
-Up to 16 records, in sequence order, of one trip. `data` is the record
-payload exactly as `src/record.h` lays it out (little-endian, an 11-byte
-stamp first: UTC seconds, time quality, boot, tick) -- the same records
-`READ_LOG_CHUNK` returns over BLE. Types: 1 trip start, 2 sample,
-3 event, 4 trip stop.
+Up to 16 rows, in sequence order, of one trip. **Every record is a row
+with the same columns** (record format 3, decided 2026-10-05): a sample
+and every event alike carry the state of the box at that moment, so the
+server stores one table, and the CSV a person opens has the same columns
+(`trip csv` at the console prints one, `src/logrow.h` defines it).
+
+| Column | Meaning |
+|---|---|
+| `trip` | the trip number, made by the box (unique with `sn`) |
+| `seq` | the row's place in the trip, from 0; **(sn, trip, seq) is the key** |
+| `sn` | the box's serial number |
+| `timestamp` | local time, `hh:mm:ss DD/MM/YYYY` (config `tz_offset_min`, +07:00 by default) |
+| `utc` | the same moment in Unix seconds |
+| `event` | what the row is (below) |
+| `temp` | °C, calibrated; `null` when the probe gives none |
+| `tempmin` / `tempmax` | the trip's alarm limits, from its start |
+| `alarm` | alarms active after this row: `HIGH`, `LOW`, `PROBE`, `BATTERY`, joined with `|`; empty for none |
+| `timeok` | false when the box did not know the time; then `timestamp`/`utc` are `null` and `boot` + `up_s` order the row |
+| `gnssstate` | `fix` (within the last sample period), `last` (an older fix), `none` |
+| `latitude` / `longitude` | degrees; `null` with `none` |
+| `motion` | motion events since the previous row |
+| `battery` | state of charge, %; `null` unknown |
+| `internet` | how the last upload attempt went: `online`, `wifi_only` (Wi-Fi, no broker), `offline` |
+| `detail` | per event, in words (below); usually empty |
+
+| `event` | When | `detail` |
+|---|---|---|
+| `TRIP_START` / `TRIP_STOP` | the trip begins / ends | |
+| `SAMPLE` | every sample period | |
+| `ALARM_HIGH` / `ALARM_LOW` | outside `tempmax`/`tempmin` for longer than the dwell | |
+| `ALARM_PROBE` | no temperature for over a minute | |
+| `BATTERY_LOW` | battery under 15 % | the % |
+| `ALARM_CLEAR` | an alarm is over | which |
+| `ALARM_ACK` | someone acknowledged | the alarms |
+| `PROBE_FAULT` / `PROBE_OK` | the probe stops / starts answering | the fault |
+| `USB_IN` / `USB_OUT` | external power plugged in / pulled out | |
+| `POWER_ON` | the trip carried on after a reset | reset reason |
+| `POWER_OFF` | battery empty: the box switched itself off | cell mV |
+| `TIME_SET` | the clock was set | the time before |
+| `DATA_LOST` | a trip deleted because the log was full | its trip number |
+| `SHOCK` | reserved: a shock above a threshold (none set yet) | |
+
+Ordinary motion is not a row: it is counted in `motion`. Trips recorded
+before format 3 are not uploaded.
 
 ### The ACK -- what the server must do
 

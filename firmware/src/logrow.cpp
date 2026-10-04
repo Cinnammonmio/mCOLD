@@ -1,0 +1,274 @@
+#include "logrow.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+
+namespace {
+
+const char *const EVENTS[RE_COUNT] = {
+    "?",          "TRIP_START",  "TRIP_STOP",  "SAMPLE",   "ALARM_HIGH",
+    "ALARM_LOW",  "ALARM_PROBE", "ALARM_CLEAR", "ALARM_ACK", "SHOCK",
+    "PROBE_FAULT", "PROBE_OK",   "USB_IN",     "USB_OUT",  "POWER_ON",
+    "POWER_OFF",  "BATTERY_LOW", "TIME_SET",   "DATA_LOST"};
+
+const char *const ALARMS[AL_COUNT] = {"HIGH", "LOW", "PROBE", "DOOR", "BATTERY"};
+
+double c100(int16_t v) { return v / 100.0; }
+
+}  // namespace
+
+size_t row_encode(const LogRow &r, const RowHeader *h, const RowSummary *s, uint8_t *buf,
+                  size_t cap) {
+  Writer w(buf, cap);
+  w.u32(r.utc);
+  w.u8(r.time_q);
+  w.u16(r.boot);
+  w.u32(r.tick_ms);
+  w.u8(r.event);
+  w.i16(r.temp_c100);
+  w.u8(r.alarms);
+  w.u8(r.gnss);
+  w.i32(r.lat_e7);
+  w.i32(r.lon_e7);
+  w.u16(r.motion);
+  w.u8(r.battery);
+  w.u8(r.internet);
+  w.i32(r.detail);
+  if (r.event == RE_TRIP_START && h) {
+    w.u8(ROW_HEADER_FORMAT);
+    w.u32(h->trip);
+    w.i16(h->tempmin_c10);
+    w.i16(h->tempmax_c10);
+    w.u16(h->hyst_c10);
+    w.u16(h->dwell_s);
+    w.u16(h->period_s);
+    w.u16(h->schema);
+    w.i32(h->cal_offset_c100);
+    w.i32(h->cal_gain_ppm);
+    w.u32(h->cal_version);
+    w.str(h->fw, 16);
+    w.str(h->sn, 24);
+  } else if (r.event == RE_TRIP_STOP && s) {
+    w.u8(s->reason);
+    w.u32(s->samples);
+    w.i16(s->min_c100);
+    w.i16(s->max_c100);
+    w.u16(s->alarms_raised);
+    w.u32(s->motion);
+  }
+  return w.overflow ? 0 : w.n;
+}
+
+bool row_decode(uint8_t type, const uint8_t *p, size_t len, LogRow *r, RowHeader *h,
+                RowSummary *s) {
+  if (h) h->valid = false;
+  if (s) s->valid = false;
+  if (type != REC_ROW || len < ROW_LEN) return false;
+  Reader rd(p, len);
+  r->utc = rd.u32();
+  r->time_q = rd.u8();
+  r->boot = rd.u16();
+  r->tick_ms = rd.u32();
+  r->event = rd.u8();
+  r->temp_c100 = rd.i16();
+  r->alarms = rd.u8();
+  r->gnss = rd.u8();
+  r->lat_e7 = rd.i32();
+  r->lon_e7 = rd.i32();
+  r->motion = rd.u16();
+  r->battery = rd.u8();
+  r->internet = rd.u8();
+  r->detail = rd.i32();
+  if (r->event == RE_TRIP_START && h && len >= ROW_START_LEN && rd.u8() == ROW_HEADER_FORMAT) {
+    h->trip = rd.u32();
+    h->tempmin_c10 = rd.i16();
+    h->tempmax_c10 = rd.i16();
+    h->hyst_c10 = rd.u16();
+    h->dwell_s = rd.u16();
+    h->period_s = rd.u16();
+    h->schema = rd.u16();
+    h->cal_offset_c100 = rd.i32();
+    h->cal_gain_ppm = rd.i32();
+    h->cal_version = rd.u32();
+    rd.str(h->fw, 16);
+    h->fw[16] = 0;
+    rd.str(h->sn, 24);
+    h->sn[24] = 0;
+    h->valid = true;
+  } else if (r->event == RE_TRIP_STOP && s && len >= ROW_STOP_LEN) {
+    s->reason = rd.u8();
+    s->samples = rd.u32();
+    s->min_c100 = rd.i16();
+    s->max_c100 = rd.i16();
+    s->alarms_raised = rd.u16();
+    s->motion = rd.u32();
+    s->valid = true;
+  }
+  return true;
+}
+
+const char *row_event_name(uint8_t e) { return e < RE_COUNT ? EVENTS[e] : "?"; }
+const char *row_alarm_name(uint8_t a) { return a < AL_COUNT ? ALARMS[a] : "?"; }
+
+const char *row_gnss_name(uint8_t g) {
+  return g == GNSS_FIX ? "fix" : g == GNSS_LAST ? "last" : "none";
+}
+
+const char *row_link_name(uint8_t l) {
+  return l == LINK_ONLINE ? "online" : l == LINK_WIFI_ONLY ? "wifi_only" : "offline";
+}
+
+void row_alarm_str(uint8_t bits, char *out, size_t n) {
+  size_t k = 0;
+  out[0] = 0;
+  for (int a = 0; a < AL_COUNT; a++) {
+    if (!(bits & (1u << a))) continue;
+    k += snprintf(out + k, k < n ? n - k : 0, "%s%s", k ? "|" : "", ALARMS[a]);
+  }
+}
+
+void row_detail_str(const LogRow &r, char *out, size_t n) {
+  out[0] = 0;
+  switch (r.event) {
+    case RE_ALARM_CLEAR:
+      snprintf(out, n, "%s", row_alarm_name((uint8_t)r.detail));
+      break;
+    case RE_ALARM_ACK:
+      row_alarm_str((uint8_t)r.detail, out, n);
+      break;
+    case RE_PROBE_FAULT:
+      snprintf(out, n, "probe status %ld", (long)r.detail);
+      break;
+    case RE_POWER_ON:
+      snprintf(out, n, "reset reason %ld", (long)r.detail);
+      break;
+    case RE_POWER_OFF:
+      snprintf(out, n, "%ld mV", (long)r.detail);
+      break;
+    case RE_BATTERY_LOW:
+      snprintf(out, n, "%ld %%", (long)r.detail);
+      break;
+    case RE_TIME_SET:
+      if (r.detail) snprintf(out, n, "was %lu", (unsigned long)(uint32_t)r.detail);
+      else snprintf(out, n, "was unknown");
+      break;
+    case RE_DATA_LOST:
+      snprintf(out, n, "trip %ld deleted", (long)r.detail);
+      break;
+    default:
+      break;
+  }
+}
+
+void row_time_str(uint32_t utc, int tz_min, char *out, size_t n) {
+  if (!utc) {
+    out[0] = 0;
+    return;
+  }
+  const time_t local = (time_t)utc + tz_min * 60;
+  struct tm tm;
+  gmtime_r(&local, &tm);
+  snprintf(out, n, "%02d:%02d:%02d %02d/%02d/%04d", tm.tm_hour, tm.tm_min, tm.tm_sec,
+           tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900);
+}
+
+cJSON *row_json(const LogRow &r, uint32_t trip, uint32_t seq, const char *sn,
+                const RowHeader &h, int tz_min) {
+  cJSON *o = cJSON_CreateObject();
+  const bool timeok = r.time_q != 0;
+  char s[40];
+  cJSON_AddNumberToObject(o, "trip", trip);
+  cJSON_AddNumberToObject(o, "seq", seq);
+  cJSON_AddStringToObject(o, "sn", sn);
+  if (timeok) {
+    row_time_str(r.utc, tz_min, s, sizeof(s));
+    cJSON_AddStringToObject(o, "timestamp", s);
+    cJSON_AddNumberToObject(o, "utc", r.utc);
+  } else {
+    cJSON_AddNullToObject(o, "timestamp");
+    cJSON_AddNullToObject(o, "utc");
+  }
+  cJSON_AddStringToObject(o, "event", row_event_name(r.event));
+  if (r.temp_c100 == I16_NONE) cJSON_AddNullToObject(o, "temp");
+  else cJSON_AddNumberToObject(o, "temp", c100(r.temp_c100));
+  if (h.valid) {
+    cJSON_AddNumberToObject(o, "tempmin", h.tempmin_c10 / 10.0);
+    cJSON_AddNumberToObject(o, "tempmax", h.tempmax_c10 / 10.0);
+  }
+  row_alarm_str(r.alarms, s, sizeof(s));
+  cJSON_AddStringToObject(o, "alarm", s);
+  cJSON_AddBoolToObject(o, "timeok", timeok);
+  cJSON_AddStringToObject(o, "gnssstate", row_gnss_name(r.gnss));
+  if (r.gnss != GNSS_NONE) {
+    cJSON_AddNumberToObject(o, "latitude", r.lat_e7 / 1e7);
+    cJSON_AddNumberToObject(o, "longitude", r.lon_e7 / 1e7);
+  } else {
+    cJSON_AddNullToObject(o, "latitude");
+    cJSON_AddNullToObject(o, "longitude");
+  }
+  cJSON_AddNumberToObject(o, "motion", r.motion);
+  if (r.battery == 0xFF) cJSON_AddNullToObject(o, "battery");
+  else cJSON_AddNumberToObject(o, "battery", r.battery);
+  cJSON_AddStringToObject(o, "internet", row_link_name(r.internet));
+  row_detail_str(r, s, sizeof(s));
+  cJSON_AddStringToObject(o, "detail", s);
+  if (!timeok) {
+    cJSON_AddNumberToObject(o, "boot", r.boot);
+    cJSON_AddNumberToObject(o, "up_s", r.tick_ms / 1000);
+  }
+  return o;
+}
+
+void row_csv_header(char *out, size_t n) {
+  snprintf(out, n,
+           "trip,seq,sn,timestamp,utc,event,temp,tempmin,tempmax,alarm,timeok,gnssstate,"
+           "latitude,longitude,motion,battery,internet,detail");
+}
+
+void row_csv(const LogRow &r, uint32_t trip, uint32_t seq, const char *sn, const RowHeader &h,
+             int tz_min, char *out, size_t n) {
+  const bool timeok = r.time_q != 0;
+  char ts[24] = "", temp[12] = "", tmin[10] = "", tmax[10] = "", al[40], lat[16] = "",
+       lon[16] = "", batt[6] = "", det[40];
+  if (timeok) row_time_str(r.utc, tz_min, ts, sizeof(ts));
+  if (r.temp_c100 != I16_NONE) snprintf(temp, sizeof(temp), "%.2f", c100(r.temp_c100));
+  if (h.valid) {
+    snprintf(tmin, sizeof(tmin), "%.1f", h.tempmin_c10 / 10.0);
+    snprintf(tmax, sizeof(tmax), "%.1f", h.tempmax_c10 / 10.0);
+  }
+  row_alarm_str(r.alarms, al, sizeof(al));
+  if (r.gnss != GNSS_NONE) {
+    snprintf(lat, sizeof(lat), "%.7f", r.lat_e7 / 1e7);
+    snprintf(lon, sizeof(lon), "%.7f", r.lon_e7 / 1e7);
+  }
+  if (r.battery != 0xFF) snprintf(batt, sizeof(batt), "%u", r.battery);
+  row_detail_str(r, det, sizeof(det));
+  char utc[12] = "";
+  if (timeok) snprintf(utc, sizeof(utc), "%lu", (unsigned long)r.utc);
+  snprintf(out, n, "%lu,%lu,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%u,%s,%s,%s",
+           (unsigned long)trip, (unsigned long)seq, sn, ts, utc, row_event_name(r.event), temp,
+           tmin, tmax, al, timeok ? 1 : 0, row_gnss_name(r.gnss), lat, lon, r.motion, batt,
+           row_link_name(r.internet), det);
+}
+
+void row_file_name(const char *sn, const LogRow &start, uint32_t trip, int tz_min, char *out,
+                   size_t n) {
+  // The last two dash-separated groups of the SN: mCDV1-L0169-1069-001 -> 1069-001.
+  const char *tail = sn ? sn : "";
+  const char *last = strrchr(tail, '-');
+  if (last) {
+    const char *p = last;
+    while (p > tail && *(p - 1) != '-') p--;
+    tail = p > tail ? p : tail;
+  }
+  if (start.time_q && start.utc) {
+    const time_t local = (time_t)start.utc + tz_min * 60;
+    struct tm tm;
+    gmtime_r(&local, &tm);
+    snprintf(out, n, "TRIP_%s_%02d%02d%02d%02d%02d.csv", tail, tm.tm_year % 100, tm.tm_mon + 1,
+             tm.tm_mday, tm.tm_hour, tm.tm_min);
+  } else {
+    snprintf(out, n, "TRIP_%s_%lu.csv", tail, (unsigned long)trip);
+  }
+}

@@ -22,6 +22,7 @@
 #include "flashlog.h"
 #include "gnss.h"
 #include "health.h"
+#include "logrow.h"
 #include "record.h"
 #include "temp.h"
 #include "timekeep.h"
@@ -392,36 +393,39 @@ struct Summary {
 
 bool summary_visit(const LogRecord &r, void *ctx) {
   Summary *m = (Summary *)ctx;
-  Reader rd(r.payload, r.len);
-  const uint32_t utc = rd.u32();
-  const uint8_t q = rd.u8();
-  rd.n = STAMP_LEN;
-  if (r.type == REC_TRIP_START) {
-    rd.u8();
-    rd.u32();
-    m->lo = rd.i16();
-    m->hi = rd.i16();
-    m->hyst = rd.u16();
-    m->dwell = rd.u16();
-    m->header = true;
-    m->start_utc = utc;
-    m->start_q = q;
-  } else if (r.type == REC_SAMPLE) {
-    m->samples++;
-    const uint8_t st = rd.u8();
-    rd.u16();
-    const int16_t c = rd.i16();
-    if (st == 0 && c != I16_NONE) {
-      if (!m->have_temp || c < m->min_c100) m->min_c100 = c;
-      if (!m->have_temp || c > m->max_c100) m->max_c100 = c;
-      m->have_temp = true;
-    }
-  } else if (r.type == REC_EVENT) {
-    if (rd.u8() == EV_ALARM_RAISE) m->alarms++;
-  } else if (r.type == REC_TRIP_STOP) {
-    m->stopped = true;
-    m->stop_utc = utc;
-    m->stop_q = q;
+  LogRow row;
+  RowHeader h;
+  if (!row_decode(r.type, r.payload, r.len, &row, &h, nullptr)) return true;
+  switch (row.event) {
+    case RE_TRIP_START:
+      if (!h.valid) break;
+      m->lo = h.tempmin_c10;
+      m->hi = h.tempmax_c10;
+      m->hyst = h.hyst_c10;
+      m->dwell = h.dwell_s;
+      m->header = true;
+      m->start_utc = row.utc;
+      m->start_q = row.time_q;
+      break;
+    case RE_SAMPLE:
+      m->samples++;
+      if (row.temp_c100 != I16_NONE) {
+        if (!m->have_temp || row.temp_c100 < m->min_c100) m->min_c100 = row.temp_c100;
+        if (!m->have_temp || row.temp_c100 > m->max_c100) m->max_c100 = row.temp_c100;
+        m->have_temp = true;
+      }
+      break;
+    case RE_ALARM_HIGH:
+    case RE_ALARM_LOW:
+    case RE_ALARM_PROBE:
+    case RE_BATTERY_LOW:
+      m->alarms++;
+      break;
+    case RE_TRIP_STOP:
+      m->stopped = true;
+      m->stop_utc = row.utc;
+      m->stop_q = row.time_q;
+      break;
   }
   return true;
 }

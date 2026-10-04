@@ -16,6 +16,7 @@
 #include "flashlog.h"
 #include "gnss.h"
 #include "health.h"
+#include "logrow.h"
 #include "pm.h"
 #include "record.h"
 #include "timekeep.h"
@@ -41,8 +42,6 @@ struct Totals {
   bool have_temp;
   int16_t min_c100, max_c100;
   uint16_t alarms_raised;
-  uint16_t door_opens;
-  uint32_t door_open_ms;
   uint32_t motion;
 };
 Totals g_t = {};
@@ -56,10 +55,9 @@ uint32_t g_probe_bad_since = 0;      // 0: probe fine (or never seen bad)
 bool g_probe_fault_logged = false;
 PowerStatus g_pwr = {};
 bool g_have_pwr = false;
-uint16_t g_motion_since_sample = 0;
-uint32_t g_motion_event_at = 0;      // last EV_MOTION written
-uint16_t g_motion_burst = 0;
-uint32_t g_door_opened_at = 0;       // 0: door not open
+uint16_t g_motion_since_row = 0;     // the motion column: since the previous row
+int8_t g_usb = -1;                   // external power at the last look; -1 unknown
+uint8_t g_link = LINK_OFFLINE;       // the internet column (uplink says)
 
 // Alarm engine.
 uint16_t g_alarms = 0;
@@ -80,11 +78,12 @@ struct Kept {
   float temp_c;
   uint32_t temp_at, probe_bad_since;
   bool probe_fault_logged;
-  uint16_t motion_since_sample, motion_burst;
-  uint32_t motion_event_at, door_opened_at;
+  uint16_t motion_since_row;
+  int8_t usb;
+  uint8_t link;
   uint32_t high_since, low_since;
 };
-const uint32_t KEPT_MAGIC = 0x54524B31;   // "TRK1"
+const uint32_t KEPT_MAGIC = 0x54524B32;   // "TRK2"
 RTC_DATA_ATTR Kept g_kept;
 
 // Interval clock: runs through deep sleep, so the times above stay
@@ -118,13 +117,37 @@ bool nvs_put(const char *k, uint32_t v) {
 
 // ---- writing records -------------------------------------------------
 
-void stamp(Writer &w) {
-  TimeStamp t;
-  time_now(&t);
-  w.u32(t.quality == TimeSource::None ? 0 : (uint32_t)(t.utc_ms / 1000));
-  w.u8((uint8_t)t.quality);
-  w.u16((uint16_t)t.boot);
-  w.u32(t.tick_ms);
+float calibrated(float c);
+
+// The state of the box now, as a row: every row -- a sample or an event
+// -- carries it, so each one reads on its own (decided 2026-10-05).
+// Takes the motion count with it.
+LogRow snapshot(uint8_t event, int32_t detail) {
+  LogRow r = {};
+  TimeStamp ts;
+  time_now(&ts);
+  r.utc = ts.quality == TimeSource::None ? 0 : (uint32_t)(ts.utc_ms / 1000);
+  r.time_q = (uint8_t)ts.quality;
+  r.boot = (uint16_t)ts.boot;
+  r.tick_ms = ts.tick_ms;
+  r.event = event;
+  const uint32_t t = now_ms();
+  // A reading more than a minute old is not this row's reading.
+  const bool fresh = g_temp_at && t - g_temp_at <= 60000 && g_temp_st == TempStatus::Ok;
+  r.temp_c100 = fresh ? (int16_t)lroundf(calibrated(g_temp_c) * 100.0f) : I16_NONE;
+  r.alarms = (uint8_t)g_alarms;
+  GnssFix f;
+  if (gnss_last_fix(&f) && f.valid) {
+    const uint32_t age = f.at_ms ? t - f.at_ms : UINT32_MAX;
+    r.gnss = age <= (uint32_t)config().sample_period_s * 1000 ? GNSS_FIX : GNSS_LAST;
+    r.lat_e7 = (int32_t)llround(f.lat_deg * 1e7);
+    r.lon_e7 = (int32_t)llround(f.lon_deg * 1e7);
+  }
+  r.motion = g_motion_since_row;
+  r.battery = g_have_pwr && g_pwr.cell_valid ? (uint8_t)lroundf(g_pwr.soc_percent) : 0xFF;
+  r.internet = g_link;
+  r.detail = detail;
+  return r;
 }
 
 // Deletes the oldest trip that is not running, to make room. Writes the
@@ -137,19 +160,17 @@ TripRetention g_ret = {};
 struct Loss {
   uint32_t trip;
   uint32_t records;
-  bool noted;          // the EV_LOSS record is in the log
+  bool noted;          // the DATA_LOST row is in the log
   bool lost;           // false: the server had it all, nothing was lost
 };
 
 bool write_loss(const Loss &v) {
   uint8_t buf[LOG_PAYLOAD_MAX];
-  Writer w(buf, sizeof(buf));
-  stamp(w);
-  w.u8(EV_LOSS);
-  w.u32(v.trip);
-  w.u32(v.records);
-  w.u8(1);   // FLASH_RETENTION_NO_SD: there is no SD path yet
-  return flashlog_append(g_id, REC_EVENT, buf, w.n, nullptr) == LogErr::Ok;
+  const LogRow r = snapshot(RE_DATA_LOST, (int32_t)v.trip);
+  const size_t n = row_encode(r, nullptr, nullptr, buf, sizeof(buf));
+  if (!n || flashlog_append(g_id, REC_ROW, buf, n, nullptr) != LogErr::Ok) return false;
+  g_motion_since_row = 0;
+  return true;
 }
 
 // Deletes the oldest trip that is not this one, to make room.
@@ -197,60 +218,61 @@ bool evict_one(bool notice_first, Loss *out) {
 }
 
 // `starting`: this is the trip's header, which must be record 0.
-TripErr put(uint8_t type, const Writer &w, bool starting = false) {
-  if (w.overflow) return TripErr::Flash;
-  LogErr e = flashlog_append(g_id, type, w.p, w.n, nullptr);
+TripErr put(const LogRow &r, const RowHeader *h = nullptr, const RowSummary *sum = nullptr,
+            bool starting = false) {
+  uint8_t buf[LOG_PAYLOAD_MAX];
+  const size_t n = row_encode(r, h, sum, buf, sizeof(buf));
+  if (!n) return TripErr::Flash;
+  LogErr e = flashlog_append(g_id, REC_ROW, buf, n, nullptr);
   Loss v;
   if (e == LogErr::Full && evict_one(!starting, &v)) {
-    e = flashlog_append(g_id, type, w.p, w.n, nullptr);
+    e = flashlog_append(g_id, REC_ROW, buf, n, nullptr);
     if (e == LogErr::Ok && v.lost && !v.noted) write_loss(v);
   }
   switch (e) {
-    case LogErr::Ok:   return TripErr::Ok;
+    case LogErr::Ok:
+      g_motion_since_row = 0;   // counted into this row
+      return TripErr::Ok;
     case LogErr::Full: return TripErr::LogFull;
     default:           return TripErr::Flash;
   }
 }
 
-void event(uint8_t code, void (*more)(Writer &, const void *), const void *arg) {
+// An event row, during a trip.
+void event(uint8_t ev, int32_t detail = 0) {
   if (!g_active) return;
-  uint8_t buf[LOG_PAYLOAD_MAX];
-  Writer w(buf, sizeof(buf));
-  stamp(w);
-  w.u8(code);
-  if (more) more(w, arg);
-  put(REC_EVENT, w);
+  put(snapshot(ev, detail));
 }
-
-void event_u8(uint8_t code, uint8_t v) {
-  event(code, [](Writer &w, const void *a) { w.u8(*(const uint8_t *)a); }, &v);
-}
-
-// Arguments carried into the event writers below.
-struct AlarmArg { uint8_t a; int16_t v; };
-struct MotionArg { uint8_t src; uint16_t n; };
-struct TimeArg { uint8_t s; uint32_t b; };
 
 // ---- alarms ----------------------------------------------------------
 
+uint8_t raise_event(uint8_t a) {
+  switch (a) {
+    case AL_TEMP_HIGH: return RE_ALARM_HIGH;
+    case AL_TEMP_LOW:  return RE_ALARM_LOW;
+    case AL_PROBE:     return RE_ALARM_PROBE;
+    case AL_BATTERY:   return RE_BATTERY_LOW;
+  }
+  return 0;
+}
+
+// `value` goes in the detail column where it says something the row's
+// own columns do not (the battery's percent; a temperature is in `temp`).
 void raise_alarm(uint8_t a, int16_t value) {
   if (g_alarms & (1u << a)) return;
+  const uint8_t ev = raise_event(a);
+  if (!ev) return;          // the door alarm: no door on this product
   g_alarms |= (uint16_t)(1u << a);
   g_acked = false;
   g_t.alarms_raised++;
-  const AlarmArg x = {a, value};
-  event(EV_ALARM_RAISE, [](Writer &w, const void *p) {
-    const auto *x = (const AlarmArg *)p;
-    w.u8(x->a);
-    w.i16(x->v);
-  }, &x);
+  event(ev, a == AL_BATTERY ? value : 0);
   printf("[trip] ALARM %s\n", alarm_name(a));
 }
 
 void clear_alarm(uint8_t a) {
   if (!(g_alarms & (1u << a))) return;
   g_alarms &= (uint16_t)~(1u << a);
-  event_u8(EV_ALARM_CLEAR, a);
+  event(RE_ALARM_CLEAR, a);
   printf("[trip] alarm cleared: %s\n", alarm_name(a));
 }
 
@@ -288,63 +310,52 @@ struct Rebuild {
   Totals t;
   bool have_header;
   TripParams p;
-  uint16_t door_opens_last;
-  uint16_t alarms;     // active at the last record, replayed from events
+  uint16_t alarms;     // active at the last row
   bool acked;
 };
 
 bool rebuild_visit(const LogRecord &r, void *ctx) {
   Rebuild *b = (Rebuild *)ctx;
-  Reader rd(r.payload, r.len);
-  rd.n = STAMP_LEN;
-  switch (r.type) {
-    case REC_TRIP_START: {
-      rd.u8();       // header format
-      rd.u32();      // trip id
-      b->p.low_c10 = rd.i16();
-      b->p.high_c10 = rd.i16();
-      b->p.hyst_c10 = rd.u16();
-      b->p.dwell_s = rd.u16();
-      b->p.door_alarm_s = rd.u16();
-      b->have_header = true;
+  LogRow row;
+  RowHeader h;
+  if (!row_decode(r.type, r.payload, r.len, &row, &h, nullptr)) return true;
+  // Alarm state is replayed, not reset: an alarm that was raised and
+  // acknowledged before the reset is still raised and still acknowledged
+  // after it. Re-raising it would alert someone a second time for the
+  // same excursion and count it twice. Every row carries the active
+  // alarms, so the last row says which.
+  b->alarms = row.alarms;
+  b->t.motion += row.motion;
+  switch (row.event) {
+    case RE_TRIP_START:
+      if (h.valid) {
+        b->p.low_c10 = h.tempmin_c10;
+        b->p.high_c10 = h.tempmax_c10;
+        b->p.hyst_c10 = h.hyst_c10;
+        b->p.dwell_s = h.dwell_s;
+        b->p.door_alarm_s = 0;
+        b->have_header = true;
+      }
       break;
-    }
-    case REC_SAMPLE: {
+    case RE_SAMPLE:
       b->t.samples++;
-      const uint8_t st = rd.u8();
-      rd.u16();
-      const int16_t c = rd.i16();
-      if (st == 0 && c != I16_NONE) {
+      if (row.temp_c100 != I16_NONE) {
+        const int16_t c = row.temp_c100;
         if (!b->t.have_temp || c < b->t.min_c100) b->t.min_c100 = c;
         if (!b->t.have_temp || c > b->t.max_c100) b->t.max_c100 = c;
         b->t.have_temp = true;
       }
-      rd.u8();
-      b->door_opens_last = rd.u16();
-      b->t.motion += rd.u16();
       break;
-    }
-    case REC_EVENT: {
-      const uint8_t code = rd.u8();
-      // Alarm state is replayed, not reset: an alarm that was raised and
-      // acknowledged before the reset is still raised and still
-      // acknowledged after it. Re-raising it would alert someone a second
-      // time for the same excursion and count it twice.
-      if (code == EV_ALARM_RAISE) {
-        b->t.alarms_raised++;
-        const uint8_t a = rd.u8();
-        if (a < AL_COUNT) b->alarms |= (uint16_t)(1u << a);
-        b->acked = false;
-      } else if (code == EV_ALARM_CLEAR) {
-        const uint8_t a = rd.u8();
-        if (a < AL_COUNT) b->alarms &= (uint16_t)~(1u << a);
-      } else if (code == EV_ALARM_ACK) {
-        b->acked = true;
-      }
-      if (code == EV_DOOR_OPEN) b->t.door_opens++;
-      if (code == EV_DOOR_CLOSE) b->t.door_open_ms += rd.u32();
+    case RE_ALARM_HIGH:
+    case RE_ALARM_LOW:
+    case RE_ALARM_PROBE:
+    case RE_BATTERY_LOW:
+      b->t.alarms_raised++;
+      b->acked = false;
       break;
-    }
+    case RE_ALARM_ACK:
+      b->acked = true;
+      break;
   }
   return true;
 }
@@ -353,12 +364,9 @@ void reset_inputs(void) {
   g_alarms = 0;
   g_acked = false;
   g_high_since = g_low_since = 0;
-  g_motion_since_sample = 0;
-  g_motion_event_at = 0;
-  g_motion_burst = 0;
+  g_motion_since_row = 0;
   g_probe_bad_since = 0;
   g_probe_fault_logged = false;
-  g_door_opened_at = door_state() == DoorState::Open ? now_ms() : 0;
 }
 
 // The next trip id: one past both the stored counter and every real trip
@@ -415,15 +423,14 @@ void trip_init(const char *sn) {
     g_temp_at = g_kept.temp_at;
     g_probe_bad_since = g_kept.probe_bad_since;
     g_probe_fault_logged = g_kept.probe_fault_logged;
-    g_motion_since_sample = g_kept.motion_since_sample;
-    g_motion_burst = g_kept.motion_burst;
-    g_motion_event_at = g_kept.motion_event_at;
-    g_door_opened_at = g_kept.door_opened_at;
+    g_motion_since_row = g_kept.motion_since_row;
+    g_usb = g_kept.usb;
+    g_link = g_kept.link;
     g_high_since = g_kept.high_since;
     g_low_since = g_kept.low_since;
     return;
   }
-  event_u8(EV_RESUMED, (uint8_t)esp_reset_reason());
+  event(RE_POWER_ON, (int32_t)esp_reset_reason());
   printf("[trip] resumed trip %08lX after a reset (%lu samples so far)\n",
          (unsigned long)id, (unsigned long)g_t.samples);
 }
@@ -432,18 +439,15 @@ void trip_note_power_off(uint16_t cell_mv) {
   if (!g_mx) return;
   Lock l;
   if (!g_active) return;
-  event(EV_POWER_OFF, [](Writer &w, const void *p) {
-    w.u16(*(const uint16_t *)p);
-  }, &cell_mv);
+  event(RE_POWER_OFF, cell_mv);
 }
 
 void trip_before_sleep(void) {
   if (!g_mx) return;
   Lock l;
   g_kept = {KEPT_MAGIC, g_active ? g_id : 0, g_temp_st, g_temp_c, g_temp_at,
-            g_probe_bad_since, g_probe_fault_logged, g_motion_since_sample,
-            g_motion_burst, g_motion_event_at, g_door_opened_at, g_high_since,
-            g_low_since};
+            g_probe_bad_since, g_probe_fault_logged, g_motion_since_row, g_usb, g_link,
+            g_high_since, g_low_since};
 }
 
 uint32_t trip_next_check(void) {
@@ -491,32 +495,28 @@ TripErr trip_start(const TripParams &p, uint32_t *id_out) {
   const uint32_t id = next_id();
   g_id = id;
   g_p = p;
-  if (!MCOLD_DOOR) g_p.door_alarm_s = 0;   // no door, no door alarm
+  g_p.door_alarm_s = 0;     // no door on this product (decided 2026-10-05)
   g_t = {};
   reset_inputs();
 
-  uint8_t buf[LOG_PAYLOAD_MAX];
-  Writer w(buf, sizeof(buf));
-  stamp(w);
-  w.u8(2);       // header format 2: the SN field is 24 bytes (was 12)
-  w.u32(id);
-  w.i16(p.low_c10);
-  w.i16(p.high_c10);
-  w.u16(p.hyst_c10);
-  w.u16(p.dwell_s);
-  w.u16(g_p.door_alarm_s);
-  w.u16((uint16_t)config().sample_period_s);
-  w.u16((uint16_t)config_schema());
-  w.i32(config().cal_offset_c100);
-  w.i32(config().cal_gain_ppm);
-  w.u32((uint32_t)config().cal_version);
-  w.str(esp_app_get_description()->version, 16);
-  w.str(g_sn, 24);
+  RowHeader h = {};
+  h.trip = id;
+  h.tempmin_c10 = p.low_c10;
+  h.tempmax_c10 = p.high_c10;
+  h.hyst_c10 = p.hyst_c10;
+  h.dwell_s = p.dwell_s;
+  h.period_s = (uint16_t)config().sample_period_s;
+  h.schema = (uint16_t)config_schema();
+  h.cal_offset_c100 = config().cal_offset_c100;
+  h.cal_gain_ppm = config().cal_gain_ppm;
+  h.cal_version = (uint32_t)config().cal_version;
+  snprintf(h.fw, sizeof(h.fw), "%s", esp_app_get_description()->version);
+  snprintf(h.sn, sizeof(h.sn), "%s", g_sn);
 
   // Header first, then the NVS flag that says a trip is running. A crash
   // between the two leaves a header with no trip running, which reads as
   // a trip that was started and never used -- not as one to resume.
-  const TripErr e = put(REC_TRIP_START, w, true);
+  const TripErr e = put(snapshot(RE_TRIP_START, 0), &h, nullptr, true);
   if (e != TripErr::Ok) return e;
   nvs_put("next_id", id + 1);
   nvs_put("last", id);
@@ -532,21 +532,14 @@ TripErr trip_stop(uint8_t reason) {
   Lock l;
   if (!g_active) return TripErr::NotActive;
 
-  // A door still open at the stop closes its account here.
-  if (g_door_opened_at) g_t.door_open_ms += now_ms() - g_door_opened_at;
-
-  uint8_t buf[LOG_PAYLOAD_MAX];
-  Writer w(buf, sizeof(buf));
-  stamp(w);
-  w.u8(reason);
-  w.u32(g_t.samples);
-  w.i16(g_t.have_temp ? g_t.min_c100 : I16_NONE);
-  w.i16(g_t.have_temp ? g_t.max_c100 : I16_NONE);
-  w.u16(g_t.alarms_raised);
-  w.u16(g_t.door_opens);
-  w.u32(g_t.door_open_ms / 1000);
-  w.u32(g_t.motion);
-  const TripErr e = put(REC_TRIP_STOP, w);
+  RowSummary sum = {};
+  sum.reason = reason;
+  sum.samples = g_t.samples;
+  sum.min_c100 = g_t.have_temp ? g_t.min_c100 : I16_NONE;
+  sum.max_c100 = g_t.have_temp ? g_t.max_c100 : I16_NONE;
+  sum.alarms_raised = g_t.alarms_raised;
+  sum.motion = g_t.motion;
+  const TripErr e = put(snapshot(RE_TRIP_STOP, 0), nullptr, &sum);
   if (e != TripErr::Ok) return e;
   nvs_put("active", 0);
   g_active = false;
@@ -559,10 +552,7 @@ void trip_ack_alarms(void) {
   Lock l;
   if (!g_active || !g_alarms) return;
   g_acked = true;
-  const uint16_t a = g_alarms;
-  event(EV_ALARM_ACK, [](Writer &w, const void *p) {
-    w.u16(*(const uint16_t *)p);
-  }, &a);
+  event(RE_ALARM_ACK, g_alarms);
 }
 
 void trip_note_temp(TempStatus st, float c) {
@@ -577,7 +567,7 @@ void trip_note_temp(TempStatus st, float c) {
   if (!g_active) return;
 
   if (st == TempStatus::Ok) {
-    if (g_probe_fault_logged) event(EV_PROBE_OK, nullptr, nullptr);
+    if (g_probe_fault_logged) event(RE_PROBE_OK);
     g_probe_bad_since = 0;
     g_probe_fault_logged = false;
     clear_alarm(AL_PROBE);
@@ -585,7 +575,7 @@ void trip_note_temp(TempStatus st, float c) {
   } else {
     if (!g_probe_bad_since) g_probe_bad_since = t ? t : 1;
     if (!g_probe_fault_logged) {
-      event_u8(EV_PROBE_FAULT, (uint8_t)st);
+      event(RE_PROBE_FAULT, (int32_t)st);
       g_probe_fault_logged = true;
     }
   }
@@ -595,19 +585,12 @@ void trip_note_motion(const AccelEvent &ev) {
   if (!g_mx) return;
   Lock l;
   if (!g_active) return;
-  if (g_motion_since_sample < 0xFFFF) g_motion_since_sample++;
+  // Counted, not logged: the motion column of the next row says how many.
+  // Ordinary handling is not an event (decided 2026-10-05); a SHOCK row
+  // waits for a shock threshold.
+  (void)ev;
+  if (g_motion_since_row < 0xFFFF) g_motion_since_row++;
   g_t.motion++;
-  g_motion_burst++;
-  const uint32_t t = now_ms();
-  if (g_motion_event_at && t - g_motion_event_at < TRIP_MOTION_EVENT_MS) return;
-  g_motion_event_at = t ? t : 1;
-  const MotionArg x = {ev.raw_src, g_motion_burst};
-  g_motion_burst = 0;
-  event(EV_MOTION, [](Writer &w, const void *p) {
-    const auto *x = (const MotionArg *)p;
-    w.u8(x->src);
-    w.u16(x->n);
-  }, &x);
 }
 
 void trip_note_power(const PowerStatus &ps) {
@@ -615,40 +598,32 @@ void trip_note_power(const PowerStatus &ps) {
   Lock l;
   g_pwr = ps;
   g_have_pwr = true;
+  // Power plugged in or pulled out during a trip: a row each way. The
+  // first look after a reset only learns the state.
+  if (ps.charger_valid) {
+    const int8_t usb = ps.power_good ? 1 : 0;
+    if (g_usb >= 0 && usb != g_usb) event(usb ? RE_USB_IN : RE_USB_OUT);
+    g_usb = usb;
+  }
   if (!g_active || !ps.cell_valid) return;
   if (ps.soc_percent < TRIP_BATT_LOW_PCT) raise_alarm(AL_BATTERY, (int16_t)ps.soc_percent);
   else if (ps.soc_percent >= TRIP_BATT_OK_PCT) clear_alarm(AL_BATTERY);
 }
 
-void trip_note_door(DoorState now, uint32_t lasted_ms) {
+// This product has no door (decided 2026-10-05): nothing is logged.
+void trip_note_door(DoorState, uint32_t) {}
+
+void trip_note_link(uint8_t link) {
   if (!g_mx) return;
   Lock l;
-  if (now == DoorState::Open) {
-    g_door_opened_at = now_ms();
-    if (!g_door_opened_at) g_door_opened_at = 1;
-    if (!g_active) return;
-    g_t.door_opens++;
-    event(EV_DOOR_OPEN, nullptr, nullptr);
-  } else if (now == DoorState::Closed) {
-    g_door_opened_at = 0;
-    if (!g_active) return;
-    g_t.door_open_ms += lasted_ms;
-    event(EV_DOOR_CLOSE, [](Writer &w, const void *p) {
-      w.u32(*(const uint32_t *)p);
-    }, &lasted_ms);
-    clear_alarm(AL_DOOR);
-  }
+  g_link = link;
 }
 
 void trip_note_time_set(TimeSource src, uint32_t before) {
   if (!g_mx) return;
   Lock l;
-  const TimeArg x = {(uint8_t)src, before};
-  event(EV_TIME_SET, [](Writer &w, const void *p) {
-    const auto *x = (const TimeArg *)p;
-    w.u8(x->s);
-    w.u32(x->b);
-  }, &x);
+  (void)src;
+  event(RE_TIME_SET, (int32_t)before);
 }
 
 void trip_tick(void) {
@@ -656,11 +631,6 @@ void trip_tick(void) {
   Lock l;
   if (!g_active) return;
   const uint32_t t = now_ms();
-  if (MCOLD_DOOR && g_p.door_alarm_s && g_door_opened_at &&
-      t - g_door_opened_at >= (uint32_t)g_p.door_alarm_s * 1000) {
-    raise_alarm(AL_DOOR, (int16_t)((t - g_door_opened_at) / 1000 > 32767
-                                 ? 32767 : (t - g_door_opened_at) / 1000));
-  }
   if (g_probe_bad_since && t - g_probe_bad_since >= TRIP_PROBE_ALARM_MS) {
     raise_alarm(AL_PROBE, (int16_t)g_temp_st);
   }
@@ -670,60 +640,13 @@ void trip_sample(void) {
   if (!g_mx) return;
   Lock l;
   if (!g_active) return;
-  const uint32_t t = now_ms();
-
-  uint8_t buf[LOG_PAYLOAD_MAX];
-  Writer w(buf, sizeof(buf));
-  stamp(w);
-
-  // A reading more than a minute old is not this sample's reading.
-  const bool fresh = g_temp_at && t - g_temp_at <= 60000;
-  const TempStatus st = fresh ? g_temp_st : TempStatus::NoData;
-  w.u8((uint8_t)st);
-  if (st == TempStatus::Ok) {
-    const float cal = calibrated(g_temp_c);
-    const int16_t c100 = (int16_t)lroundf(cal * 100.0f);
-    w.u16((uint16_t)lroundf(g_temp_c * 4.0f));
-    w.i16(c100);
-    if (!g_t.have_temp || c100 < g_t.min_c100) g_t.min_c100 = c100;
-    if (!g_t.have_temp || c100 > g_t.max_c100) g_t.max_c100 = c100;
+  const LogRow r = snapshot(RE_SAMPLE, 0);
+  if (put(r) != TripErr::Ok) return;
+  g_t.samples++;
+  if (r.temp_c100 != I16_NONE) {
+    if (!g_t.have_temp || r.temp_c100 < g_t.min_c100) g_t.min_c100 = r.temp_c100;
+    if (!g_t.have_temp || r.temp_c100 > g_t.max_c100) g_t.max_c100 = r.temp_c100;
     g_t.have_temp = true;
-  } else {
-    w.u16(U16_NONE);
-    w.i16(I16_NONE);
-  }
-
-  w.u8((uint8_t)door_state());
-  w.u16(g_t.door_opens);
-  w.u16(g_motion_since_sample);
-
-  GnssFix f;
-  const bool any = gnss_last_fix(&f);
-  w.u8((uint8_t)((any && f.valid ? 1 : 0) | (any ? 2 : 0)));
-  w.i32(any ? (int32_t)llround(f.lat_deg * 1e7) : 0);
-  w.i32(any ? (int32_t)llround(f.lon_deg * 1e7) : 0);
-  const uint32_t age = any && f.at_ms ? (t - f.at_ms) / 1000 : 0xFFFF;
-  w.u16(age > 0xFFFE ? U16_NONE : (uint16_t)age);
-  w.u8(any ? f.sats : 0);
-  w.u8(any && f.hdop > 0 && f.hdop < 25 ? (uint8_t)lroundf(f.hdop * 10) : 0xFF);
-
-  w.u16(g_have_pwr && g_pwr.cell_valid ? (uint16_t)lroundf(g_pwr.cell_volts * 1000) : 0);
-  w.u8(g_have_pwr && g_pwr.cell_valid ? (uint8_t)lroundf(g_pwr.soc_percent) : 0xFF);
-  w.i16(g_have_pwr && g_pwr.current_valid ? (int16_t)lroundf(g_pwr.battery_ma)
-                                          : I16_NONE);
-  w.u8(g_have_pwr && g_pwr.charger_valid ? (uint8_t)g_pwr.charge : 0);
-  w.u16(g_alarms);
-
-  uint16_t unhealthy = 0;
-  for (int i = 0; i < (int)Dev::Count && i < 16; i++) {
-    const DevState s = health_state((Dev)i);
-    if (s == DevState::Degraded || s == DevState::Failed) unhealthy |= (uint16_t)(1u << i);
-  }
-  w.u16(unhealthy);
-
-  if (put(REC_SAMPLE, w) == TripErr::Ok) {
-    g_t.samples++;
-    g_motion_since_sample = 0;
   }
 }
 
@@ -739,7 +662,7 @@ void trip_status(TripStatus *out) {
   out->alarms_active = g_alarms;
   out->alarms_raised = g_t.alarms_raised;
   out->acked = g_acked;
-  out->door_opens = g_t.door_opens;
+  out->door_opens = 0;
   out->motion_events = g_t.motion;
   out->have_temp = g_t.have_temp;
   out->temp_read_since_boot = g_temp_this_wake;
@@ -774,7 +697,6 @@ const char *alarm_name(uint8_t a) {
     case AL_TEMP_HIGH: return "temperature high";
     case AL_TEMP_LOW:  return "temperature low";
     case AL_PROBE:     return "no temperature";
-    case AL_DOOR:      return "door open too long";
     case AL_BATTERY:   return "battery low";
   }
   return "?";
