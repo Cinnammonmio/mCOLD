@@ -38,6 +38,7 @@ struct Config {
   int32_t batt_trip_mv;       // below this no new trip starts; the box stays up
   int32_t batt_mah;           // rated cell capacity, until one is learned (soc.h)
   int32_t sleep_ua;           // current asleep, for counting charge through a sleep
+  int32_t soc_source;         // the percent shown: 0 voltage (OCV table), 1 counted
   int32_t buzzer_enabled;     // 0 silences alarm sounds
   int32_t tz_offset_min;      // local time for the display only; records are UTC
   int32_t sleep_en;           // 0 keeps the box awake on battery (bench, measurement)

@@ -56,6 +56,7 @@ constexpr Field FIELDS[] = {
     F(batt_trip_mv, 3000, 4100, 3550, "mV"),
     F(batt_mah, 300, 6000, 1500, "mAh"),
     F(sleep_ua, 0, 5000, 250, "uA"),
+    F(soc_source, 0, 1, 0, ""),
     F(tz_offset_min, -720, 840, 420, "min"),
     F(buzzer_enabled, 0, 1, 1, ""),
     F(sleep_en, 0, 1, 1, ""),

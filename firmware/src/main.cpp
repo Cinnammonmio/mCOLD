@@ -675,7 +675,7 @@ void print_health(void) {
 
   const PowerStatus &p = g_power;
   if (p.cell_valid) {
-    printf("  cell         %.3f V  %.1f %% counted, %.1f %% gauge  %+.2f %%/hr\n",
+    printf("  cell         %.3f V  %.1f %% shown, %.1f %% gauge  %+.2f %%/hr\n",
            p.cell_volts, p.soc_percent, p.gauge_percent, p.rate_percent_hr);
   } else if (p.cell_absent) {
     printf("  cell         no battery (%.3f V is the charger's output)\n", p.cell_volts);
@@ -1356,9 +1356,11 @@ void run_command(char *line) {
     if (!s.valid) {
       printf("  not counting yet (no cell reading)\n");
     } else {
-      printf("  %.1f %%  %.0f of %.0f mAh (%s)  anchor: %s\n", s.percent, s.remaining_mah,
-             s.capacity_mah, s.capacity_learned ? "learned" : "rated, config batt_mah",
-             s.anchor);
+      printf("  counted  %.1f %%  %.0f of %.0f mAh (%s)  anchor: %s\n", s.percent,
+             s.remaining_mah, s.capacity_mah,
+             s.capacity_learned ? "learned" : "rated, config batt_mah", s.anchor);
+      if (s.voltage_percent >= 0) printf("  voltage  %.1f %% (OCV table)\n", s.voltage_percent);
+      printf("  shown    %s\n", config().soc_source ? "counted" : "voltage, counted on a charger");
       if (s.ocv_percent >= 0) printf("  last rested voltage reads %.0f %%\n", s.ocv_percent);
       if (s.ref_percent >= 0) {
         printf("  capacity measured from the %.0f %% point on%s\n", s.ref_percent,

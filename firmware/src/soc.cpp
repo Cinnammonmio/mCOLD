@@ -25,9 +25,10 @@ struct Kept {
   float ref_net;        // `net` at that point
   uint32_t charged_at;  // mono_ms() charging was last seen; 0: not this boot
   uint8_t learned;      // cap learned from two reference points
+  float ocv_pct;        // the voltage's percent, smoothed; < 0: none yet
   uint32_t check;
 };
-const uint32_t MAGIC = 0x534F4332;   // "SOC2"
+const uint32_t MAGIC = 0x534F4333;   // "SOC3"
 RTC_NOINIT_ATTR Kept g_k;
 
 const char *NS = "soc";
@@ -225,6 +226,7 @@ void soc_update(PowerStatus &ps) {
       g_k.mah = cap * gauge / 100.0f;
       g_k.drawn = -1;
       g_k.ref_soc = -1;
+      g_k.ocv_pct = -1;
       g_anchor = "fuel gauge";
     }
     g_valid = true;
@@ -277,7 +279,24 @@ void soc_update(PowerStatus &ps) {
     if (slope >= STEEP_MV_PER_PCT) reference(v, "rested voltage");
   }
 
-  ps.soc_percent = percent();
+  // The voltage's own percent at every reading on battery, the load added
+  // back and smoothed over a few readings (a wake's first is the best, the
+  // rest follow the radio's current). While charging the voltage says
+  // nothing about the charge, and the last value stands.
+  if (!ps.power_good) {
+    const float v = ocv_percent(ps.cell_volts * 1000.0f - ps.battery_ma * R_CELL_OHM, nullptr);
+    g_k.ocv_pct = g_k.ocv_pct < 0 ? v : 0.7f * g_k.ocv_pct + 0.3f * v;
+  }
+
+  // Which one the box shows (decided 2026-10-04: the voltage, until the
+  // count has been checked against a measured capacity and a measured
+  // sleep current -- the current monitor reads 0.25 mA a step and cannot
+  // see the sleep). On a charger the count, anchored at charge done.
+  if (config().soc_source == 0 && !ps.power_good && g_k.ocv_pct >= 0) {
+    ps.soc_percent = g_k.ocv_pct;
+  } else {
+    ps.soc_percent = percent();
+  }
   keep();
   if (fabsf(g_k.mah - g_saved_mah) >= g_k.cap / 100.0f) save();
 }
@@ -312,6 +331,7 @@ void soc_status(SocStatus *out) {
   out->ocv_percent = g_last_ocv_pct;
   out->ref_percent = g_k.ref_soc;
   out->last_capacity_estimate = g_last_cap_est;
+  out->voltage_percent = g_k.ocv_pct;
 }
 
 void soc_set(float percent) {
@@ -320,6 +340,7 @@ void soc_set(float percent) {
     g_k.cap = (float)config().batt_mah;
     g_k.drawn = -1;
     g_k.ref_soc = -1;
+    g_k.ocv_pct = -1;
     g_valid = true;
   }
   if (percent < 0) percent = 0;

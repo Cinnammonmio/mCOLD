@@ -41,9 +41,10 @@
 // that just ended, if this is a wake.
 void soc_init(void);
 
-// Each power reading: count, anchor, and write the counted percent into
-// `ps.soc_percent` (the gauge's own stays in `ps.gauge_percent`). Does
-// nothing to an invalid or absent cell.
+// Each power reading: count, anchor, and write the percent the box shows
+// into `ps.soc_percent` -- the voltage's (OCV table) or the counted one,
+// by config soc_source; the gauge's own stays in `ps.gauge_percent`.
+// Does nothing to an invalid or absent cell.
 void soc_update(PowerStatus &ps);
 
 // Just before deep sleep or the battery switch-off: the last stretch of
@@ -61,6 +62,7 @@ struct SocStatus {
   float ocv_percent;        // the last rested-voltage reading; -1: none yet
   float ref_percent;        // the reference point a capacity is measured from; -1: none
   float last_capacity_estimate;  // 0: none this boot
+  float voltage_percent;    // the OCV table's percent, smoothed; -1: none yet
 };
 void soc_status(SocStatus *out);
 

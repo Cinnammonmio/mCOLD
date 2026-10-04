@@ -124,6 +124,13 @@ Measured with the charger in HIZ: asleep ≤ 0.25 mA; awake ~130 mA
   voltage on a steep part, the switch-off voltage) 30 % or more apart
   give the capacity from the charge counted between them. On the board:
   starts at 100 % "charge done" (gauge 95.6 %).
+- The percent shown is the voltage's for now (`soc_source 0`, decided
+  2026-10-04): the OCV table on the rested voltage plus the wake's load,
+  smoothed; on a charger the count. The count goes on underneath to
+  measure the capacity; `soc_source 1` shows it instead.
+- Light sleep while awake, measured on the bench with BLE off and GNSS
+  idle: 130-134 mA off, 126-131 mA on -- no real gain. The ~90 mA above
+  the ~40 mA floor is not the CPU waiting, so it stays off.
 - Review fixes: GNSS due but unavailable, and a dwell run out with no
   probe readings, no longer hold the chip awake; pm ignores wake times
   over 30 s in the past; the battery switch-off holds the chip up until
