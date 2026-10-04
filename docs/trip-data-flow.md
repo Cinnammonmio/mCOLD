@@ -74,8 +74,8 @@ trip "ส่งแล้ว" ยังอยู่ในเครื่อง �
 
 1. แอปเรียก `STOP_TRIP` (ปุ่ม "จบ trip และส่งข้อมูล")
 2. แอปอ่านทั้ง trip ด้วย `READ_LOG_CHUNK` (ทีละ 16 แถว แบบ binary 32 byte/แถว เร็วกว่า CSV ~5 เท่า)
-3. แอปแปลงเป็น CSV column เดียวกับที่ server ได้ ชื่อไฟล์ `TRIP_<SN ท้าย>_<YYMMDDhhmm>.csv`
-   เช่น `TRIP_1069-001_2610050330.csv`
+3. แอปแปลงเป็น CSV column เดียวกับที่ server ได้ ชื่อไฟล์ `TRIP_<SN>_<YYMMDDhhmm>.csv`
+   เช่น `TRIP_mCDV1-L0169-1069-001_2610050330.csv` (SN เต็มตามฉลาก + เวลาเริ่ม trip)
 4. แอปส่งไฟล์ขึ้น server
 5. server ตอบว่าเก็บแล้ว → แอปเรียก `MARK_DELIVERED {"trip":12}` (ต้อง authorize แล้ว)
    กล่องจะไม่ส่ง trip นี้ทาง Wi-Fi อีก
