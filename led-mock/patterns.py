@@ -30,7 +30,7 @@ GRID = (222, 224, 228)
 RED = (198, 44, 38)
 AMBER = (224, 152, 16)
 BLUE = (40, 84, 214)
-VIOLET = (128, 60, 210)
+VIOLET = (92, 64, 222)
 CYAN = (24, 170, 214)
 WHITE = (244, 244, 240)
 
@@ -55,7 +55,7 @@ PATTERNS = [
     ("BREATHE", "side · charging (blue) / ≥ 80 % (cyan), 12–100 %", BLUE,
      [(2000, "breathe")]),
     ("STEADY", "side · charge full", CYAN, [(2000, True)]),
-    ("SLOW BLINK", "side · power in, not charging: 120 ms every 2 s", AMBER,
+    ("SLOW BLINK", "side · power in, not charging: 120 ms every 2 s", VIOLET,
      [(120, True), (1880, False)]),
     ("FAULT BLINK", "side · charge fault: 120 ms every 1 s", RED,
      [(120, True), (880, False), (120, True), (880, False)]),
@@ -196,7 +196,7 @@ SECTIONS = [
         ("กำลังชาร์จ", "ตลอดการชาร์จ", {"S": BLUE}, [(0, 2000, BLUE, "breathe")], []),
         ("ชาร์จเกือบเต็ม (≥ 80%)", "ตลอดการชาร์จ", {"S": CYAN}, [(0, 2000, CYAN, "breathe")], []),
         ("ชาร์จเต็ม", "ติดค้าง", {"S": CYAN}, [(0, 2000, CYAN, "")], []),
-        ("มีไฟเข้าแต่ไม่ชาร์จ", "ทุก 2 วินาที", {"S": AMBER}, [(0, 120, AMBER, "")], []),
+        ("มีไฟเข้าแต่ไม่ชาร์จ", "ทุก 2 วินาที · ไม่ใช่ alarm", {"S": VIOLET}, [(0, 120, VIOLET, "")], []),
         ("ชาร์จผิดปกติ", "ทุก 1 วินาที · บี๊บ 1 ครั้งตอนเริ่ม", {"S": RED},
          [(0, 120, RED, ""), (1000, 120, RED, "")], [(0, 150)]),
     ]),

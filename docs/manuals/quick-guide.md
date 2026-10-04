@@ -1,7 +1,7 @@
 ---
 name: Quick-Guide
 lang: th
-version: 0.2
+version: 0.3
 status: draft
 date: 2026-10-04
 firmware: 0.7.0-dev
@@ -29,7 +29,7 @@ Three amber blinks instead: the box has a problem, see 6. Red and amber always w
 | น้ำเงิน หายใจ · breathing blue | กำลังชาร์จ · charging |
 | ฟ้า หายใจ · breathing cyan | เกือบเต็ม (≥ 80%) · nearly full |
 | ฟ้าค้าง · steady cyan | เต็ม · full |
-| เหลือง กะพริบช้า · slow yellow blink | มีไฟแต่ไม่ชาร์จ · power in, not charging |
+| ม่วง กะพริบช้า · slow violet blink | มีไฟแต่ไม่ชาร์จ · power in, not charging |
 | แดง กะพริบ · red blink | ชาร์จผิดปกติ · charge fault |
 
 ## 3. เริ่ม trip · Start a trip

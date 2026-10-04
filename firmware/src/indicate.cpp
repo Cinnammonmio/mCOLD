@@ -48,7 +48,9 @@ struct Rgb {
 // is blue, violet or cyan: colours that do not read as danger.
 const Rgb RED = {255, 0, 0};
 const Rgb BLUE = {0, 40, 255};
-const Rgb VIOLET = {150, 0, 255};
+// Little red in it: at the 2 % front cap a violet of 150/255 red comes
+// out 3:5 red to blue and reads pink, close to the alarm red (2026-10-04).
+const Rgb VIOLET = {60, 0, 255};
 const Rgb CYAN = {0, 200, 255};
 // Amber is red plus green; the mix depends on the diffuser, to be tuned
 // once the case exists.

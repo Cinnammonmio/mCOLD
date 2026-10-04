@@ -20,10 +20,6 @@ const uint8_t REG09_BAT_FAULT = 0x08;
 const uint32_t FRAME_MS = 40;
 const uint32_t BREATHE_MS = 2000;
 
-// Amber is red plus green; the right mix depends on the diffuser and is
-// to be tuned once the case exists.
-const uint8_t AMBER_R = 255, AMBER_G = 150;
-
 volatile ChargeLed g_mode = ChargeLed::Off;
 
 uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
@@ -59,7 +55,9 @@ void render(ChargeLed m, uint32_t t) {
       k = 1; g = 200; b = 255;
       break;
     case ChargeLed::NotCharging:
-      k = (t % 2000) < 120 ? 1 : 0; r = AMBER_R; g = AMBER_G;
+      // Not an alarm (a full cell, a cool-down, a policy): violet, not
+      // amber -- amber and red are kept for what needs a person (2026-10-04).
+      k = (t % 2000) < 120 ? 1 : 0; r = 60; b = 255;
       break;
     case ChargeLed::Fault:
       k = (t % 1000) < 120 ? 1 : 0; r = 255;
@@ -141,7 +139,7 @@ const char *chargeled_name(ChargeLed m) {
     case ChargeLed::Charging:    return "charging (breathe blue)";
     case ChargeLed::Topping:     return "topping up (breathe cyan)";
     case ChargeLed::Full:        return "full (steady cyan)";
-    case ChargeLed::NotCharging: return "input, not charging (yellow blink)";
+    case ChargeLed::NotCharging: return "input, not charging (violet blink)";
     case ChargeLed::Fault:       return "charge fault (red blink)";
   }
   return "?";

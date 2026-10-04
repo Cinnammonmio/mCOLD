@@ -53,7 +53,7 @@ PDF in the same commit when it is superseded.
 
 | Document | Version | Firmware |
 |---|---|---|
-| Quick Guide | 0.2 draft | 0.7.0-dev |
-| User Manual TH | 0.2 draft | 0.7.0-dev |
-| User Manual EN | 0.2 draft | 0.7.0-dev |
+| Quick Guide | 0.3 draft | 0.7.0-dev |
+| User Manual TH | 0.3 draft | 0.7.0-dev |
+| User Manual EN | 0.3 draft | 0.7.0-dev |
 | Service Manual | 0.3 draft | 0.7.0-dev |

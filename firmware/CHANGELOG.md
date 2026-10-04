@@ -144,7 +144,11 @@ Measured with the charger in HIZ: asleep ≤ 0.25 mA; awake ~130 mA
   for the cargo, amber right for the box, the side light's amber and red);
   everything calm is blue, violet or cyan -- the boot sweep, the tap, trip
   start/running/stop, acknowledgement, charging. led-mock and the manuals
-  follow.
+  follow. Nothing that is not an alarm is red or amber: the side light's
+  "power in, not charging" blinks violet, and violet has little red in
+  it (60/255) because at 2 % the first one read pink.
+- Bezel measured on the board with `screen cal`: left 3 px hidden, the
+  other sides clear (`epd_inset_l 3`).
 - Review fixes: GNSS due but unavailable, and a dwell run out with no
   probe readings, no longer hold the chip awake; pm ignores wake times
   over 30 s in the past; the battery switch-off holds the chip up until
