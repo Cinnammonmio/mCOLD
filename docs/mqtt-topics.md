@@ -3,7 +3,7 @@ name: MQTT-Topics
 lang: th
 version: 1.0
 date: 2026-10-05
-firmware: 0.7.0-dev.5
+firmware: 0.7.0-dev.6
 ---
 
 # mCOLD — MQTT topics
@@ -41,11 +41,14 @@ firmware: 0.7.0-dev.5
 | `mcold/<sn>/ota/state` | **pub** | **sub** | 1 | ใช่ | ผลการอัปเดต firmware |
 | `mcold/v1/<sn>/ack` | **sub** | **pub** | 1 | ไม่ | ยืนยันว่าบันทึกแถวแล้ว |
 | `mcold/v1/<sn>/firmware` | **sub** | **pub** | 1 | **ใช่** | ชื่อไฟล์ firmware ที่จะให้อัปเดต |
+| `mcold/v1/<sn>/config` | **sub** | **pub** | 1 | **ใช่** | เอกสารตั้งค่า (Wi-Fi, MQTT, รอบส่ง, ไฟ, สอบเทียบ …) |
+| `mcold/<sn>/config/state` | **pub** | **sub** | 1 | ใช่ | ผลการตั้งค่า |
 
-**Server subscribe:** `mcold/+/rec`, `mcold/+/status`, `mcold/+/online`, `mcold/+/ota/state`
+**Server subscribe:** `mcold/+/rec`, `mcold/+/status`, `mcold/+/online`, `mcold/+/ota/state`,
+`mcold/+/config/state`
 (หรือ `mcold/#` แล้วกรองเอง)
 
-**Server publish:** `mcold/v1/<sn>/ack` และ `mcold/v1/<sn>/firmware`
+**Server publish:** `mcold/v1/<sn>/ack`, `mcold/v1/<sn>/firmware` และ `mcold/v1/<sn>/config`
 
 ## ข้อมูลในแต่ละ topic
 
@@ -107,6 +110,19 @@ payload คือชื่อไฟล์อย่างเดียว เช�
 {"file":"mCOLD_0.7.1.bin","state":"failed","reason":"..."}
 {"file":"mCOLD_0.7.1.bin","state":"deferred","reason":"trip"}
 {"ver":"0.7.1","state":"rolled_back","running":"0.7.0"}
+```
+
+### `mcold/v1/<sn>/config` — ตั้งค่า (retain)
+
+```json
+{"rev":3,"config":{"upload_period_s":600},"wifi":{"add":[{"ssid":"Warehouse-2","pass":"..."}]}}
+```
+
+`rev` เพิ่มขึ้นทุกครั้ง กล่องใช้แต่ละ rev ครั้งเดียว · รายการค่าทั้งหมดและกติกาอยู่ที่
+[`device-settings.md`](device-settings.md) · ผลส่งกลับที่ `mcold/<sn>/config/state`
+
+```json
+{"rev":3,"applied":["upload_period_s","wifi add Warehouse-2"],"errors":{},"state":"ok"}
 ```
 
 ### `mcold/<sn>/online`

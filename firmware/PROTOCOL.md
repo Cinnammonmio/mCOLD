@@ -158,12 +158,14 @@ A value the device does not have is **absent or `null`, never 0**.
 | `AUTH` | | `proof` (hex) | authorizes this connection (section 2) |
 | `GET_STATUS` | | | see below |
 | `GET_CONFIG` | | | `config`: every setting with its value |
-| `SET_CONFIG` | ✎ | `key`, `value` | |
+| `SET_CONFIG` | ✎ | `key`, `value` | over BLE only the keys of `docs/device-settings.md`; the trip-locked ones not while a trip runs |
 | `SET_TIME` | ✎ | `utc` (Unix s) | `quality` |
 | `START_TRIP` | ✎ | `low`, `high` (°C); `hyst` (°C, 0.5), `dwell_s` (300) | `trip` |
 | `STOP_TRIP` | ✎ | | `trip` |
 | `ACK_ALARM` | ✎ | | `alarms` still active |
 | `LIST_TRIPS` | | | `trips`: `[{"trip", "last_seq", "sent"}]`, oldest first; `sent`: the server has every row |
+| `APPLY_CONFIG` | ✎ | `config`, `wifi`, `mqtt`, `ota_base` (each optional) | `applied`, `errors`: the settings document of `docs/device-settings.md`, the same one the server sends on `mcold/v1/<sn>/config`; only the keys listed there |
+| `GET_NETWORK` | | | `wifi` (names), `mqtt` (`host`, `port`, `user`, `on_trial`), `ota_base`: no passwords |
 | `MARK_DELIVERED` | ✎ | `trip` | `trip`, `rows`: the app gave this finished trip to the server itself; the box will not upload it (`ALREADY_ACTIVE` while it runs) |
 | `GET_TRIP_SUMMARY` | | `trip` | thresholds, `samples`, `min`, `max`, `alarms`, `stopped` |
 | `READ_LOG_CHUNK` | | `trip`, `from` (seq), `max` (1-16) | `records`, `next` |
@@ -236,6 +238,8 @@ run on one broker while boxes move over:
 | `mcold/<sn>/status` | device → server | 0 | yes | `GET_STATUS` result (section 4) |
 | `mcold/<sn>/online` | device → server | 1 | yes | `"1"` while connected; `"0"` when a battery session ends, or from the broker (last will) if the device drops |
 | `mcold/v1/<sn>/firmware` | **server → device** | 1 | **yes** | a file name to install, e.g. `mCOLD_0.7.1.bin` (below) |
+| `mcold/v1/<sn>/config` | **server → device** | 1 | **yes** | a settings document (`docs/device-settings.md`), applied once per `rev` |
+| `mcold/<sn>/config/state` | device → server | 1 | yes | what came of it: `rev`, `applied`, `errors`, `state` |
 | `mcold/<sn>/ota/state` | device → server | 1 | yes | what came of it (below) |
 
 Subscribing to `mcold/+/rec` gets every device's records.

@@ -23,6 +23,7 @@
 #include "gnss.h"
 #include "health.h"
 #include "logrow.h"
+#include "settings.h"
 #include "record.h"
 #include "temp.h"
 #include "timekeep.h"
@@ -277,11 +278,21 @@ cJSON *c_get_config(uint32_t id, const cJSON *, RpcSession *) {
   return o;
 }
 
-cJSON *c_set_config(uint32_t id, const cJSON *req, RpcSession *) {
+cJSON *c_set_config(uint32_t id, const cJSON *req, RpcSession *ses) {
   const cJSON *k = cJSON_GetObjectItemCaseSensitive(req, "key");
   double v;
   if (!cJSON_IsString(k) || !get_num(req, "value", &v) || v != floor(v)) {
     return fail(id, "BAD_ARGS", "key (string) and value (integer)");
+  }
+  // The app gets the keys the server gets (settings.cpp); the rest are the
+  // console's.
+  if (!(ses && ses->console) && !settings_remote_key(k->valuestring)) {
+    return fail(id, "BAD_ARGS", "console only");
+  }
+  TripStatus ts;
+  trip_status(&ts);
+  if (ts.active && settings_trip_locked(k->valuestring)) {
+    return fail(id, "ALREADY_ACTIVE", "a trip is running: change it after the trip");
   }
   if (!config_set(k->valuestring, (int32_t)v)) {
     return fail(id, "BAD_ARGS", "unknown key or out of range");
@@ -392,6 +403,20 @@ cJSON *c_list_trips(uint32_t id, const cJSON *, RpcSession *) {
     cJSON_AddBoolToObject(e, "sent", uplink_fully_acked(t[i]));
     cJSON_AddItemToArray(a, e);
   }
+  return o;
+}
+
+// The settings document (settings.h), the same one the server sends over
+// MQTT: the request's own config / wifi / mqtt / ota_base.
+cJSON *c_apply_config(uint32_t id, const cJSON *req, RpcSession *) {
+  cJSON *o = ok(id);
+  settings_apply(req, o);
+  return o;
+}
+
+cJSON *c_get_network(uint32_t id, const cJSON *, RpcSession *) {
+  cJSON *o = ok(id);
+  settings_network(o);
   return o;
 }
 
@@ -633,6 +658,8 @@ const Cmd CMDS[] = {
     {"GET_STATUS", false, c_status},
     {"GET_CONFIG", false, c_get_config},
     {"SET_CONFIG", true, c_set_config},
+    {"APPLY_CONFIG", true, c_apply_config},
+    {"GET_NETWORK", false, c_get_network},
     {"SET_TIME", true, c_set_time},
     {"START_TRIP", true, c_start},
     {"STOP_TRIP", true, c_stop},

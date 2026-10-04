@@ -1172,6 +1172,7 @@ void print_ble(void) {
 void rpc_command(const char *json) {
   RpcSession console = {};
   console.authorized = true;
+  console.console = true;
   char *resp = rpc_handle(json, strlen(json), &console);
   printf("  %s\n", resp);
   free(resp);
@@ -1521,6 +1522,11 @@ void run_command(char *line) {
     pm_sleep_test((uint32_t)(s > 0 ? s : 10));
   }
   else if (!strcmp(line, "wifi") || !strcmp(line, "sync")) print_sync();
+  else if (!strncmp(line, "cfgdoc ", 7)) {
+    // Bench only: a settings document as though the server had sent it.
+    uplink_inject_config(line + 7);
+    printf("  handed to the uplink; the report follows\n");
+  }
   else if (!strncmp(line, "ack ", 4)) {
     // Bench only: what the server will send, before the server does.
     uplink_inject_ack(line + 4);

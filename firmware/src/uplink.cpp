@@ -18,6 +18,7 @@
 #include "net.h"
 #include "ota.h"
 #include "pm.h"
+#include "settings.h"
 #include "config.h"
 #include "timekeep.h"
 #include "rpc.h"
@@ -35,7 +36,18 @@ char g_pass[72] = "";
 // and what it publishes is under mcold/<sn>/.
 #define TOPIC_SUB "mcold/v1/"
 #define TOPIC_PUB "mcold/"
-char t_rec[64], t_ack[64], t_status[64], t_online[64], t_fw[64], t_ota[64];
+char t_rec[64], t_ack[64], t_status[64], t_online[64], t_fw[64], t_ota[64], t_cfg[64],
+    t_cfg_state[72];
+
+// The settings document from the server, handed from the MQTT task to
+// ours, where it is applied.
+char *g_cfg_doc = nullptr;
+portMUX_TYPE g_cfg_mux = portMUX_INITIALIZER_UNLOCKED;
+// What came of the last one: kept in NVS until it has gone out.
+uint32_t g_cfg_serial = 0, g_cfg_sent = 0;
+// A broker on trial, and until when (mono_ms).
+bool g_trial = false;
+uint32_t g_trial_until = 0;
 
 esp_mqtt_client_handle_t g_client = nullptr;
 volatile bool g_mqtt = false;
@@ -122,7 +134,48 @@ void load(void) {
   if (nvs_get_str(h, "pass", g_pass, &n) != ESP_OK) g_pass[0] = 0;
   uint16_t p;
   if (nvs_get_u16(h, "port", &p) == ESP_OK) g_port = p;
+  uint8_t t = 0;
+  g_trial = nvs_get_u8(h, "trial", &t) == ESP_OK && t;
   nvs_close(h);
+}
+
+// ---- small NVS helpers for the config report ------------------------------
+
+void cfg_put(const char *k, const char *v) {
+  nvs_handle_t h;
+  if (nvs_open("cfgdoc", NVS_READWRITE, &h) != ESP_OK) return;
+  if (v) nvs_set_str(h, k, v);
+  else nvs_erase_key(h, k);
+  nvs_commit(h);
+  nvs_close(h);
+}
+
+uint32_t cfg_rev(void) {
+  nvs_handle_t h;
+  uint32_t r = 0;
+  if (nvs_open("cfgdoc", NVS_READONLY, &h) == ESP_OK) {
+    nvs_get_u32(h, "rev", &r);
+    nvs_close(h);
+  }
+  return r;
+}
+
+void cfg_set_rev(uint32_t r) {
+  nvs_handle_t h;
+  if (nvs_open("cfgdoc", NVS_READWRITE, &h) != ESP_OK) return;
+  nvs_set_u32(h, "rev", r);
+  nvs_commit(h);
+  nvs_close(h);
+}
+
+// A report for mcold/<sn>/config/state, kept until it is out.
+void cfg_report(cJSON *o) {
+  char *s = cJSON_PrintUnformatted(o);
+  if (!s) return;
+  cfg_put("report", s);
+  printf("[config] %s\n", s);
+  free(s);
+  g_cfg_serial++;
 }
 
 // ---- incoming ACKs ---------------------------------------------------------
@@ -164,6 +217,7 @@ void on_mqtt(void *, esp_event_base_t, int32_t id, void *data) {
       g_mqtt = true;
       esp_mqtt_client_subscribe(g_client, t_ack, 1);
       esp_mqtt_client_subscribe(g_client, t_fw, 1);
+      esp_mqtt_client_subscribe(g_client, t_cfg, 1);
       esp_mqtt_client_publish(g_client, t_online, "1", 1, 1, 1);
       printf("[uplink] connected to %s:%u\n", g_host, g_port);
       ota_on_connected();       // what a new image proves itself by
@@ -181,6 +235,21 @@ void on_mqtt(void *, esp_event_base_t, int32_t id, void *data) {
       if (e->topic_len == (int)strlen(t_ack) && !strncmp(e->topic, t_ack, e->topic_len) &&
           e->data_len == e->total_data_len) {
         on_ack(e->data, e->data_len);
+      } else if (e->topic_len == (int)strlen(t_cfg) && !strncmp(e->topic, t_cfg, e->topic_len) &&
+                 e->data_len == e->total_data_len && e->data_len > 0) {
+        // Applied in our task, not here: storing settings and reconnecting
+        // are not for the MQTT task's own thread.
+        char *d = (char *)malloc(e->data_len + 1);
+        if (d) {
+          memcpy(d, e->data, e->data_len);
+          d[e->data_len] = 0;
+          portENTER_CRITICAL(&g_cfg_mux);
+          char *old = g_cfg_doc;
+          g_cfg_doc = d;
+          portEXIT_CRITICAL(&g_cfg_mux);
+          free(old);
+          if (g_task) xTaskNotifyGive(g_task);
+        }
       } else if (e->topic_len == (int)strlen(t_fw) && !strncmp(e->topic, t_fw, e->topic_len) &&
                  e->data_len == e->total_data_len && e->data_len < 160) {
         // Just a file name (or a URL); everything else is the OTA module's.
@@ -210,7 +279,7 @@ void start_client(void) {
   c.session.last_will.msg_len = 1;
   c.session.last_will.qos = 1;
   c.session.last_will.retain = 1;
-  c.buffer.size = 1024;
+  c.buffer.size = 4096;               // a settings document comes in whole
   c.buffer.out_size = 12288;          // a full part: 20 rows of ~350 bytes
   g_client = esp_mqtt_client_init(&c);
   if (!g_client) return;
@@ -343,9 +412,113 @@ void publish_status(void) {
   free(st);
 }
 
+// The settings document, applied once per rev: a retained message is seen
+// at every connection, and only a newer rev is news.
+void apply_cfg_doc(void) {
+  portENTER_CRITICAL(&g_cfg_mux);
+  char *d = g_cfg_doc;
+  g_cfg_doc = nullptr;
+  portEXIT_CRITICAL(&g_cfg_mux);
+  if (!d) return;
+  cJSON *doc = cJSON_Parse(d);
+  free(d);
+  const cJSON *jr = doc ? cJSON_GetObjectItemCaseSensitive(doc, "rev") : nullptr;
+  cJSON *rep = cJSON_CreateObject();
+  if (!cJSON_IsNumber(jr) || jr->valuedouble < 1) {
+    if (doc) {   // an empty retained message clears the topic: no news
+      cJSON_AddNullToObject(rep, "rev");
+      cJSON_AddStringToObject(rep, "state", "refused");
+      cJSON_AddStringToObject(rep, "why", "needs rev, a whole number from 1, higher each time");
+      cfg_report(rep);
+    }
+  } else if ((uint32_t)jr->valuedouble <= cfg_rev()) {
+    // Seen before: nothing to do, nothing to say.
+  } else {
+    const uint32_t rev = (uint32_t)jr->valuedouble;
+    cJSON_AddNumberToObject(rep, "rev", rev);
+    const bool all = settings_apply(doc, rep);
+    cJSON_AddStringToObject(rep, "state", all ? "ok" : "partial");
+    cfg_set_rev(rev);
+    printf("[config] rev %lu from the server\n", (unsigned long)rev);
+    cfg_report(rep);
+  }
+  cJSON_Delete(rep);
+  cJSON_Delete(doc);
+}
+
+void publish_cfg(void) {
+  // A new broker set just now drops the client: the report waits for it.
+  if (g_cfg_serial == g_cfg_sent || !g_client || !g_mqtt) return;
+  nvs_handle_t h;
+  char s[1024];
+  size_t n = sizeof(s);
+  bool have = false;
+  if (nvs_open("cfgdoc", NVS_READONLY, &h) == ESP_OK) {
+    have = nvs_get_str(h, "report", s, &n) == ESP_OK;
+    nvs_close(h);
+  }
+  if (!have) {
+    g_cfg_sent = g_cfg_serial;
+    return;
+  }
+  if (esp_mqtt_client_publish(g_client, t_cfg_state, s, 0, 1, 1) < 0) return;
+  g_cfg_sent = g_cfg_serial;
+  cfg_put("report", nullptr);
+}
+
+// A broker on trial: kept once reached, given up when the time runs out.
+void trial_tick(void) {
+  if (!g_trial) return;
+  if (g_mqtt) {
+    nvs_handle_t h;
+    if (nvs_open("mqtt", NVS_READWRITE, &h) == ESP_OK) {
+      nvs_erase_key(h, "trial");
+      nvs_commit(h);
+      nvs_close(h);
+    }
+    if (nvs_open("mqtt_old", NVS_READWRITE, &h) == ESP_OK) {
+      nvs_erase_all(h);
+      nvs_commit(h);
+      nvs_close(h);
+    }
+    g_trial = false;
+    printf("[uplink] new broker %s reached: kept\n", g_host);
+    return;
+  }
+  if (!g_trial_until) g_trial_until = now_ms() + UPLINK_TRIAL_MS;
+  if ((int32_t)(now_ms() - g_trial_until) < 0) return;
+  // Not reached in time: back to the one that worked.
+  char host[64] = "", user[40] = "", pass[72] = "";
+  uint16_t port = 1883;
+  nvs_handle_t h;
+  bool have = false;
+  if (nvs_open("mqtt_old", NVS_READONLY, &h) == ESP_OK) {
+    size_t n = sizeof(host);
+    have = nvs_get_str(h, "host", host, &n) == ESP_OK;
+    n = sizeof(user);
+    nvs_get_str(h, "user", user, &n);
+    n = sizeof(pass);
+    nvs_get_str(h, "pass", pass, &n);
+    nvs_get_u16(h, "port", &port);
+    nvs_close(h);
+  }
+  printf("[uplink] new broker %s not reached in %lu min: back to %s\n", g_host,
+         (unsigned long)(UPLINK_TRIAL_MS / 60000), have ? host : "(none kept)");
+  g_trial = false;
+  g_trial_until = 0;
+  if (have) uplink_set_server(host, port, user, pass);   // clears the trial flag too
+  cJSON *rep = cJSON_CreateObject();
+  cJSON_AddNumberToObject(rep, "rev", cfg_rev());
+  cJSON_AddStringToObject(rep, "state", "mqtt_reverted");
+  cJSON_AddStringToObject(rep, "why", "the new broker was not reached: back on the old one");
+  cfg_report(rep);
+  cJSON_Delete(rep);
+}
+
 // The OTA module's latest word, once each, retained.
 uint32_t g_ota_sent = 0;
 void publish_ota(void) {
+  if (!g_client || !g_mqtt) return;
   char s[200];
   uint32_t serial;
   if (!ota_outbox(s, sizeof(s), &serial) || serial == g_ota_sent) return;
@@ -424,6 +597,7 @@ void end_session(bool all_sent) {
 
 void battery_pass(void) {
   const uint32_t t = now_ms();
+  trial_tick();
   if (!g_ses.on) {
     // After this wake's sample, so the record just written goes now and
     // not one period later. Ten seconds at most: a trip task that never
@@ -479,6 +653,8 @@ void battery_pass(void) {
       g_ses.status_sent = true;
     }
     publish_ota();
+    apply_cfg_doc();
+    publish_cfg();
     // A download needs the radio; the OTA module has its own time limits.
     if (ota_busy()) return;
     xSemaphoreTake(g_mx, portMAX_DELAY);
@@ -524,8 +700,11 @@ void task(void *) {
     net_status(&ns);
     if (!g_started && g_host[0] && ns.connected) start_client();
     set_link(g_mqtt ? LINK_ONLINE : ns.connected ? LINK_WIFI_ONLY : LINK_OFFLINE);
+    trial_tick();
     if (!g_mqtt) continue;
     publish_ota();
+    apply_cfg_doc();
+    publish_cfg();
 
     // Status on change, and every five minutes regardless.
     TripStatus s;
@@ -566,6 +745,17 @@ void uplink_start(const char *sn) {
   snprintf(t_online, sizeof(t_online), TOPIC_PUB "%s/online", g_sn);
   snprintf(t_fw, sizeof(t_fw), TOPIC_SUB "%s/firmware", g_sn);
   snprintf(t_ota, sizeof(t_ota), TOPIC_PUB "%s/ota/state", g_sn);
+  snprintf(t_cfg, sizeof(t_cfg), TOPIC_SUB "%s/config", g_sn);
+  snprintf(t_cfg_state, sizeof(t_cfg_state), TOPIC_PUB "%s/config/state", g_sn);
+  {
+    // A report not yet sent before the reset goes out at the next connection.
+    nvs_handle_t h;
+    size_t n = 0;
+    if (nvs_open("cfgdoc", NVS_READONLY, &h) == ESP_OK) {
+      if (nvs_get_str(h, "report", nullptr, &n) == ESP_OK && n > 1) g_cfg_serial = 1;
+      nvs_close(h);
+    }
+  }
   g_mx = xSemaphoreCreateMutex();
   load();
   if (!pm_warm() || g_plan.magic != PLAN_MAGIC) g_plan = {PLAN_MAGIC, 0, 0, false, 0, 0, 0, LINK_OFFLINE};
@@ -580,6 +770,7 @@ bool uplink_set_server(const char *host, uint16_t port, const char *user,
   }
   nvs_handle_t h;
   if (nvs_open("mqtt", NVS_READWRITE, &h) != ESP_OK) return false;
+  nvs_erase_key(h, "trial");      // set by hand: no trial
   const bool ok = nvs_set_str(h, "host", host) == ESP_OK &&
                   nvs_set_u16(h, "port", port) == ESP_OK &&
                   nvs_set_str(h, "user", user ? user : "") == ESP_OK &&
@@ -600,6 +791,33 @@ bool uplink_set_server(const char *host, uint16_t port, const char *user,
 }
 
 bool uplink_configured(void) { return g_host[0] != 0; }
+
+bool uplink_try_server(const char *host, uint16_t port, const char *user, const char *pass) {
+  if (!host || !*host || strlen(host) >= sizeof(g_host) || !port ||
+      (user && strlen(user) >= sizeof(g_user)) || (pass && strlen(pass) >= sizeof(g_pass))) {
+    return false;
+  }
+  // The one that works now, kept to come back to (unless a trial is
+  // already running: then the old one is still the one that worked).
+  nvs_handle_t h;
+  if (!g_trial && g_host[0] && nvs_open("mqtt_old", NVS_READWRITE, &h) == ESP_OK) {
+    nvs_set_str(h, "host", g_host);
+    nvs_set_u16(h, "port", g_port);
+    nvs_set_str(h, "user", g_user);
+    nvs_set_str(h, "pass", g_pass);
+    nvs_commit(h);
+    nvs_close(h);
+  }
+  if (!uplink_set_server(host, port, user, pass)) return false;
+  if (nvs_open("mqtt", NVS_READWRITE, &h) == ESP_OK) {
+    nvs_set_u8(h, "trial", 1);
+    nvs_commit(h);
+    nvs_close(h);
+  }
+  g_trial = true;
+  g_trial_until = now_ms() + UPLINK_TRIAL_MS;
+  return true;
+}
 
 uint32_t uplink_acked(uint32_t trip) { return ack_get(trip); }
 
@@ -643,6 +861,8 @@ void uplink_status(UplinkStatus *out) {
   out->connected = g_mqtt;
   snprintf(out->host, sizeof(out->host), "%s", g_host);
   out->port = g_port;
+  snprintf(out->user, sizeof(out->user), "%s", g_user);
+  out->trial = g_trial;
   out->batches_sent = g_batches;
   out->acks = g_acks;
   out->acks_rejected = g_rejected;
@@ -664,3 +884,16 @@ void uplink_status(UplinkStatus *out) {
 }
 
 void uplink_inject_ack(const char *json) { on_ack(json, (int)strlen(json)); }
+
+void uplink_inject_config(const char *json) {
+  char *d = strdup(json);
+  if (!d) return;
+  portENTER_CRITICAL(&g_cfg_mux);
+  char *old = g_cfg_doc;
+  g_cfg_doc = d;
+  portEXIT_CRITICAL(&g_cfg_mux);
+  free(old);
+  // Applied by the uplink task's next pass, as one from the broker would be
+  // (it needs the broker up, as the report goes out on it).
+  if (g_task) xTaskNotifyGive(g_task);
+}

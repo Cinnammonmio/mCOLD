@@ -1,10 +1,10 @@
 ---
 name: Server-Brief_MQTT
 lang: th
-version: 0.8
+version: 0.9
 status: draft
 date: 2026-10-04
-firmware: 0.7.0-dev.5
+firmware: 0.7.0-dev.6
 ---
 
 # mCOLD — สิ่งที่ฝั่ง Server ต้องทำ (MQTT)
@@ -24,6 +24,7 @@ firmware: 0.7.0-dev.5
 | 5 | ส่ง OTA ตามข้อ 8: publish ชื่อไฟล์แบบ **retain** แล้วลบเมื่อได้ `ok` | กล่องที่ใช้แบตหลับอยู่จะไม่เห็นคำสั่ง |
 | 6 | **ประกอบ trip จากก้อน** (`part` / `parts` / `last`, ข้อ 3) | ข้อมูล trip ไม่ครบหรือเรียงผิด |
 | 7 | **ดู `status` ระหว่าง trip** (อุณหภูมิล่าสุด, alarm, `alarms_raised`, `last_alarm`) | ระหว่าง trip ไม่เห็นอะไรเลย เพราะแถวขึ้นหลังจบ trip |
+| 9 | ตั้งค่ากล่องจาก server ด้วยเอกสารตั้งค่า (ข้อ 9) — `rev` ต้องเพิ่มทุกครั้ง | ส่งซ้ำ rev เดิม กล่องจะไม่ทำอะไร |
 | 8 | **รับไฟล์ CSV จากแอป** (ปุ่ม "จบ trip และส่งข้อมูล") — ต้องกำหนดช่องทาง (ข้อ 7) | แอปส่ง trip ขึ้น server เองไม่ได้ ต้องรอกล่องเจอ Wi-Fi |
 
 ## 2. การเชื่อมต่อ
@@ -43,6 +44,8 @@ firmware: 0.7.0-dev.5
 | `mcold/<sn>/online` | กล่อง → server | 1 | ใช่ | `"1"` ตอนเชื่อมต่อ, `"0"` ตอนจบรอบหรือหลุด (last will) |
 | `mcold/<sn>/ota/state` | กล่อง → server | 1 | ใช่ | ผลการอัปเดต firmware (ข้อ 8) |
 | `mcold/v1/<sn>/firmware` | **server → กล่อง** | 1 | **ใช่** | ชื่อไฟล์ firmware ที่จะให้อัปเดต (ข้อ 8) |
+| `mcold/v1/<sn>/config` | **server → กล่อง** | 1 | **ใช่** | เอกสารตั้งค่า (ข้อ 9) |
+| `mcold/<sn>/config/state` | กล่อง → server | 1 | ใช่ | ผลการตั้งค่า (ข้อ 9) |
 
 รับข้อมูลทุกกล่องได้ด้วยการ subscribe `mcold/+/rec`
 
@@ -197,3 +200,23 @@ server ไม่ต้องตรวจอะไร: กล่องตรว�
 
 - `firmware/PROTOCOL.md` ข้อ 6 — สเปกเต็มของ MQTT
 - `firmware/src/record.h` — โครงสร้าง record ทุกชนิด
+
+## 9. ตั้งค่ากล่องจาก server
+
+publish เอกสารตั้งค่าที่ `mcold/v1/<sn>/config` แบบ **retain** (กล่องที่หลับอยู่จะได้รับตอนตื่น)
+
+```json
+{"rev":3,
+ "config":{"upload_period_s":600,"led_front_pct":2},
+ "wifi":{"add":[{"ssid":"Warehouse-2","pass":"..."}],"del":["OldNet"]},
+ "mqtt":{"host":"...","port":1883,"user":"...","pass":"..."},
+ "ota_base":"https://drive.siamatic.co.th/media/firmwares"}
+```
+
+- ส่งแค่ส่วนที่จะเปลี่ยน · **`rev` ต้องเพิ่มทุกครั้ง** กล่องใช้แต่ละ rev ครั้งเดียว
+- ผลกลับมาที่ `mcold/<sn>/config/state` (`ok` / `partial` / `refused` / `mqtt_reverted`) พร้อมเหตุผลของค่าที่ไม่ได้ตั้ง
+- ค่าบางตัว (รอบบันทึก, สอบเทียบ) เปลี่ยนไม่ได้ระหว่าง trip — ส่ง rev ใหม่หลังจบ trip
+- broker ใหม่ทดลอง 15 นาที ต่อไม่ได้กลับไปใช้ตัวเดิมเอง
+- รายการค่าทั้งหมด: `docs/device-settings.md` · แอปใช้เอกสารเดียวกันผ่าน BLE (`APPLY_CONFIG`)
+
+⚠️ เอกสารนี้มีรหัส Wi-Fi/MQTT: บนพอร์ต 1883 ที่ไม่เข้ารหัส ใครดักฟังก็เห็น — เป็นอีกเหตุผลที่ต้องเปิด TLS (ข้อ 6)

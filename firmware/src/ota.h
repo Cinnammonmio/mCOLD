@@ -61,6 +61,7 @@ bool ota_outbox(char *buf, size_t n, uint32_t *serial);
 void ota_outbox_sent(uint32_t serial);
 
 bool ota_set_base(const char *url);
+bool ota_get_base(char *out, size_t n);
 void ota_print(void);
 // Bench: the next new image will not confirm itself, to watch a rollback.
 void ota_test_rollback(void);

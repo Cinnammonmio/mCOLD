@@ -23,6 +23,7 @@
 // link opens (with a fresh nonce) and drops it when the link closes.
 struct RpcSession {
   bool authorized;
+  bool console;        // the USB console: every config key, not only the app's
   bool has_nonce;
   uint8_t nonce[16];
 };

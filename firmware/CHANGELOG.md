@@ -38,6 +38,18 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Settings from the app and the server** (decided 2026-10-05,
+  `docs/device-settings.md`): one settings document -- `config` keys,
+  Wi-Fi add/del, MQTT broker, OTA base -- over BLE (`APPLY_CONFIG`) or
+  MQTT (`mcold/v1/<sn>/config`, retained, applied once per `rev`, the
+  result on `mcold/<sn>/config/state`). Only the user-facing keys; the
+  sample period and calibration not while a trip runs; bench and factory
+  keys stay at the console (`SET_CONFIG` over BLE follows the same list).
+  A new broker is on trial for 15 minutes and the old one comes back if
+  it is not reached. `GET_NETWORK` shows the network settings without
+  passwords; `cfgdoc` at the console plays a server document. Checked on
+  the board. 0.7.0-dev.6.
+
 - **USB drive, F1 and the start of F2** (phases named 2026-10-05: F1 the
   device code, F2 `flash` + USB composite, F3 CSV files on the drive, F4
   Windows test). F1: no second code beside the SN; the drive label is

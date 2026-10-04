@@ -23,6 +23,8 @@
 //   mcold/<sn>/ota/state    device -> server   what came of an update, retained
 //   mcold/v1/<sn>/ack       server -> device   {"trip":T,"upto":S}
 //   mcold/v1/<sn>/firmware  server -> device   a file name to install (ota.h), retained
+//   mcold/v1/<sn>/config    server -> device   settings document (settings.h), retained
+//   mcold/<sn>/config/state device -> server   what came of it, retained
 //
 // Published without the version, subscribed with it, as eTEMP does.
 //
@@ -47,6 +49,12 @@ bool uplink_set_server(const char *host, uint16_t port, const char *user,
                        const char *pass);
 bool uplink_configured(void);
 
+// A new broker on trial (settings.h): the old one is kept, and comes back
+// by itself if the box cannot reach the new one within UPLINK_TRIAL_MS --
+// a typo sent over MQTT must not cut the box off. Reaching it keeps it.
+bool uplink_try_server(const char *host, uint16_t port, const char *user, const char *pass);
+static const uint32_t UPLINK_TRIAL_MS = 15 * 60000;
+
 // Records of `trip` the server has confirmed: seq < this are stored.
 uint32_t uplink_acked(uint32_t trip);
 
@@ -64,6 +72,8 @@ struct UplinkStatus {
   bool connected;          // to the broker; says nothing about the server
   char host[64];
   uint16_t port;
+  char user[40];
+  bool trial;              // the broker is on trial (uplink_try_server)
   uint32_t batches_sent;
   uint32_t acks;           // application ACKs accepted
   uint32_t acks_rejected;  // malformed, unknown trip, or beyond the log
@@ -92,3 +102,5 @@ bool uplink_mark_delivered(uint32_t trip, uint32_t *last_seq);
 // Hand an ACK in as though the server had sent it: for the bench, before
 // the server side exists. It goes through every check a real one does.
 void uplink_inject_ack(const char *json);
+// The same for a settings document on mcold/v1/<sn>/config.
+void uplink_inject_config(const char *json);

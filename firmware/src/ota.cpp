@@ -505,6 +505,8 @@ bool ota_set_base(const char *url) {
   return true;
 }
 
+bool ota_get_base(char *out, size_t n) { return get_str("base", out, n); }
+
 void ota_print(void) {
   const esp_partition_t *run = esp_ota_get_running_partition();
   const esp_partition_t *next = esp_ota_get_next_update_partition(nullptr);
