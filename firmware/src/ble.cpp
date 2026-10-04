@@ -24,6 +24,8 @@ void ble_store_config_init(void);
 #include "board.h"
 #include "pm.h"
 #include "record.h"
+#include "settings.h"
+#include <cJSON.h>
 #include "rpc.h"
 #include "trip.h"
 
@@ -310,6 +312,32 @@ bool stack_up(void);
 
 bool window_open(void) { return (int32_t)(g_window_until - now_ms()) > 0; }
 
+// The settings page, pushed (decided 2026-10-05): once the app listens for
+// events, and again whenever a setting changes or the session gets AUTH
+// (which adds the network part).
+void push_settings(void) {
+  static uint16_t conn = BLE_HS_CONN_HANDLE_NONE;
+  static uint32_t gen = 0;
+  static bool authorized = false;
+  if (g_conn == BLE_HS_CONN_HANDLE_NONE || !g_sub_evt) {
+    conn = BLE_HS_CONN_HANDLE_NONE;
+    return;
+  }
+  const bool auth = g_session.authorized;
+  if (conn == g_conn && gen == settings_gen() && authorized == auth) return;
+  cJSON *o = cJSON_CreateObject();
+  cJSON_AddStringToObject(o, "ev", "SETTINGS");
+  settings_snapshot(o, auth);
+  char *s = cJSON_PrintUnformatted(o);
+  cJSON_Delete(o);
+  if (!s) return;
+  send_json(h_evt, true, s);
+  free(s);
+  conn = g_conn;
+  gen = settings_gen();
+  authorized = auth;
+}
+
 void worker(void *) {
   TripStatus prev;
   trip_status(&prev);
@@ -353,6 +381,7 @@ void worker(void *) {
       }
     }
     prev = s;
+    push_settings();
 
     // Advertise only with a reason: a tap's window, or external power.
     const bool want = g_up && g_enabled && g_conn == BLE_HS_CONN_HANDLE_NONE &&

@@ -38,6 +38,16 @@ To cut a release:
 
 P7, power: in progress.
 
+- **The app gets the settings by itself** (decided 2026-10-05): a
+  SETTINGS event on EVENT as soon as the app subscribes, again on AUTH
+  and whenever a setting changes from anywhere -- every config key, which
+  the app may edit, which are locked during a trip, the server's last
+  rev, and after AUTH the network part (Wi-Fi names, broker, OTA base,
+  never a password). `GET_SETTINGS` asks for the same; `GET_NETWORK` now
+  needs AUTH. Checked over BLE from the PC (tools/ble_client.py's link):
+  pushed on connect without the network part, again with it after AUTH,
+  and after a SET_CONFIG. 0.7.0-dev.7.
+
 - **Settings from the app and the server** (decided 2026-10-05,
   `docs/device-settings.md`): one settings document -- `config` keys,
   Wi-Fi add/del, MQTT broker, OTA base -- over BLE (`APPLY_CONFIG`) or

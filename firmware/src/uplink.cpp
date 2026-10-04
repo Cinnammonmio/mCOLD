@@ -507,6 +507,7 @@ void trial_tick(void) {
   g_trial = false;
   g_trial_until = 0;
   if (have) uplink_set_server(host, port, user, pass);   // clears the trial flag too
+  settings_touch();
   cJSON *rep = cJSON_CreateObject();
   cJSON_AddNumberToObject(rep, "rev", cfg_rev());
   cJSON_AddStringToObject(rep, "state", "mqtt_reverted");
@@ -816,6 +817,7 @@ bool uplink_try_server(const char *host, uint16_t port, const char *user, const 
   }
   g_trial = true;
   g_trial_until = now_ms() + UPLINK_TRIAL_MS;
+  settings_touch();
   return true;
 }
 

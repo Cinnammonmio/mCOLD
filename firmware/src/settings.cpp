@@ -1,6 +1,7 @@
 #include "settings.h"
 
 #include <math.h>
+#include <nvs.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -133,7 +134,33 @@ void apply_mqtt(const cJSON *m, cJSON *applied, cJSON *errors) {
   }
 }
 
+volatile uint32_t g_gen = 1;
+
 }  // namespace
+
+void settings_touch(void) { g_gen = g_gen + 1; }
+uint32_t settings_gen(void) { return g_gen; }
+
+void settings_snapshot(cJSON *out, bool authorized) {
+  cJSON *c = cJSON_AddObjectToObject(out, "config");
+  for (int i = 0; i < config_count(); i++) {
+    const char *k;
+    int32_t v;
+    if (config_at(i, &k, &v, nullptr, nullptr)) cJSON_AddNumberToObject(c, k, v);
+  }
+  cJSON *e = cJSON_AddArrayToObject(out, "editable");
+  for (const char *k : REMOTE) cJSON_AddItemToArray(e, cJSON_CreateString(k));
+  cJSON *l = cJSON_AddArrayToObject(out, "trip_locked");
+  for (const char *k : TRIP_LOCKED) cJSON_AddItemToArray(l, cJSON_CreateString(k));
+  uint32_t rev = 0;
+  nvs_handle_t h;
+  if (nvs_open("cfgdoc", NVS_READONLY, &h) == ESP_OK) {
+    nvs_get_u32(h, "rev", &rev);
+    nvs_close(h);
+  }
+  cJSON_AddNumberToObject(out, "server_rev", rev);
+  if (authorized) settings_network(cJSON_AddObjectToObject(out, "network"));
+}
 
 bool settings_remote_key(const char *key) { return listed(REMOTE, key); }
 bool settings_trip_locked(const char *key) { return listed(TRIP_LOCKED, key); }
@@ -158,6 +185,7 @@ bool settings_apply(const cJSON *doc, cJSON *report) {
   // handed to a server that may not answer.
   const cJSON *m = cJSON_GetObjectItemCaseSensitive(doc, "mqtt");
   if (m) apply_mqtt(m, applied, errors);
+  if (cJSON_GetArraySize(applied)) settings_touch();
   return cJSON_GetArraySize(errors) == 0;
 }
 

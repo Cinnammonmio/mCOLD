@@ -297,6 +297,7 @@ cJSON *c_set_config(uint32_t id, const cJSON *req, RpcSession *ses) {
   if (!config_set(k->valuestring, (int32_t)v)) {
     return fail(id, "BAD_ARGS", "unknown key or out of range");
   }
+  settings_touch();
   return ok(id);
 }
 
@@ -417,6 +418,13 @@ cJSON *c_apply_config(uint32_t id, const cJSON *req, RpcSession *) {
 cJSON *c_get_network(uint32_t id, const cJSON *, RpcSession *) {
   cJSON *o = ok(id);
   settings_network(o);
+  return o;
+}
+
+// The SETTINGS event's content, asked for (the network part needs AUTH).
+cJSON *c_get_settings(uint32_t id, const cJSON *, RpcSession *ses) {
+  cJSON *o = ok(id);
+  settings_snapshot(o, ses && ses->authorized);
   return o;
 }
 
@@ -629,6 +637,7 @@ cJSON *c_set_wifi(uint32_t id, const cJSON *req, RpcSession *) {
       !net_add(s->valuestring, p ? p->valuestring : "")) {
     return fail(id, "BAD_ARGS", "ssid 1-32 bytes, pass empty or 8-63, at most 5 networks");
   }
+  settings_touch();
   cJSON *o = ok(id);
   cJSON_AddNumberToObject(o, "known", net_count());
   return o;
@@ -639,6 +648,7 @@ cJSON *c_del_wifi(uint32_t id, const cJSON *req, RpcSession *) {
   if (!cJSON_IsString(s) || !net_remove(s->valuestring)) {
     return fail(id, "BAD_ARGS", "ssid: a known network");
   }
+  settings_touch();
   return ok(id);
 }
 
@@ -659,7 +669,8 @@ const Cmd CMDS[] = {
     {"GET_CONFIG", false, c_get_config},
     {"SET_CONFIG", true, c_set_config},
     {"APPLY_CONFIG", true, c_apply_config},
-    {"GET_NETWORK", false, c_get_network},
+    {"GET_NETWORK", true, c_get_network},
+    {"GET_SETTINGS", false, c_get_settings},
     {"SET_TIME", true, c_set_time},
     {"START_TRIP", true, c_start},
     {"STOP_TRIP", true, c_stop},

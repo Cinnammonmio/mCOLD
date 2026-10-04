@@ -56,6 +56,7 @@
 #include "gnss.h"
 #include "health.h"
 #include "logrow.h"
+#include "settings.h"
 #include "leds.h"
 #include "nfc.h"
 #include "ota.h"
@@ -1097,6 +1098,7 @@ void trip_csv(uint32_t id) {
 // Settings that take effect the moment they are stored, from the console
 // or the app alike; the rest are read where they are used.
 void config_changed(const char *key, int32_t v) {
+  settings_touch();     // the app's settings page follows
   if (!strcmp(key, "accel_wake_ths") && g_accel_up) {
     accel_set_threshold((uint8_t)v);
   } else if (!strcmp(key, "led_bright_pct")) {

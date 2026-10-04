@@ -3,7 +3,7 @@ name: Device-Settings
 lang: th
 version: 1.0
 date: 2026-10-05
-firmware: 0.7.0-dev.6
+firmware: 0.7.0-dev.7
 ---
 
 # mCOLD — ค่าตั้งค่าของเครื่อง
@@ -52,8 +52,23 @@ firmware: 0.7.0-dev.6
 ทางแอป (`APPLY_CONFIG`) ได้ `applied` / `errors` กลับมาในคำตอบทันที
 
 ### อ่านค่าปัจจุบัน
+- **แอปได้เองอัตโนมัติ:** พอแอปต่อ BLE และเปิดรับ EVENT กล่องส่ง event `SETTINGS` ทันที
+  และส่งใหม่ทุกครั้งที่ค่าเปลี่ยน (จากแอป, server หรือ console) หน้าตั้งค่าในแอปจึงตรงกับเครื่องเสมอ
+
+  ```json
+  {"ev":"SETTINGS",
+   "config":{"sample_period_s":300,"upload_period_s":300,"led_front_pct":2, "...": "ทุกค่า"},
+   "editable":["sample_period_s","upload_period_s", "..."],
+   "trip_locked":["sample_period_s","cal_offset_c100", "..."],
+   "server_rev":1,
+   "network":{"wifi":["mio","Mio_2.4G"],"mqtt":{"host":"...","port":1883,"user":"...","on_trial":false},
+              "ota_base":"https://..."}}
+  ```
+  - `editable`: ค่าที่แอปแก้ได้ · `trip_locked`: แก้ไม่ได้ระหว่าง trip
+  - `network` ส่งเฉพาะหลังแตะ NFC + AUTH แล้ว (BLE ใครอยู่ใกล้ก็ต่อได้) และไม่มีรหัสผ่านเสมอ
+- `GET_SETTINGS` (แอป): ขอข้อมูลชุดเดียวกันเอง
 - `GET_CONFIG` (แอป): ทุกค่าใน `config`
-- `GET_NETWORK` (แอป): ชื่อ Wi-Fi ที่จำไว้, broker (host/port/user), OTA base — **ไม่มีรหัสผ่าน**
+- `GET_NETWORK` (แอป, ต้อง AUTH): ชื่อ Wi-Fi ที่จำไว้, broker (host/port/user), OTA base — **ไม่มีรหัสผ่าน**
 - `status` ทาง MQTT มี `fw` และ `net` (Wi-Fi ที่ต่ออยู่, RSSI, IP)
 
 ## ค่าที่แอป / server ตั้งได้

@@ -24,6 +24,7 @@
 
 #include <cJSON.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 // Applies `doc`; `report` (a JSON object) gets "applied": [what was set]
 // and "errors": {what: why}. True if nothing was refused.
@@ -37,3 +38,15 @@ bool settings_trip_locked(const char *key);
 // The network settings as they stand, without secrets: Wi-Fi names,
 // broker host/port/user, OTA base URL.
 void settings_network(cJSON *out);
+
+// Everything the app shows on its settings page (decided 2026-10-05):
+// `config` (every key and its value), `editable` (what the app may set),
+// `trip_locked`, the last server `rev`, and -- only for an authorized
+// session -- `network`, since a phone that has not tapped the box should
+// not learn its Wi-Fi names and broker. Pushed as the SETTINGS event when
+// the app connects, and again whenever something changes.
+void settings_snapshot(cJSON *out, bool authorized);
+
+// Something the snapshot shows has changed; the count moves on.
+void settings_touch(void);
+uint32_t settings_gen(void);
