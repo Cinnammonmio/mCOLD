@@ -147,6 +147,8 @@ Measured with the charger in HIZ: asleep ≤ 0.25 mA; awake ~130 mA
   follow. Nothing that is not an alarm is red or amber: the side light's
   "power in, not charging" blinks violet, and violet has little red in
   it (60/255) because at 2 % the first one read pink.
+- The charge light is green again (breathing while charging, steady when
+  full); the blue/cyan trial is dropped. "Not charging" stays violet.
 - Bezel measured on the board with `screen cal`: left 3 px hidden, the
   other sides clear (`epd_inset_l 3`).
 - Review fixes: GNSS due but unavailable, and a dwell run out with no

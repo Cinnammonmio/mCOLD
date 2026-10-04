@@ -28,6 +28,7 @@ GRID = (222, 224, 228)
 # Two families (2026-10-04): warnings keep place and colour -- red is the
 # cargo, amber the box; everything calm is blue, violet or cyan.
 RED = (198, 44, 38)
+GREEN = (30, 158, 74)
 AMBER = (224, 152, 16)
 BLUE = (40, 84, 214)
 VIOLET = (92, 64, 222)
@@ -52,9 +53,8 @@ PATTERNS = [
      [(80, True), (70, False), (80, True), (70, False), (80, True)]),
     ("SWEEP", "front · boot: blue, violet, cyan, 80 ms each", None,
      [(80, BLUE), (0, False), (80, VIOLET), (0, False), (80, CYAN)]),
-    ("BREATHE", "side · charging (blue) / ≥ 80 % (cyan), 12–100 %", BLUE,
-     [(2000, "breathe")]),
-    ("STEADY", "side · charge full", CYAN, [(2000, True)]),
+    ("BREATHE", "side · charging, 12–100 %", GREEN, [(2000, "breathe")]),
+    ("STEADY", "side · charge full", GREEN, [(2000, True)]),
     ("SLOW BLINK", "side · power in, not charging: 120 ms every 2 s", VIOLET,
      [(120, True), (1880, False)]),
     ("FAULT BLINK", "side · charge fault: 120 ms every 1 s", RED,
@@ -145,10 +145,10 @@ def led_map():
 
     d.rounded_rectangle([(470, 92), (718, 290)], 14, outline=(200, 202, 206), width=2)
     d.text((482, 104), "SIDE · 20 %", font=font("SemiBold", 11), fill=MUTED)
-    d.ellipse([(577, 140), (611, 174)], fill=BLUE, outline=(255, 255, 255), width=2)
+    d.ellipse([(577, 140), (611, 174)], fill=GREEN, outline=(255, 255, 255), width=2)
     d.text((594, 190), "LED4", font=font("SemiBold", 12), fill=INK, anchor="ma")
     d.text((594, 206), "index 0 · XL-4020RGBC", font=font("Light", 10), fill=MUTED, anchor="ma")
-    d.text((594, 224), "CHARGE", font=font("SemiBold", 10), fill=BLUE, anchor="ma")
+    d.text((594, 224), "CHARGE", font=font("SemiBold", 10), fill=GREEN, anchor="ma")
     d.text((594, 240), "สว่างเฉพาะตอนเสียบสาย", font=font("Light", 10), fill=MUTED, anchor="ma")
 
     img.save(OUT / "led_map.png")
@@ -193,9 +193,8 @@ SECTIONS = [
         ("เครื่องมีปัญหา", "ทันที แล้วทุก 15 นาที", {"R": AMBER}, bars(TRIPLE, AMBER), []),
     ]),
     ("ไฟข้างเครื่อง · การชาร์จ", [
-        ("กำลังชาร์จ", "ตลอดการชาร์จ", {"S": BLUE}, [(0, 2000, BLUE, "breathe")], []),
-        ("ชาร์จเกือบเต็ม (≥ 80%)", "ตลอดการชาร์จ", {"S": CYAN}, [(0, 2000, CYAN, "breathe")], []),
-        ("ชาร์จเต็ม", "ติดค้าง", {"S": CYAN}, [(0, 2000, CYAN, "")], []),
+        ("กำลังชาร์จ", "ตลอดการชาร์จ", {"S": GREEN}, [(0, 2000, GREEN, "breathe")], []),
+        ("ชาร์จเต็ม", "ติดค้าง", {"S": GREEN}, [(0, 2000, GREEN, "")], []),
         ("มีไฟเข้าแต่ไม่ชาร์จ", "ทุก 2 วินาที · ไม่ใช่ alarm", {"S": VIOLET}, [(0, 120, VIOLET, "")], []),
         ("ชาร์จผิดปกติ", "ทุก 1 วินาที · บี๊บ 1 ครั้งตอนเริ่ม", {"S": RED},
          [(0, 120, RED, ""), (1000, 120, RED, "")], [(0, 150)]),

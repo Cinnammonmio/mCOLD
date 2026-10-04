@@ -1,7 +1,7 @@
 ---
 name: User-Manual_EN
 lang: en
-version: 0.3
+version: 0.4
 status: draft
 date: 2026-10-04
 firmware: 0.7.0-dev
@@ -53,9 +53,8 @@ Plug in USB-C to charge. The side light shows:
 
 | Side light | Meaning |
 |---|---|
-| Blue, breathing | Charging |
-| Cyan, breathing | Nearly full (80% and over) |
-| Cyan, steady | Full |
+| Green, breathing | Charging |
+| Green, steady | Full |
 | Violet, slow blink | Power in, but not charging |
 | Red, blinking | Charging fault (one beep) |
 | Off | Not plugged in |

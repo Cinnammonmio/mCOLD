@@ -1,7 +1,7 @@
 ---
 name: Quick-Guide
 lang: th
-version: 0.3
+version: 0.4
 status: draft
 date: 2026-10-04
 firmware: 0.7.0-dev
@@ -26,9 +26,8 @@ Three amber blinks instead: the box has a problem, see 6. Red and amber always w
 
 | ไฟข้างเครื่อง · Side light | ความหมาย · Meaning |
 |---|---|
-| น้ำเงิน หายใจ · breathing blue | กำลังชาร์จ · charging |
-| ฟ้า หายใจ · breathing cyan | เกือบเต็ม (≥ 80%) · nearly full |
-| ฟ้าค้าง · steady cyan | เต็ม · full |
+| เขียว หายใจ · breathing green | กำลังชาร์จ · charging |
+| เขียวค้าง · steady green | เต็ม · full |
 | ม่วง กะพริบช้า · slow violet blink | มีไฟแต่ไม่ชาร์จ · power in, not charging |
 | แดง กะพริบ · red blink | ชาร์จผิดปกติ · charge fault |
 
