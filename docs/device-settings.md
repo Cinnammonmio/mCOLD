@@ -83,8 +83,8 @@ firmware: 0.7.0-dev.8
                       {"ssid":"Warehouse-2","dhcp":true}],
               "ota_base":"https://..."}}
   ```
-  - `editable`: ค่าที่แอปแก้ได้ · `trip_locked`: แก้ไม่ได้ระหว่าง trip
-  - `network` ส่งเฉพาะหลังแตะ NFC + AUTH และ **ไม่มีรหัสผ่านเสมอ**
+- `editable`: ค่าที่แอปแก้ได้ · `trip_locked`: แก้ไม่ได้ระหว่าง trip
+- `network` ส่งเฉพาะหลังแตะ NFC + AUTH และ **ไม่มีรหัสผ่านเสมอ**
 - `GET_SETTINGS`: ขอชุดเดียวกันเอง · `GET_CONFIG`: เฉพาะ `config` · `GET_NETWORK` (ต้อง AUTH): เฉพาะ `network`
 
 ## ค่าที่แอป / server ตั้งได้
