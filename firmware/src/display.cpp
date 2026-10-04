@@ -64,6 +64,15 @@ RTC_DATA_ATTR bool g_shown_acked = false;
 RTC_DATA_ATTR uint8_t g_shown_icons = 0xFF;   // footer-left icons + USB power, as bits
 RTC_DATA_ATTR uint32_t g_icons_drawn_at = 0;
 
+// The READY page's battery reading: it is redrawn only once the battery
+// has moved READY_BATT_STEP from what the glass shows (decided
+// 2026-10-05) -- a frame that changed with every percent would refresh
+// every hour or so for nothing.
+const int READY_BATT_STEP = 5;
+RTC_DATA_ATTR int g_ready_batt = -1;    // % on the glass; -1 none
+int g_draw_batt = -1;                   // what build() just used
+bool g_draw_ready = false;              // build() drew the READY page
+
 // The trip that just ended, for its summary page.
 RTC_DATA_ATTR TripStatus g_closed = {};
 RTC_DATA_ATTR uint32_t g_closed_at = 0;
@@ -142,15 +151,6 @@ uint8_t icons_now(const TripStatus &s) {
                    (f.shock ? ICON_SHOCK : 0) | (usb ? ICON_USB : 0));
 }
 
-const char *charge_word(ChargeState c) {
-  switch (c) {
-    case ChargeState::PreCharge:  return "PRE-CHARGE";
-    case ChargeState::FastCharge: return "FAST CHARGE";
-    case ChargeState::Done:       return "CHARGED";
-    default:                      return "NOT CHARGING";
-  }
-}
-
 // Picks the screen and draws it into g_draw with the given clock text.
 void build(const TripStatus &s, const char *clock) {
   PowerStatus p;
@@ -160,7 +160,7 @@ void build(const TripStatus &s, const char *clock) {
   have_p = g_have_pwr;
   portEXIT_CRITICAL(&g_mux);
   const Foot f = footer_state(s, p, have_p);
-
+  g_draw_ready = false;
 
   char temp[12];
   if (s.temp_ok) snprintf(temp, sizeof(temp), "%.1f", s.temp_c);
@@ -206,28 +206,19 @@ void build(const TripStatus &s, const char *clock) {
     return;
   }
 
-  if (have_p && p.charger_valid && p.power_good && p.cell_valid) {
-    // A6: on the charger with no trip, the charge is the news.
-    char cur[16], cell[16];
-    if (p.current_valid) snprintf(cur, sizeof(cur), "%.2f A", p.battery_ma / 1000.0);
-    else snprintf(cur, sizeof(cur), "--");
-    snprintf(cell, sizeof(cell), "%.2f V", p.cell_volts);
-    // The power module names sources in lower case; this font has
-    // capitals only.
-    char src[16];
-    snprintf(src, sizeof(src), "%s", vbus_type_name(p.vbus));
-    for (char *q = src; *q; q++) {
-      if (*q >= 'a' && *q <= 'z') *q = (char)(*q - 32);
-    }
-    const Row rows[] = {{"SOURCE", src}, {"CURRENT", cur}, {"CELL", cell}};
-    scr_charge(g_draw, g_sn, clock, f, (int)lroundf(p.soc_percent),
-               charge_word(p.charge), rows, 3);
-    return;
+  // A1: no trip -- READY, "scan to start". Nothing on it goes stale, so
+  // it stays until a trip starts, the power is plugged or pulled, or the
+  // battery moves READY_BATT_STEP. On the charger too: the side light
+  // says how the charge is going.
+  Foot ff = f;
+  if (g_ready_batt >= 0 && ff.batt >= 0 && abs(ff.batt - g_ready_batt) < READY_BATT_STEP) {
+    ff.batt = g_ready_batt;
   }
-
-  // A1: no trip. The temperature is still shown -- it is still measured.
-  scr_monitor(g_draw, g_sn, clock, f, temp, nullptr, nullptr, "NO ACTIVE TRIP",
-              !s.temp_ok, false);
+  g_draw_batt = ff.batt;
+  g_draw_ready = true;
+  const bool low = have_p && p.cell_valid && !(p.charger_valid && p.power_good) &&
+                   p.cell_volts * 1000.0f < (float)config().batt_trip_mv;
+  scr_ready(g_draw, g_sn, ff, low);
 }
 
 bool show(const Canvas &c) {
@@ -294,6 +285,7 @@ void task(void *) {
         pm_hold(Hold::Display, false);
         pm_no_light_sleep(false);
         if (shown) {
+          if (g_draw_ready) g_ready_batt = g_draw_batt;
           g_shown_hash = content;
           g_shown_at = now_ms();
           g_shown_active = s.active;

@@ -6,6 +6,7 @@
 
 #include "fonts_mcold.h"
 #include "fonts_head.h"
+#include "fonts_title20.h"
 
 namespace {
 
@@ -65,6 +66,7 @@ const GFXfont *BODY = &mColdBody13;     // sentences on takeover screens
 const GFXfont *READING = &mColdRead15;  // min/max and charge-row values
 const GFXfont *STATUS = &mColdStat13;   // charge state word
 const GFXfont *TITLE = &mColdTitle26;   // takeover headline
+const GFXfont *TITLE_S = &mColdTitle20; // READY headline, under the arrow
 const GFXfont *BIG = &mColdBig44;       // state of charge
 const GFXfont *HERO = &mColdHero80;
 const GFXfont *HERO_UNIT = &mColdUnit20;
@@ -226,6 +228,65 @@ const Icon ICON_TRIP = {9, 16, {"#........",
                                 "##.......",
                                 "#........"}};
 
+// Pictures larger than a footer mark (display-mock/icons.py, tap()).
+struct Pict {
+  uint8_t w, h;
+  const char *rows[48];
+};
+
+static const Pict PICT_TAP = {42, 44, {"..........................................",
+                                       "....##################....................",
+                                       "...####################...................",
+                                       "..####.............####...................",
+                                       "..###...............###..............#....",
+                                       "..##.....#######.....##.............###...",
+                                       "..##.................##.............###...",
+                                       "..##.................##..............###..",
+                                       "..##.................##..........##...##..",
+                                       "..##.................##..........###..###.",
+                                       "..##.................##...........##...##.",
+                                       "..##.................##......###..###..##.",
+                                       "..##.................##.......##..###..###",
+                                       "..##.................##.......###..##..###",
+                                       "..##.................##.......###..##..###",
+                                       "..##.................##.......###..##..###",
+                                       "..##.................##.......###..##..###",
+                                       "..##.................##.......##..###..###",
+                                       "..##.................##......###..###..##.",
+                                       "..##.................##...........##...##.",
+                                       "..##.................##..........###..###.",
+                                       "..##.................##..........##...##..",
+                                       "..##.................##..............###..",
+                                       "..##.................##.............###...",
+                                       "..##.................##.............###...",
+                                       "..##.................##..............#....",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.......###.......##...................",
+                                       "..##.......###.......##...................",
+                                       "..##.......###.......##...................",
+                                       "..###...............###...................",
+                                       "..#####################...................",
+                                       "...###################....................",
+                                       "....#################....................."}};
+
+void pict(Canvas &c, const Pict &p, int x, int top, Ink ink) {
+  for (int r = 0; r < p.h && p.rows[r]; r++) {
+    for (int k = 0; k < p.w && p.rows[r][k]; k++) {
+      if (p.rows[r][k] == '#') c.pixel(x + k, top + r, ink);
+    }
+  }
+}
+
 // `off` strikes the icon through instead of hiding it: a frame persists
 // on the glass after power is gone, and "not connected" must not look
 // like "not refreshed".
@@ -276,9 +337,14 @@ void footer(Canvas &c, const Foot &f) {
   c.hline(0, RULE, W, Ink::Black);
 
   int x = M;
-  x += icon(c, ICON_WIFI, x, ICON_BOTTOM, Ink::Black, !f.wifi) + GAP;
-  x += icon(c, ICON_CLOUD, x, ICON_BOTTOM, Ink::Black, !f.cloud) + GAP;
-  x += icon(c, ICON_GNSS, x, ICON_BOTTOM, Ink::Black, !f.gnss) + GAP;
+  if (f.note) {
+    text(c, M, BASE_FOOT, f.note, CAPS, Ink::Black, TRACK);
+    x += (int)lroundf(width(f.note, CAPS, TRACK)) + GAP;
+  } else {
+    x += icon(c, ICON_WIFI, x, ICON_BOTTOM, Ink::Black, !f.wifi) + GAP;
+    x += icon(c, ICON_CLOUD, x, ICON_BOTTOM, Ink::Black, !f.cloud) + GAP;
+    x += icon(c, ICON_GNSS, x, ICON_BOTTOM, Ink::Black, !f.gnss) + GAP;
+  }
   if (f.trip) x += icon(c, ICON_TRIP, x, ICON_BOTTOM, Ink::Black) + GAP;
   if (f.shock) x += icon(c, ICON_SHOCK, x, ICON_BOTTOM, Ink::Accent) + GAP;
   const int left_end = x - GAP;
@@ -406,14 +472,37 @@ void scr_monitor(Canvas &c, const char *device, const char *clock,
   if (alarm) alarm_frame(c);
 }
 
+void scr_ready(Canvas &c, const char *device, const Foot &f, bool low) {
+  begin(c);
+  header(c, device, "");
+  // The arrow, centred, points at the tag: the NFC antenna sits above the
+  // middle of the panel (decided 2026-10-05).
+  const int cx = W / 2, tip = BAR + 3;
+  for (int i = 0; i <= 9; i++) c.fill_rect(cx - i, tip + i, 2 * i + 1, 1, Ink::Black);
+  c.fill_rect(cx - 2, tip + 9, 5, 8, Ink::Black);
+  pict(c, PICT_TAP, M, RULE - 6 - PICT_TAP.h, Ink::Black);
+  const float x = M + PICT_TAP.w + 10;
+  text(c, x, 56, "SCAN TO", TITLE_S, Ink::Black);
+  text(c, x, 77, "START TRIP", TITLE_S, Ink::Black);
+  if (low) text(c, x, 94, "Battery low. Charge first.", BODY, Ink::Accent);
+  else text(c, x, 94, "Hold your phone to the box.", BODY, Ink::Black);
+  Foot ff = f;
+  ff.note = "NO ACTIVE TRIP";
+  ff.trip = ff.shock = false;
+  footer(c, ff);
+}
+
 void scr_charge(Canvas &c, const char *device, const char *clock,
                 const Foot &f, int soc, const char *state, const Row *rows,
                 int nrows) {
   begin(c);
   header(c, device, clock);
+  // The number big, the sign small: "100%" in the big face is 121 px and
+  // ran into the rows beside it (2026-10-05).
   char s[8];
-  snprintf(s, sizeof(s), "%d%%", soc);
+  snprintf(s, sizeof(s), "%d", soc);
   text(c, M, 66, s, BIG, Ink::Black);
+  text(c, M + width(s, BIG) + 2, 66, "%", STATUS, Ink::Black);
   text(c, M, 90, state, STATUS, Ink::Black, 0.4f);
   const int col = 104;
   for (int i = 0; i < nrows && i < 3; i++) {
@@ -495,8 +584,7 @@ void scr_demo(Canvas &c, int p) {
   const char *dev = "MCOLD-0117";
   // trip, wifi, cloud, gnss, shock, charging, batt, mem
   switch (p) {
-    case 0: scr_monitor(c, dev, "14:32", {false, true, true, true, false, false, 78, 6},
-                        "4.2", nullptr, nullptr, "NO ACTIVE TRIP", false, false); break;
+    case 0: scr_ready(c, dev, {false, false, false, false, false, false, 78, 2}, false); break;
     case 1: scr_monitor(c, dev, "14:32", {true, true, true, true, false, false, 78, 6},
                         "4.2", "2.8", "6.1", nullptr, false, false); break;
     case 2: scr_monitor(c, dev, "14:32", {true, true, true, true, false, false, 78, 6},

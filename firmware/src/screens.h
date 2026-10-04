@@ -18,6 +18,7 @@ struct Foot {
   bool trip, wifi, cloud, gnss, shock, charging;
   int batt;      // %, or -1 when the fuel gauge has nothing
   int mem;
+  const char *note;   // in place of the link icons (READY); null: the icons
 };
 
 struct Row {
@@ -33,6 +34,12 @@ struct Row {
 void scr_monitor(Canvas &c, const char *device, const char *clock,
                  const Foot &f, const char *temp, const char *lo,
                  const char *hi, const char *note, bool red, bool alarm);
+
+// A1 -- Ready, no trip: "scan to start", and nothing that goes stale (no
+// clock, no temperature, no link icons), so the frame can stay on the
+// glass until a trip starts or the battery has moved (decided
+// 2026-10-05). `low`: the battery is too low to start a trip.
+void scr_ready(Canvas &c, const char *device, const Foot &f, bool low);
 
 // A6 -- Charging: state of charge instead of the temperature.
 void scr_charge(Canvas &c, const char *device, const char *clock,

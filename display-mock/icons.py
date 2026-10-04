@@ -276,6 +276,59 @@ def storage():
     return img
 
 
+# ---------------------------------------------------------------------
+# Tap: a phone with the contactless arcs off its side -- the READY page's
+# picture of "hold your phone to the box". Not a footer mark: it has its
+# own height, and its own C type in the firmware (Pict, 48 rows max).
+# ---------------------------------------------------------------------
+TAP_H = 44
+TAP_W = 42
+TAP_PHONE = (2.0, 1.0, 23.0, 43.6)   # left, top, right, bottom
+TAP_LINE = 2.4
+TAP_ARC_C = (25.5, 15.0)            # arcs open to the right from here
+TAP_ARC_R = (6.0, 10.5, 15.0)
+TAP_ARC_SPAN = 42.0                 # degrees either side of horizontal
+
+
+def tap():
+    w, h = TAP_W, TAP_H
+    big, d, s = canvas(w, h)
+    l, t, r, b = TAP_PHONE
+    rad = 3.2
+    d.rounded_rectangle([l * s, t * s, r * s, b * s], radius=rad * s, fill=1)
+    k = TAP_LINE
+    d.rounded_rectangle([(l + k) * s, (t + k) * s, (r - k) * s, (b - k) * s],
+                        radius=(rad - 1.2) * s, fill=0)
+    # The earpiece and the button: a phone, not a door. A filled screen
+    # was tried and read as a black slab at this size.
+    d.rectangle([((l + r) / 2.0 - 3.0) * s, (t + k + 1.6) * s, ((l + r) / 2.0 + 3.0) * s,
+                 (t + k + 3.0) * s], fill=1)
+    disc(d, s, (l + r) / 2.0, b - k - 2.9, 1.6)
+    # The arcs, tested point by point as for Wi-Fi.
+    bp = big.load()
+    cx, cy = TAP_ARC_C
+    span = math.radians(TAP_ARC_SPAN)
+    half = TAP_LINE / 2.0
+    for py in range(h * SS):
+        y = (py + 0.5) / SS
+        for px in range(w * SS):
+            x = (px + 0.5) / SS
+            dx, dy = x - cx, y - cy
+            if dx <= 0 or abs(math.atan2(dy, dx)) > span:
+                continue
+            rr = math.hypot(dx, dy)
+            if any(abs(rr - a) <= half for a in TAP_ARC_R):
+                bp[px, py] = 1
+    return threshold(big, w, h)
+
+
+def tap_rows():
+    img = tap()
+    w, h = img.size
+    px = img.load()
+    return tuple("".join("#" if px[x, y] else "." for x in range(w)) for y in range(h))
+
+
 ICONS = [("WIFI", wifi), ("CLOUD", cloud), ("GNSS", pin), ("TRIP", trip),
          ("SHOCK", shock), ("CHARGE", bolt), ("STORAGE", storage)]
 
@@ -325,6 +378,11 @@ def main():
         body = (",\n" + lead).join(f'"{r}"' for r in rows)
         print(f"static const Icon ICON_{name} = {{{w}, {h}, {{{body}}}}};")
         print()
+
+    rows = tap_rows()
+    lead = " " * len(f"static const Pict PICT_TAP = {{{TAP_W}, {TAP_H}, {{")
+    body = (",\n" + lead).join(f'"{r}"' for r in rows)
+    print(f"static const Pict PICT_TAP = {{{TAP_W}, {TAP_H}, {{{body}}}}};")
 
 
 if __name__ == "__main__":

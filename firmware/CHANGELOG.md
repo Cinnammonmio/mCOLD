@@ -38,6 +38,16 @@ To cut a release:
 
 P7, power: in progress.
 
+- **READY page with no trip** (A1, decided 2026-10-05): an arrow up to
+  the NFC tag, a phone, "SCAN TO START TRIP". No clock, temperature or
+  link icons, so the frame stays until a trip starts, power is plugged
+  or pulled, or the battery moves 5 % from what the glass shows -- no
+  more refresh every five minutes with no trip (watched 6.5 min on the
+  board: none). Shown on the charger too, instead of the charge page.
+  Battery too low for a trip: "Battery low. Charge first." in red. The
+  charge page (now only a demo page) draws 100 % without running into
+  its rows. New font: Bold 20 caps (`fonts_title20.h`).
+
 - **One log row for everything** (record format 3, decided with the team
   2026-10-05). A sample and every event are the same row, carrying the
   state of the box at that moment: `trip, seq, sn, timestamp, utc, event,
