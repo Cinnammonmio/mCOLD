@@ -85,8 +85,9 @@ void row_csv_header(char *out, size_t n);
 void row_csv(const LogRow &r, uint32_t trip, uint32_t seq, const char *sn, const RowHeader &h,
              int tz_min, char *out, size_t n);
 
-// The trip's file name: TRIP_<SN tail>_<YYMMDDhhmm>.csv, local start
-// time (decided 2026-10-05); the SN tail is its last two groups
-// ("1069-001"). A trip started without a known time is TRIP_<tail>_<id>.
+// The trip's file name: TRIP_<SN>_<YYMMDDhhmm>.csv, the whole SN as on
+// the label and the local start time (decided 2026-10-05): long, but
+// found by the SN on the box and dependent on no numbering rule. A trip
+// started without a known time is TRIP_<SN>_<id>.
 void row_file_name(const char *sn, const LogRow &start, uint32_t trip, int tz_min, char *out,
                    size_t n);

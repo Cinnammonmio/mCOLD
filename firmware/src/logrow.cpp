@@ -254,21 +254,14 @@ void row_csv(const LogRow &r, uint32_t trip, uint32_t seq, const char *sn, const
 
 void row_file_name(const char *sn, const LogRow &start, uint32_t trip, int tz_min, char *out,
                    size_t n) {
-  // The last two dash-separated groups of the SN: mCDV1-L0169-1069-001 -> 1069-001.
-  const char *tail = sn ? sn : "";
-  const char *last = strrchr(tail, '-');
-  if (last) {
-    const char *p = last;
-    while (p > tail && *(p - 1) != '-') p--;
-    tail = p > tail ? p : tail;
-  }
+  const char *id = sn ? sn : "";
   if (start.time_q && start.utc) {
     const time_t local = (time_t)start.utc + tz_min * 60;
     struct tm tm;
     gmtime_r(&local, &tm);
-    snprintf(out, n, "TRIP_%s_%02d%02d%02d%02d%02d.csv", tail, tm.tm_year % 100, tm.tm_mon + 1,
+    snprintf(out, n, "TRIP_%s_%02d%02d%02d%02d%02d.csv", id, tm.tm_year % 100, tm.tm_mon + 1,
              tm.tm_mday, tm.tm_hour, tm.tm_min);
   } else {
-    snprintf(out, n, "TRIP_%s_%lu.csv", tail, (unsigned long)trip);
+    snprintf(out, n, "TRIP_%s_%lu.csv", id, (unsigned long)trip);
   }
 }

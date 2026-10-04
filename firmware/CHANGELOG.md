@@ -73,7 +73,8 @@ P7, power: in progress.
   temp, tempmin, tempmax, alarm, timeok, gnssstate, latitude, longitude,
   motion, battery, internet, detail`. The server gets those columns as
   JSON (no more base64), `trip csv` prints the trip as the CSV it will be,
-  named `TRIP_<SN tail>_<YYMMDDhhmm>.csv`. New rows: `USB_IN`/`USB_OUT`;
+  named `TRIP_<SN>_<YYMMDDhhmm>.csv` (the whole SN, decided later the
+  same day: a second short code would only confuse people). New rows: `USB_IN`/`USB_OUT`;
   ordinary motion is a count, not an event; the door is gone. Trips in
   the old format stay in the log but are not uploaded. 0.7.0-dev.3.
 
