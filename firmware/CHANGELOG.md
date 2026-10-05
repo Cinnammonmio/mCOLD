@@ -38,6 +38,21 @@ To cut a release:
 
 P7, power: in progress.
 
+- **F2: the USB port is a serial port and a drive at once.** With USB
+  power, TinyUSB (vendored `components/esp_tinyusb`, its storage glue
+  left out) shows the PC the console on a new COM port and a read-only
+  FAT16 drive labelled `MC1L0169001` with `DEVICE.TXT`; the drive is
+  generated on request, nothing is written. `usb_drive` (0/1, settable
+  from the server) turns it off -- the way back if it ever misbehaves.
+  Flashing: `flash` hands the port back and restarts into download mode;
+  `tools/usb_flash.py` does the whole round. Found on the way: TinyUSB
+  routes the internal USB PHY with RTC_CNTL bits a software reset keeps,
+  so the ROM came up on USB-OTG, where esptool cannot reset it, and the
+  box sat in download mode until the cable was pulled. Every boot and
+  `flash` now give the PHY back to the USB-Serial-JTAG: checked, `flash`
+  -> COM7 -> write -> RTS reset -> the firmware with its drive again.
+  0.7.0-dev.12.
+
 - **A hung task restarts the box** (decided 2026-10-05): the supervisor
   restarts after any watched job (now including the uplink, which takes
   OTA) has not run for 5 minutes, notes which in NVS and says so at the

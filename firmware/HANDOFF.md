@@ -128,6 +128,7 @@ and nowhere else.
 | `uplink.*` | MQTT: record batches out, application ACKs in (PROTOCOL.md section 6) |
 | `logrow.*` | the row (record.h) as the table everyone sees: the server's JSON, the CSV, the trip's file name |
 | `settings.*` | the settings document from the app (APPLY_CONFIG) and the server (MQTT config topic): which keys, Wi-Fi with DHCP or a fixed address, OTA base; the broker is the console's |
+| `usbdrive.*` | USB power: TinyUSB serial console + read-only virtual FAT16 drive (DEVICE.TXT; CSV in F3); `flash` hands the port back |
 | `ota.*` | firmware updates: file name from the server, download, checks, rollback (PROTOCOL.md section 6) |
 | `main.cpp` | 9 tasks + supervisor; console: `help` lists the commands |
 
@@ -420,6 +421,19 @@ So `main.cpp` ignores motion events while the buzzer sounds and for
 that, every alarm beep would log itself as a shock. A real knock inside
 that window is lost too. P3 should know this when it sets shock alarms.
 
+### TinyUSB moves the USB PHY with bits a reset keeps
+
+On the S3, starting the OTG controller (TinyUSB) sets
+`RTC_CNTL_USB_CONF.sw_hw_usb_phy_sel` and `sw_usb_phy_sel`, which route the
+internal PHY away from the USB-Serial-JTAG. They are RTC registers: a
+software reset keeps them. So `flash` brought the ROM's download mode up
+on USB-OTG (VID 303A PID 0009), where esptool's RTS "reset" does nothing
+and, once, left the port hung -- the box sat in download mode on battery
+until the cable was pulled (2026-10-05). `usbdrive_phy_to_usj()` clears
+both bits first thing at every boot and in `flash`; the ROM then uses the
+USB-Serial-JTAG (PID 1001, COM7) as always. `tools/usb_flash.py` still
+handles the OTG case (RTC watchdog reset) for older firmware.
+
 ### PlatformIO does not sign: tools/sign_app.py does
 
 `idf.py` pads (`--secure-pad-v2`) and signs the app when signed apps are
@@ -571,13 +585,12 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
   rolls back, and a task that hangs for 5 minutes makes the supervisor
   restart the box (0.7.0-dev.9, checked with `hang`). Test the OTA
   rollback (`ota rollback-test`) before relying on it.
-- **USB drive (F2-F4, after 2026-10-05).** F1 is done (label
-  `MC1L0169001`, SN pattern checked) and `flash` works. Next: TinyUSB
-  composite (CDC console + MSC) -- the port stops being USB-Serial-JTAG,
-  so `pio run -t upload` needs `flash` typed first; this board has **no
-  BOOT button**, and OTA is the way back if that path ever fails. Then F3
-  (CSV files generated on read, read-only, full-SN names) and F4
-  (Windows).
+- **USB drive: F1 and F2 done (0.7.0-dev.12).** With USB power the port
+  is TinyUSB's: console on a new COM port (COM8 here), drive
+  `MC1L0169001`. To flash over USB use `python tools/usb_flash.py` (or
+  type `flash`, then `pio run -t upload --upload-port COM7`). Next: F3,
+  the trips as CSV files on the drive (generated on read, full-SN names,
+  long file names), and F4, Windows.
 
 - **T− grounded at the MAX6675** (hand-soldered 2026-10-03). Probe-fault
   detection not yet tested; the panel showed `--` that evening with the

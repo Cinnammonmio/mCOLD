@@ -15,3 +15,6 @@ secrets.ini
 # The OTA signing key (tools/sign_app.py) and anything beside it.
 keys/
 *.key
+
+# Fetched from the ESP Component Registry at build time (src/idf_component.yml).
+managed_components/

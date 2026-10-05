@@ -53,6 +53,7 @@
 #include "auth.h"
 #include "net.h"
 #include "uplink.h"
+#include "usbdrive.h"
 #include "gnss.h"
 #include "health.h"
 #include "logrow.h"
@@ -1633,6 +1634,7 @@ void run_command(char *line) {
     printf("  into download mode: flash now (pio run -t upload), or press reset to come back\n");
     fflush(stdout);
     vTaskDelay(pdMS_TO_TICKS(100));
+    usbdrive_stop();      // the port back to the USB-Serial-JTAG first
     REG_WRITE(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
     esp_restart();
   } else if (!strcmp(line, "reboot")) {
@@ -1679,9 +1681,29 @@ void task_console(void *) {
   int n = 0;
   char prev = 0;
   uint8_t c;
+  uint32_t usb_look = 0;
   for (;;) {
     beat(Job::Console);
-    while (usb_serial_jtag_read_bytes(&c, 1, pdMS_TO_TICKS(20)) == 1) {
+    // USB power: the port becomes the drive and this console's serial
+    // port (usbdrive.h) -- at boot, or when the cable goes in later.
+    if (now_ms() - usb_look > 1000) {
+      usb_look = now_ms();
+      if (usbdrive_active() && !config().usb_drive) {
+        // Turned off (the way back if the drive ever misbehaved): a clean
+        // restart, so the port comes up as the USB-Serial-JTAG again.
+        printf("[usb] usb_drive 0: restarting with the port as before\n");
+        fflush(stdout);
+        vTaskDelay(pdMS_TO_TICKS(2000));    // the settings report gets out first
+        usbdrive_stop();
+        esp_restart();
+      }
+      if (!usbdrive_active() && pm_external_power() && config().usb_drive) {
+        char sn[SN_LEN];
+        device_sn(sn, sizeof(sn));
+        usbdrive_start(sn);
+      }
+    }
+    while (usbdrive_console_read(&c, 20)) {
       pm_hold_until(mono_ms() + CONSOLE_HOLD_MS);
       if (c == '\n' && prev == '\r') { prev = (char)c; continue; }
       prev = (char)c;
@@ -1762,6 +1784,8 @@ void task_supervisor(void *) {
 }  // namespace
 
 extern "C" void app_main(void) {
+  // The port is the USB-Serial-JTAG's until usbdrive takes it (usbdrive.h).
+  usbdrive_phy_to_usj();
   usb_serial_jtag_driver_config_t ucfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
   usb_serial_jtag_driver_install(&ucfg);
   // Before any pin is touched: why the chip woke, and the pins held

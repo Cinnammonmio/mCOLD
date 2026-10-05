@@ -20,8 +20,11 @@ namespace {
 const char *const REMOTE[] = {
     "sample_period_s", "upload_period_s", "gnss_period_s",  "idle_wake_s",
     "tz_offset_min",   "led_front_pct",   "led_bright_pct", "led_status_s",
-    "buzzer_enabled",  "accel_wake_ths",  "temp_adj_c100",
+    "buzzer_enabled",  "accel_wake_ths",  "temp_adj_c100",  "usb_drive",
 };
+// usb_drive is here as the way back: if the drive ever made the port
+// unusable, the server can turn it off and the console returns on the
+// USB-Serial-JTAG, where esptool flashes.
 // The factory calibration (cal_*) is the console's: the user's correction
 // is temp_adj_c100, as eTEMP has it (decided 2026-10-05).
 
