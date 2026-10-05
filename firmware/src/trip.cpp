@@ -148,10 +148,15 @@ LogRow snapshot(uint8_t event, int32_t detail) {
   const bool fresh = g_temp_at && t - g_temp_at <= 60000 && g_temp_st == TempStatus::Ok;
   r.temp_c100 = fresh ? (int16_t)lroundf(calibrated(g_temp_c) * 100.0f) : I16_NONE;
   r.alarms = (uint8_t)g_alarms;
+  // gnss_last_fix() is true once there has been a fix; its `valid` is the
+  // latest sentence's, false as soon as the sky is lost, while the
+  // position and at_ms stay those of the last real fix. Requiring `valid`
+  // here gave null indoors right after a fix (box 002, 2026-10-05): the
+  // last known position goes in, marked "last".
   GnssFix f;
-  if (gnss_last_fix(&f) && f.valid) {
+  if (gnss_last_fix(&f)) {
     const uint32_t age = f.at_ms ? t - f.at_ms : UINT32_MAX;
-    r.gnss = age <= (uint32_t)config().sample_period_s * 1000 ? GNSS_FIX : GNSS_LAST;
+    r.gnss = f.valid && age <= (uint32_t)config().sample_period_s * 1000 ? GNSS_FIX : GNSS_LAST;
     r.lat_e7 = (int32_t)llround(f.lat_deg * 1e7);
     r.lon_e7 = (int32_t)llround(f.lon_deg * 1e7);
   }

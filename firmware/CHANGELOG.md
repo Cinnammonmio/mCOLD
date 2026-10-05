@@ -38,6 +38,14 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Rows keep the last known position.** After a fix, the module's next
+  sentence without one marks the fix invalid but keeps its position; rows
+  required a valid fix and went out with null latitude/longitude and
+  gnssstate none, indoors, right after a fix (box 002, trip 1). They now
+  carry the last fix, `fix` while it is current, `last` after; null only
+  before the first fix since boot. Checked: trip 2 on box 002, every row
+  with a position. 0.7.0-dev.22.
+
 - **Every box starts with the broker** (decided 2026-10-05). The login
   lives in `secrets.ini` (gitignored); `tools/secrets_gen.py` writes it
   into `src/secrets_gen.h` (gitignored, always written, empty without
