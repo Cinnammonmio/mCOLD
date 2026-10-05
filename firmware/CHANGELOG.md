@@ -38,6 +38,13 @@ To cut a release:
 
 P7, power: in progress.
 
+- **F4: the drive checked with Windows.** Explorer and Excel open the
+  files; unplug, plug in and eject are clean; plugged in on battery and
+  with a trip running, the drive is there in 5 s. A 524-row trip (eight
+  checkpoints), read first at jumps into the middle and the end, then
+  whole: the same bytes as `trip csv`. `trip fill N` (console, test
+  only) writes N sample rows at once for such tests. 0.7.0-dev.17.
+
 - **DEVICE.TXT names the running trip**: its number, rows up to the
   snapshot and file name. `tasks` now prints the stack each task has
   never used: after a snapshot the console had 612 B left of 6 KB and

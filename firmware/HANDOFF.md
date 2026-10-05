@@ -596,13 +596,14 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
   rolls back, and a task that hangs for 5 minutes makes the supervisor
   restart the box (0.7.0-dev.9, checked with `hang`). Test the OTA
   rollback (`ota rollback-test`) before relying on it.
-- **USB drive: F1-F3 done (0.7.0-dev.14).** With USB power the port
+- **USB drive: F1-F4 done (0.7.0-dev.17).** With USB power the port
   is TinyUSB's: console on a new COM port (COM8 here), drive
   `MC1L0169001` with `DEVICE.TXT` and one CSV per row-format trip. To
   flash over USB use `python tools/usb_flash.py` (or type `flash`, then
-  `pio run -t upload --upload-port COM7`). Next: F4, Windows (Explorer,
-  Excel, a trip over 64 rows -- the checkpoint path has only run on
-  small trips --, replug, eject, a running trip, battery plug-in).
+  `pio run -t upload --upload-port COM7`). Checked with Windows,
+  including a 524-row trip read at jumps (`trip fill N` makes one in
+  seconds). The USB_IN row lands just after the snapshot, so a running
+  trip's file ends one row before it.
 
 - **T− grounded at the MAX6675** (hand-soldered 2026-10-03). Probe-fault
   detection not yet tested; the panel showed `--` that evening with the

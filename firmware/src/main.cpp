@@ -1276,6 +1276,22 @@ void trip_command(const char *args) {
     trip_dump(atoi(args + 4));
   } else if (!strncmp(args, "csv", 3)) {
     trip_csv((uint32_t)strtoul(args + 3, nullptr, 0));
+  } else if (!strncmp(args, "fill ", 5)) {
+    // Test only: N sample rows now, all with this moment's readings, so a
+    // long trip (the drive's 64-row checkpoints) takes seconds, not hours.
+    const int n = atoi(args + 5);
+    if (n < 1 || n > 500) {
+      printf("  trip fill N (1..500): N sample rows now, for testing\n");
+      return;
+    }
+    for (int i = 0; i < n; i++) {
+      trip_sample();
+      if (i % 50 == 49) beat(Job::Console);
+    }
+    TripStatus st;
+    trip_status(&st);
+    printf("  %d sample rows written; %lu samples in this trip\n", n,
+           (unsigned long)st.samples);
   } else {
     printf("  trip | trip start LOW HIGH | trip stop | trip ack | trip dump [N] | trip csv [ID]\n");
   }
