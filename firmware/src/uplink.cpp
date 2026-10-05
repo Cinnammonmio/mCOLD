@@ -23,6 +23,7 @@
 #include "timekeep.h"
 #include "rpc.h"
 #include "trip.h"
+#include "secrets_gen.h"   // generated, gitignored: tools/secrets_gen.py
 
 namespace {
 
@@ -119,11 +120,25 @@ void ack_put(uint32_t trip, uint32_t v) {
 
 // ---- server and login, from NVS ------------------------------------------
 
+// The broker a box uses until `mqtt set` gives it one of its own: from
+// secrets.ini at build time (tools/secrets_gen.py), never from git.
+void load_default(void) {
+#ifdef MQTT_DEFAULT_HOST
+  snprintf(g_host, sizeof(g_host), "%s", MQTT_DEFAULT_HOST);
+  snprintf(g_user, sizeof(g_user), "%s", MQTT_DEFAULT_USER);
+  snprintf(g_pass, sizeof(g_pass), "%s", MQTT_DEFAULT_PASS);
+  g_port = MQTT_DEFAULT_PORT;
+#endif
+}
+
 void load(void) {
   nvs_handle_t h;
   g_host[0] = g_user[0] = g_pass[0] = 0;
   g_port = 1883;
-  if (nvs_open("mqtt", NVS_READONLY, &h) != ESP_OK) return;
+  if (nvs_open("mqtt", NVS_READONLY, &h) != ESP_OK) {
+    load_default();
+    return;
+  }
   size_t n = sizeof(g_host);
   if (nvs_get_str(h, "host", g_host, &n) != ESP_OK) g_host[0] = 0;
   n = sizeof(g_user);
@@ -133,6 +148,7 @@ void load(void) {
   uint16_t p;
   if (nvs_get_u16(h, "port", &p) == ESP_OK) g_port = p;
   nvs_close(h);
+  if (!g_host[0]) load_default();
 }
 
 // ---- small NVS helpers for the config report ------------------------------

@@ -38,6 +38,14 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Every box starts with the broker** (decided 2026-10-05). The login
+  lives in `secrets.ini` (gitignored); `tools/secrets_gen.py` writes it
+  into `src/secrets_gen.h` (gitignored, always written, empty without
+  secrets.ini, so the build tracks it). A box with no `mqtt set` of its
+  own uses it; boxes that have one keep theirs. Every image built this
+  way carries the login, OTA files included. Box 002 reached the broker
+  with no setup but Wi-Fi. 0.7.0-dev.21.
+
 - **SHT-31 instead of the thermocouple, found by itself.** Box 002 has an
   SHT-31 on the I2C bus (0x44, 3V3_MAIN) in place of the type K probe.
   At the cold boot the firmware looks for it and reads it if it answers,

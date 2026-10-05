@@ -446,6 +446,13 @@ both bits first thing at every boot and in `flash`; the ROM then uses the
 USB-Serial-JTAG (PID 1001, COM7) as always. `tools/usb_flash.py` still
 handles the OTG case (RTC watchdog reset) for older firmware.
 
+### The default broker comes from secrets.ini
+
+`secrets.ini` (gitignored, shape in `secrets.example.ini`) holds the broker
+login every box starts with; without it a build has no default broker and
+boxes need `mqtt set`. A fresh checkout must copy it in before building
+images for the field.
+
 ### PlatformIO does not sign: tools/sign_app.py does
 
 `idf.py` pads (`--secure-pad-v2`) and signs the app when signed apps are
