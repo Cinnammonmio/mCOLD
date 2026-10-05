@@ -102,6 +102,7 @@ Bench-only (power measurement and tests):
 | `log write N` · `log read` · `log erase` | Bench trip records |
 | `ack {json}` | Inject a server ACK |
 | `cfgdoc {json}` | Inject a server settings document (`docs/device-settings.md`) |
+| `trip fill N` | Test only: N sample rows at once (a long trip for the USB drive) |
 | `ota rollback-test` | The next new image will not confirm itself |
 | `config set usb_drive 0` | Turn the USB drive off: the box restarts with the port as before |
 | (USB drive) | `DEVICE.TXT` + one `TRIP_<SN>_<YYMMDDhhmm>.csv` per trip, read-only, a snapshot from when the cable went in |
