@@ -82,7 +82,7 @@ even on USB — set it back to 0 first.
 | `wifi ip SSID dhcp` · `wifi ip SSID IP GATEWAY SUBNET [DNS]` | A network's address: DHCP or fixed |
 | `mqtt set HOST PORT [USER PASS]` | Broker and login (the console is the only way to set it) |
 | `ota` · `ota base URL` · `ota FILE\|URL [force]` | Firmware update state, file server, install now |
-| `flash` | Restart into download mode, to flash over USB |
+| `flash` | Restart into download mode, to flash over USB (or run `python tools/usb_flash.py`) |
 | `ble [on\|off]` | BLE status; `on` advertises 60 s |
 | `rpc {json}` | Any PROTOCOL.md request, authorized |
 | `sleep` · `sleep clear` | Power manager state, wake record |
@@ -103,6 +103,8 @@ Bench-only (power measurement and tests):
 | `ack {json}` | Inject a server ACK |
 | `cfgdoc {json}` | Inject a server settings document (`docs/device-settings.md`) |
 | `ota rollback-test` | The next new image will not confirm itself |
+| `config set usb_drive 0` | Turn the USB drive off: the box restarts with the port as before |
+| `hang` | Hang the console task: the supervisor restarts the box after 5 min |
 
 ## 5. Settings
 
