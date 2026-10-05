@@ -128,7 +128,7 @@ and nowhere else.
 | `uplink.*` | MQTT: record batches out, application ACKs in (PROTOCOL.md section 6) |
 | `logrow.*` | the row (record.h) as the table everyone sees: the server's JSON, the CSV, the trip's file name |
 | `settings.*` | the settings document from the app (APPLY_CONFIG) and the server (MQTT config topic): which keys, Wi-Fi with DHCP or a fixed address, OTA base; the broker is the console's |
-| `usbdrive.*` | USB power: TinyUSB serial console + read-only virtual FAT16 drive (DEVICE.TXT; CSV in F3); `flash` hands the port back |
+| `usbdrive.*` | USB power: TinyUSB serial console + read-only virtual FAT16 drive (DEVICE.TXT + trip CSVs, built on read); `flash` hands the port back |
 | `ota.*` | firmware updates: file name from the server, download, checks, rollback (PROTOCOL.md section 6) |
 | `main.cpp` | 9 tasks + supervisor; console: `help` lists the commands |
 
@@ -421,6 +421,17 @@ So `main.cpp` ignores motion events while the buzzer sounds and for
 that, every alarm beep would log itself as a shock. A real knock inside
 that window is lost too. P3 should know this when it sets shock alarms.
 
+### Nothing heavy in a TinyUSB callback
+
+`tud_mount_cb` and the MSC callbacks run on TinyUSB's own task
+(`CONFIG_TINYUSB_TASK_STACK_SIZE`, 8 KB since dev.14). In dev.13 the
+snapshot (the whole log walked, CSV sizes counted) ran in `tud_mount_cb`
+on 4 KB: the box hung at every mount, gone from USB, so nothing could be
+flashed over USB. Callbacks now set a flag; the console task does the
+work. The way back, without SW1: pull the cable (no USB power, no
+drive), cycle the power switch, and let the box take a retained OTA at
+its check-in.
+
 ### TinyUSB moves the USB PHY with bits a reset keeps
 
 On the S3, starting the OTG controller (TinyUSB) sets
@@ -585,12 +596,13 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
   rolls back, and a task that hangs for 5 minutes makes the supervisor
   restart the box (0.7.0-dev.9, checked with `hang`). Test the OTA
   rollback (`ota rollback-test`) before relying on it.
-- **USB drive: F1 and F2 done (0.7.0-dev.12).** With USB power the port
+- **USB drive: F1-F3 done (0.7.0-dev.14).** With USB power the port
   is TinyUSB's: console on a new COM port (COM8 here), drive
-  `MC1L0169001`. To flash over USB use `python tools/usb_flash.py` (or
-  type `flash`, then `pio run -t upload --upload-port COM7`). Next: F3,
-  the trips as CSV files on the drive (generated on read, full-SN names,
-  long file names), and F4, Windows.
+  `MC1L0169001` with `DEVICE.TXT` and one CSV per row-format trip. To
+  flash over USB use `python tools/usb_flash.py` (or type `flash`, then
+  `pio run -t upload --upload-port COM7`). Next: F4, Windows (Explorer,
+  Excel, a trip over 64 rows -- the checkpoint path has only run on
+  small trips --, replug, eject, a running trip, battery plug-in).
 
 - **T− grounded at the MAX6675** (hand-soldered 2026-10-03). Probe-fault
   detection not yet tested; the panel showed `--` that evening with the

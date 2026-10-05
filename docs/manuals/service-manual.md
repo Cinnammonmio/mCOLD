@@ -104,6 +104,7 @@ Bench-only (power measurement and tests):
 | `cfgdoc {json}` | Inject a server settings document (`docs/device-settings.md`) |
 | `ota rollback-test` | The next new image will not confirm itself |
 | `config set usb_drive 0` | Turn the USB drive off: the box restarts with the port as before |
+| (USB drive) | `DEVICE.TXT` + one `TRIP_<SN>_<YYMMDDhhmm>.csv` per trip, read-only, a snapshot from when the cable went in |
 | `hang` | Hang the console task: the supervisor restarts the box after 5 min |
 
 ## 5. Settings
@@ -231,7 +232,7 @@ ALARM ACK, TIME SET, LOSS, POWER OFF), START, STOP.
 - Battery: cell datasheet, charge current and limits, fuel-gauge model, runtime
 - Root cause of the ~130 mA awake current
 - Charger / PD policy, HUSB238A register map, PD 9 V
-- USB drive with CSV (phases F2-F4), SD archive (deferred)
+- USB drive: Windows checks (phase F4); SD archive (deferred)
 - Dock (6 boxes), factory provisioning tool, production logging, secure boot / flash encryption (P8)
 - Temperature calibration procedure and accuracy
 - Four-colour display, shock alarm, door sensor

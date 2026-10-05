@@ -38,6 +38,23 @@ To cut a release:
 
 P7, power: in progress.
 
+- **F3: the trips as CSV files on the USB drive.** Each trip in the row
+  format is `TRIP_<SN>_<YYMMDDhhmm>.csv` (long file names), the same bytes
+  as `trip csv` (CRLF), built while the PC reads: checkpoints every 64
+  rows let any sector be produced without reading the trip from the
+  start. `DEVICE.TXT` says when the snapshot was taken, how many trips
+  are shown, whether one is running and how many rows are not sent. The
+  snapshot is taken when the PC mounts the drive; unplug and plug in for
+  a newer one. Checked: both trips (7 and 22 rows) match `trip csv`
+  byte for byte. 0.7.0-dev.14.
+- **dev.13 hung the box on every USB mount**, and it was only got back by
+  OTA: the snapshot ran inside `tud_mount_cb`, on TinyUSB's 4 KB task, and
+  overflowed it. With the port gone, the cable pulled and the power
+  switch cycled, the box booted on battery (no drive), checked in and
+  took 0.7.0-dev.14 from the retained firmware message. In dev.14 the
+  callback only flags the snapshot, the console task builds it, and the
+  TinyUSB task has 8 KB.
+
 - **F2: the USB port is a serial port and a drive at once.** With USB
   power, TinyUSB (vendored `components/esp_tinyusb`, its storage glue
   left out) shows the PC the console on a new COM port and a read-only
