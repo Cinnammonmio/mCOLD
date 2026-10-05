@@ -77,7 +77,7 @@ namespace {
 // different fault from a device that will not answer, and the two want
 // different responses -- so they are counted separately rather than
 // collapsed into one "something is wrong".
-enum class Job : uint8_t { Sensors = 0, Power, Gnss, Nfc, Trip, Console, Count };
+enum class Job : uint8_t { Sensors = 0, Power, Gnss, Nfc, Trip, Console, Uplink, Count };
 
 struct Beat {
   volatile uint32_t count;
@@ -93,7 +93,17 @@ Beat g_beats[(int)Job::Count] = {
     {0, 0, 5000, "nfc"},
     {0, 0, 5000, "trip"},
     {0, 0, 5000, "console"},
+    {0, 0, 10000, "uplink"},      // counted by uplink.cpp (uplink_passes)
 };
+
+// A job stuck this long is not slow, it is hung: the box restarts
+// (decided 2026-10-05). A box in its case has SW1 out of reach and no
+// BOOT button, and only running firmware can take an OTA -- so a hang
+// must end in a restart, never in a wait for someone to press reset. A
+// running trip carries on after it (a POWER_ON row says so). Long
+// enough that no honest pass (a GNSS session, an OTA download, a panel
+// refresh) comes near it.
+const uint32_t HANG_RESTART_MS = 5 * 60000;
 
 inline void beat(Job j) { g_beats[(int)j].count = g_beats[(int)j].count + 1; }
 
@@ -1608,6 +1618,13 @@ void run_command(char *line) {
   else if (!strcmp(line, "log read")) log_bench_read();
   else if (!strcmp(line, "log erase")) {
     printf("  %s\n", log_err_name(flashlog_erase_trip(BENCH_TRIP)));
+  } else if (!strcmp(line, "hang")) {
+    // Bench: the console task stops answering, to watch the supervisor
+    // restart the box (HANG_RESTART_MS). Nothing else can be typed after.
+    printf("  hanging the console task; the supervisor restarts the box in %lu s\n",
+           (unsigned long)(HANG_RESTART_MS / 1000));
+    fflush(stdout);
+    for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
   } else if (!strcmp(line, "flash")) {
     // Into the ROM's download mode, for esptool: the way to flash once the
     // USB port is a drive and a serial port of our own, and this board has
@@ -1689,12 +1706,27 @@ void task_console(void *) {
 // ---- supervisor -------------------------------------------------------
 
 void task_supervisor(void *) {
+  {
+    // The restart before this one, if a hang caused it.
+    nvs_handle_t h;
+    char name[16];
+    size_t n = sizeof(name);
+    if (nvs_open("sys", NVS_READWRITE, &h) == ESP_OK) {
+      if (nvs_get_str(h, "hang", name, &n) == ESP_OK) {
+        printf("[supervisor] the last restart was a hang: %s\n", name);
+        nvs_erase_key(h, "hang");
+        nvs_commit(h);
+      }
+      nvs_close(h);
+    }
+  }
   uint32_t last[(int)Job::Count] = {0};
   for (int i = 0; i < (int)Job::Count; i++) g_beats[i].last_seen = now_ms();
 
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(5000));
     const uint32_t t = now_ms();
+    g_beats[(int)Job::Uplink].count = uplink_passes();
     for (int i = 0; i < (int)Job::Count; i++) {
       const uint32_t c = g_beats[i].count;
       if (c != last[i]) {
@@ -1707,6 +1739,21 @@ void task_supervisor(void *) {
         printf("[supervisor] %s has not run for %lu ms\n", g_beats[i].name,
                (unsigned long)stuck);
         fflush(stdout);
+      }
+      if (stuck > HANG_RESTART_MS) {
+        // Said at the next boot as well (NVS), since this console line is
+        // most likely read by nobody.
+        nvs_handle_t h;
+        if (nvs_open("sys", NVS_READWRITE, &h) == ESP_OK) {
+          nvs_set_str(h, "hang", g_beats[i].name);
+          nvs_commit(h);
+          nvs_close(h);
+        }
+        printf("[supervisor] %s hung for %lu s: restarting\n", g_beats[i].name,
+               (unsigned long)(stuck / 1000));
+        fflush(stdout);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        esp_restart();
       }
     }
   }

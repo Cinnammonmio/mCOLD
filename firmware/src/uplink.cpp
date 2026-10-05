@@ -623,10 +623,13 @@ void battery_pass(void) {
   if (t - g_ses.at >= SESSION_MAX_MS) end_session(false);
 }
 
+volatile uint32_t g_passes = 0;
+
 void task(void *) {
   TripStatus prev = {};
   uint32_t status_at = 0;
   for (;;) {
+    g_passes = g_passes + 1;
     // Quick while this wake is still deciding: the chip waits on it.
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(g_ses.on || !pm_is_done(Duty::Uplink) ? 100 : 1000));
     if (!pm_external_power()) {
@@ -800,6 +803,8 @@ void uplink_status(UplinkStatus *out) {
 }
 
 void uplink_inject_ack(const char *json) { on_ack(json, (int)strlen(json)); }
+
+uint32_t uplink_passes(void) { return g_passes; }
 
 void uplink_inject_config(const char *json) {
   char *d = strdup(json);

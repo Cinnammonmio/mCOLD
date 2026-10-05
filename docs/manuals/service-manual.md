@@ -103,6 +103,7 @@ Bench-only (power measurement and tests):
 | `ack {json}` | Inject a server ACK |
 | `cfgdoc {json}` | Inject a server settings document (`docs/device-settings.md`) |
 | `ota rollback-test` | The next new image will not confirm itself |
+| `hang` | Hang the console task: the supervisor restarts the box after 5 min |
 
 ## 5. Settings
 

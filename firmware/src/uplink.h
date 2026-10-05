@@ -95,5 +95,9 @@ bool uplink_mark_delivered(uint32_t trip, uint32_t *last_seq);
 // Hand an ACK in as though the server had sent it: for the bench, before
 // the server side exists. It goes through every check a real one does.
 void uplink_inject_ack(const char *json);
+
+// Passes of the uplink task, for the supervisor: the task that takes an
+// OTA must never hang unnoticed.
+uint32_t uplink_passes(void);
 // The same for a settings document on mcold/v1/<sn>/config.
 void uplink_inject_config(const char *json);

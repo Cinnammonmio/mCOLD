@@ -568,9 +568,8 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
   mode by `flash` comes back with `esptool.py --before no_reset --after
   hard_reset chip_id` over USB (checked). OTA can only help a box whose
   firmware is running: a crash reboots (panic -> reboot) and a bad image
-  rolls back, but **a task that hangs does not** -- the task watchdog
-  does not panic and the supervisor only prints. Make the supervisor
-  restart the box after a long stall (P8, proposed). Test the OTA
+  rolls back, and a task that hangs for 5 minutes makes the supervisor
+  restart the box (0.7.0-dev.9, checked with `hang`). Test the OTA
   rollback (`ota rollback-test`) before relying on it.
 - **USB drive (F2-F4, after 2026-10-05).** F1 is done (label
   `MC1L0169001`, SN pattern checked) and `flash` works. Next: TinyUSB

@@ -38,6 +38,14 @@ To cut a release:
 
 P7, power: in progress.
 
+- **A hung task restarts the box** (decided 2026-10-05): the supervisor
+  restarts after any watched job (now including the uplink, which takes
+  OTA) has not run for 5 minutes, notes which in NVS and says so at the
+  next boot. A box in its case has SW1 out of reach and no BOOT button,
+  and only running firmware can take an OTA. `hang` at the console proves
+  it: checked, the box came back by itself (boot count 217 -> 218).
+  0.7.0-dev.9.
+
 - **Wi-Fi with DHCP or a fixed address, a temperature adjustment, and no
   broker from outside** (decided 2026-10-05). Each known network has
   `dhcp` or `ip`/`gateway`/`subnet`/`dns`, as eTEMP has it -- in the
