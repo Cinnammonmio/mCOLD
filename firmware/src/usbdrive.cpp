@@ -432,6 +432,21 @@ void snapshot(void) {
   uplink_status(&us);
   TripStatus st;
   trip_status(&st);
+  // The running trip by number, file and rows, so nobody has to guess
+  // which file stops at the snapshot.
+  char running[160] = "no trip";
+  if (st.active) {
+    snprintf(running, sizeof(running), "trip %lu (not in the log yet)", (unsigned long)st.id);
+    for (int i = 0; i < g_nfiles; i++) {
+      const VFile &f = g_files[i];
+      if (f.csv < 0 || g_csv[f.csv].trip != st.id) continue;
+      snprintf(running, sizeof(running),
+               "trip %lu, %lu rows up to the snapshot\r\n"
+               "            %s",
+               (unsigned long)st.id, (unsigned long)(g_csv[f.csv].last + 1), f.lfn);
+      break;
+    }
+  }
   snprintf(g_device_txt, sizeof(g_device_txt),
            "mCOLD Foam V1\r\n"
            "SN          %s\r\n"
@@ -447,7 +462,7 @@ void snapshot(void) {
            "Trips recorded before firmware 0.7.0-dev.3 are not shown.\r\n",
            g_sn, esp_app_get_description()->version, g_label, when, trips, in_log,
            in_log > trips ? " (older format not shown)" : "",
-           st.active ? "a trip is running (its file ends at the snapshot)" : "no trip",
+           running,
            (unsigned long)us.records_pending);
   g_files[0].size = strlen(g_device_txt);
   build_root();

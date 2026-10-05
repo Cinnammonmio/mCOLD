@@ -742,7 +742,16 @@ void print_tasks(void) {
   printf("  free heap %u B, lowest ever %u B\n",
          (unsigned)esp_get_free_heap_size(),
          (unsigned)esp_get_minimum_free_heap_size());
-  printf("\n");
+  // The least stack each task has had left: the TinyUSB task overflowed
+  // its 4 KB once (0.7.0-dev.13), with no warning beforehand.
+  static const char *const STACKS[] = {"sensors", "power", "gnss", "nfc", "trip",
+                                       "console", "super", "uplink", "TinyUSB"};
+  printf("  stack never used:");
+  for (const char *n : STACKS) {
+    TaskHandle_t h = xTaskGetHandle(n);
+    if (h) printf(" %s %u", n, (unsigned)uxTaskGetStackHighWaterMark(h));
+  }
+  printf(" B\n\n");
   fflush(stdout);
 }
 
@@ -1863,8 +1872,8 @@ extern "C" void app_main(void) {
   struct Spawn { TaskFunction_t fn; const char *name; uint32_t stack; UBaseType_t prio; int core; };
   static const Spawn TASKS[] = {
       {task_sensors, "sensors", 4096, 5, 1}, {task_power, "power", 4096, 4, 1},
-      {task_gnss, "gnss", 4096, 3, 1},       {task_nfc, "nfc", 3072, 3, 0},
-      {task_trip, "trip", 4096, 4, 1},       {task_console, "console", 6144, 2, 0},
+      {task_gnss, "gnss", 4096, 3, 1},       {task_nfc, "nfc", 4096, 3, 0},
+      {task_trip, "trip", 4096, 4, 1},       {task_console, "console", 8192, 2, 0},
       {task_supervisor, "super", 3072, 6, 0},
   };
   for (const Spawn &t : TASKS) {

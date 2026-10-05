@@ -77,8 +77,11 @@ def main():
     otg = pid == OTG_ROM_PID
     print(f"ROM download mode on {port} ({'USB-OTG' if otg else 'USB-Serial-JTAG'})")
 
-    rc = esptool("--chip", "esp32s3", "-p", port, "--before", "no_reset", "--after", "no_reset",
-                 "write_flash", "0xd000", otadata, "0x20000", app)
+    # On the USB-Serial-JTAG esptool can reset the chip into the loader
+    # itself, and does: a write that died half way (2026-10-05, at 55 %)
+    # left a loader that no longer answered until it was reset like that.
+    rc = esptool("--chip", "esp32s3", "-p", port, "--before", "no_reset" if otg else "default_reset",
+                 "--after", "no_reset", "write_flash", "0xd000", otadata, "0x20000", app)
     if rc:
         sys.exit("write failed; the chip is still in download mode -- run this again")
 

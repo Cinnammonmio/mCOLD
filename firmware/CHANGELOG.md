@@ -38,6 +38,14 @@ To cut a release:
 
 P7, power: in progress.
 
+- **DEVICE.TXT names the running trip**: its number, rows up to the
+  snapshot and file name. `tasks` now prints the stack each task has
+  never used: after a snapshot the console had 612 B left of 6 KB and
+  the NFC task 876 B of 3 KB, so they get 8 KB and 4 KB (now 2.6 KB and
+  1.9 KB to spare). `tools/usb_flash.py` resets the chip into the loader
+  itself on the USB-Serial-JTAG: a write that died at 55 % left a loader
+  that answered nothing until then. 0.7.0-dev.16.
+
 - **F3: the trips as CSV files on the USB drive.** Each trip in the row
   format is `TRIP_<SN>_<YYMMDDhhmm>.csv` (long file names), the same bytes
   as `trip csv` (CRLF), built while the PC reads: checkpoints every 64
