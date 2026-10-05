@@ -129,6 +129,7 @@ and nowhere else.
 | `logrow.*` | the row (record.h) as the table everyone sees: the server's JSON, the CSV, the trip's file name |
 | `settings.*` | the settings document from the app (APPLY_CONFIG) and the server (MQTT config topic): which keys, Wi-Fi with DHCP or a fixed address, OTA base; the broker is the console's |
 | `usbdrive.*` | USB power: TinyUSB serial console + read-only virtual FAT16 drive (DEVICE.TXT + trip CSVs, built on read); `flash` hands the port back |
+| `temp.*` | temperature: MAX6675 type K, or an SHT-31 at 0x44 if one answers at the cold boot (box 002) |
 | `ota.*` | firmware updates: file name from the server, download, checks, rollback (PROTOCOL.md section 6) |
 | `main.cpp` | 9 tasks + supervisor; console: `help` lists the commands |
 

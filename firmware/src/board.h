@@ -77,3 +77,6 @@
 #define ADDR_ST25_SYS  0x57   // the same chip, not an eighth device
 #define ADDR_PCF8523   0x68
 #define ADDR_BQ25601   0x6B
+// Fitted instead of the thermocouple on some boxes (SN ...-002, 2026-10-05),
+// on 3V3_MAIN and this bus; found at boot (temp.h).
+#define ADDR_SHT31     0x44

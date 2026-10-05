@@ -38,6 +38,14 @@ To cut a release:
 
 P7, power: in progress.
 
+- **SHT-31 instead of the thermocouple, found by itself.** Box 002 has an
+  SHT-31 on the I2C bus (0x44, 3V3_MAIN) in place of the type K probe.
+  At the cold boot the firmware looks for it and reads it if it answers,
+  the MAX6675 if not: one firmware for both, the choice kept through deep
+  sleep. Temperature only, no humidity. `health` and `DEVICE.TXT` name
+  the sensor. New bench command `i2c`: line levels and every address that
+  answers (box 002: 18 2D 36 40 42 44 53 57 68 6B). 0.7.0-dev.19.
+
 - **F4: the drive checked with Windows.** Explorer and Excel open the
   files; unplug, plug in and eject are clean; plugged in on battery and
   with a trip running, the drive is there in 5 s. A 524-row trip (eight

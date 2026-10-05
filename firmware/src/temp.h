@@ -1,3 +1,8 @@
+// The temperature: a type K thermocouple through the MAX6675, or, on a box
+// built with one instead (SN ...-002, 2026-10-05), an SHT-31 on the I2C
+// bus. Which one is found at the cold boot -- an SHT-31 answering at 0x44
+// wins -- so one firmware serves both. Humidity is not read.
+//
 // MAX6675 thermocouple front end.
 //
 // The product's whole reason to exist is this number, so the driver's
@@ -37,6 +42,10 @@ enum class TempStatus : uint8_t {
 TempStatus temp_sample(float *celsius);
 
 const char *temp_status_name(TempStatus s);
+
+enum class TempSensor : uint8_t { Unknown = 0, Max6675, Sht31 };
+TempSensor temp_sensor(void);
+const char *temp_sensor_name(TempSensor s);
 
 // MAX6675 conversion time is quoted at up to 220 ms. Waiting 250
 // twice -- once to flush the stale frame, once for a fresh one -- is

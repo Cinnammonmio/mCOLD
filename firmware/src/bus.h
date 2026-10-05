@@ -42,6 +42,12 @@ BusErr i2c_write(Dev dev, uint8_t addr, const uint8_t *data, size_t n);
 BusErr i2c_read_reg(Dev dev, uint8_t addr, uint8_t reg, uint8_t *buf, size_t n);
 BusErr i2c_write_reg(Dev dev, uint8_t addr, uint8_t reg, uint8_t v);
 BusErr i2c_probe(Dev dev, uint8_t addr);
+// A plain read, no register pointer first (the SHT-31's result).
+BusErr i2c_read(Dev dev, uint8_t addr, uint8_t *buf, size_t n);
+
+// Bench: every address that answers, and the line levels before the
+// scan (1 = high, as idle should be). -1 if the bus could not be had.
+int i2c_scan(uint8_t *found, int max, int *sda, int *scl);
 
 // Devices with 16-bit internal addressing -- the NFC tag's EEPROM is
 // addressed this way, and treating it like an 8-bit register map reads

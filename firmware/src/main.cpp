@@ -666,10 +666,10 @@ void print_health(void) {
            (unsigned long)h->fail_count, age);
   }
   if (g_temp_valid) {
-    printf("\n  temperature  %.2f C\n", g_temp_c);
+    printf("\n  temperature  %.2f C  (%s)\n", g_temp_c, temp_sensor_name(temp_sensor()));
   } else {
-    printf("\n  temperature  -- (%s)\n",
-           temp_status_name(g_temp_status));
+    printf("\n  temperature  -- (%s; %s)\n", temp_status_name(g_temp_status),
+           temp_sensor_name(temp_sensor()));
   }
   struct tm tmv;
   if (rtc_get(&tmv)) {
@@ -1503,6 +1503,21 @@ void run_command(char *line) {
     // stays off until USB power is plugged in (unplug and plug back).
     printf("  switching off as if the battery were empty\n");
     battery_off(g_power.cell_valid ? g_power.cell_volts : 0.0f);
+  }
+  else if (!strcmp(line, "i2c")) {
+    // Bench: what is on the bus. Expected: 18 36 40 42 53 57 68 6B.
+    uint8_t found[32];
+    int sda = 0, scl = 0;
+    const int n = i2c_scan(found, 32, &sda, &scl);
+    if (n < 0) {
+      printf("  bus busy\n");
+    } else {
+      printf("  SDA (GPIO%d) %s, SCL (GPIO%d) %s\n  answered:", PIN_SDA,
+             sda ? "high" : "LOW -- held down", PIN_SCL, scl ? "high" : "LOW -- held down");
+      for (int i = 0; i < n; i++) printf(" %02X", found[i]);
+      printf("%s\n  expected: 18 accel, 36 fuel, 40 current, 42 pd, 53/57 nfc, 68 rtc, 6B charger\n",
+             n ? "" : " nothing");
+    }
   }
   else if (!strncmp(line, "pin ", 4)) {
     // Bench: one pin taken over as a plain GPIO, for finding what a pin

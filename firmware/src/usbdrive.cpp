@@ -18,6 +18,7 @@
 #include "power.h"
 #include "timekeep.h"
 #include "tinyusb.h"
+#include "temp.h"
 #include "trip.h"
 #include "tusb_cdc_acm.h"
 #include "tusb_console.h"
@@ -452,6 +453,7 @@ void snapshot(void) {
            "SN          %s\r\n"
            "Firmware    %s\r\n"
            "Drive       %s (read-only)\r\n"
+           "Sensor      %s\r\n"
            "Snapshot    %s\r\n"
            "Trips       %d as CSV files, of %d in the log%s\r\n"
            "Running     %s\r\n"
@@ -460,7 +462,8 @@ void snapshot(void) {
            "The files are a snapshot taken when the cable went in: a trip still\r\n"
            "running stops at that moment. Unplug and plug in again for a newer one.\r\n"
            "Trips recorded before firmware 0.7.0-dev.3 are not shown.\r\n",
-           g_sn, esp_app_get_description()->version, g_label, when, trips, in_log,
+           g_sn, esp_app_get_description()->version, g_label,
+           temp_sensor_name(temp_sensor()), when, trips, in_log,
            in_log > trips ? " (older format not shown)" : "",
            running,
            (unsigned long)us.records_pending);
