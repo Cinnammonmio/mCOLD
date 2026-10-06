@@ -564,6 +564,21 @@ void scr_set_insets(int top, int bottom, int left, int right) {
   layout();
 }
 
+void scr_rxlog(Canvas &c, const char *clock, const char *const *lines, int n) {
+  begin(c);
+  header(c, "FROM THE PHONE", clock);
+  // 14 px a line in the 11 px face: seven lines under the bar.
+  const int step = 14;
+  int y = BAR + 13;
+  for (int i = 0; i < n && y <= H - 2; i++, y += step) {
+    // Cut to the width, should a line of wide letters overrun it.
+    char s[64];
+    snprintf(s, sizeof(s), "%s", lines[i]);
+    for (size_t k = strlen(s); k && width(s, HEAD) > EDGE_R - M + 4; k--) s[k - 1] = 0;
+    text(c, M - 4, y, s, HEAD, Ink::Black);
+  }
+}
+
 void scr_calibrate(Canvas &c) {
   c.ox = c.oy = 0;
   c.clear();

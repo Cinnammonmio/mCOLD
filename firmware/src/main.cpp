@@ -68,6 +68,7 @@
 #include "soc.h"
 #include "temp.h"
 #include "timekeep.h"
+#include "rxlog.h"
 
 namespace {
 
@@ -568,6 +569,7 @@ void task_nfc(void *) {
         fflush(stdout);
         // "This is the box you tapped."
         indicate_cue(Cue::NfcTap);
+        rxlog_note("NFC tap");
         // The tap is how a phone asks for the box: open BLE for it.
         ble_window(BLE_TAP_WINDOW_MS);
       }
@@ -857,7 +859,8 @@ void print_tasks(void) {
   // The least stack each task has had left: the TinyUSB task overflowed
   // its 4 KB once (0.7.0-dev.13), with no warning beforehand.
   static const char *const STACKS[] = {"sensors", "power", "gnss", "nfc", "trip",
-                                       "console", "super", "uplink", "TinyUSB"};
+                                       "console", "super", "uplink", "TinyUSB",
+                                       "display", "ble"};
   printf("  stack never used:");
   for (const char *n : STACKS) {
     TaskHandle_t h = xTaskGetHandle(n);

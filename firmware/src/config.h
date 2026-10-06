@@ -55,6 +55,7 @@ struct Config {
   int32_t temp_adj_c100;      // user adjustment added to the reading, 0.01 C (eTEMP's tempAdj)
   int32_t usb_drive;          // 1: with USB power the port is a drive + serial port (usbdrive.h)
   int32_t tap_test;           // bench aid, never in the product: double tap = command (main.cpp)
+  int32_t rx_show;            // bench aid, never in the product: what a phone sent, on the glass (rxlog.h)
 
   // Field names are the NVS keys, 15 characters at most; config.cpp
   // refuses to compile a longer one.

@@ -17,6 +17,7 @@
 #include <time.h>
 
 #include "board.h"
+#include "rxlog.h"
 #include "auth.h"
 #include "config.h"
 #include "flashlog.h"
@@ -708,7 +709,7 @@ void rpc_note_power(const PowerStatus &ps) {
   portEXIT_CRITICAL(&g_mux);
 }
 
-char *rpc_handle(const char *req, size_t n, RpcSession *s) {
+static char *handle_one(const char *req, size_t n, RpcSession *s) {
   const bool authorized = s && s->authorized;
   cJSON *r = cJSON_ParseWithLength(req, n);
   const cJSON *jid = r ? cJSON_GetObjectItemCaseSensitive(r, "id") : nullptr;
@@ -761,5 +762,11 @@ char *rpc_handle(const char *req, size_t n, RpcSession *s) {
   }
   xSemaphoreGive(g_mx);
   cJSON_Delete(r);
+  return resp;
+}
+
+char *rpc_handle(const char *req, size_t n, RpcSession *s) {
+  char *resp = handle_one(req, n, s);
+  rxlog_rpc(req, n, resp, s);    // rx_show: what came in, on the glass
   return resp;
 }

@@ -38,6 +38,17 @@ To cut a release:
 
 P7, power: in progress.
 
+- **What a phone sent, on the glass, for testing** (`rx_show`, console
+  only, default off). Testing tap-then-connect with the app, the screen
+  shows the last events -- NFC tap, BLE connected and gone, every command
+  with what it carried and its answer (`START_TRIP low:20,... > ok`) --
+  for a minute after the last, redrawn at most every 3 s. Passwords, the
+  AUTH proof and the key show as ***. A command repeated with the same
+  answer is one line with a count. The first build (dev.28) restarted the
+  box at the second command: the page's 2.5 KB of buffers on the display
+  task's 4 KB stack. They are static now, the task has 6 KB (3.4 KB left
+  after a page), and `tasks` reports display and ble too. 0.7.0-dev.29.
+
 - **Tap commands, for testing only** (`tap_test`, console only, default
   off). The box has no button: with `tap_test 1` a double tap is a
   command, chosen by how the box lies -- normal (z down): start a trip,

@@ -23,6 +23,7 @@
 #include "pm.h"
 #include "trip.h"
 #include "uplink.h"
+#include "rxlog.h"
 
 namespace {
 
@@ -46,6 +47,10 @@ char g_sn[SN_LEN] = "MCOLD";
 // used 1, which shows the frame upside down; the bench also used 3).
 volatile int g_rot = 3;
 volatile bool g_force = false;
+// rx_show: the page of what a phone sent (rxlog.h).
+const uint32_t RX_GAP_MS = 3000;
+const uint32_t RX_HOLD_MS = 60000;
+uint32_t g_rx_gen = 0, g_rx_drawn_at = 0, g_rx_until = 0;
 volatile bool g_hold = false;
 
 PowerStatus g_pwr = {};
@@ -253,7 +258,36 @@ void task(void *) {
     if (s.active) g_closed_at = 0;
     prev = s;
 
-    if (!g_hold) {
+    // rx_show (bench): what a phone sent, for a minute after the last of
+    // it, redrawn at most every few seconds -- a refresh takes two.
+    if (config().rx_show && !g_hold) {
+      const uint32_t gen = rxlog_gen();
+      if (gen != g_rx_gen && (!g_rx_drawn_at || now_ms() - g_rx_drawn_at >= RX_GAP_MS)) {
+        static char lines[RXLOG_LINES][RXLOG_W + 1];
+        const char *ptr[RXLOG_LINES];
+        const int n = rxlog_render(lines, RXLOG_LINES);
+        for (int i = 0; i < n; i++) ptr[i] = lines[i];
+        char clock[16];
+        clock_str(clock, sizeof(clock));
+        scr_rxlog(g_draw, clock, ptr, n);
+        pm_hold(Hold::Display, true);
+        pm_no_light_sleep(true);
+        show(g_draw);
+        pm_hold(Hold::Display, false);
+        pm_no_light_sleep(false);
+        g_rx_gen = gen;
+        g_rx_drawn_at = now_ms();
+        g_rx_until = now_ms() + RX_HOLD_MS;
+        if (!g_rx_until) g_rx_until = 1;
+      }
+    }
+    const bool rx_on = g_rx_until && (int32_t)(g_rx_until - now_ms()) > 0;
+    if (g_rx_until && !rx_on) {
+      g_rx_until = 0;
+      g_force = true;      // back to the live picture
+    }
+
+    if (!g_hold && !rx_on) {
       // The picture without its clock decides whether anything changed:
       // the minute ticking over is not news.
       build(s, "     ");
@@ -323,7 +357,7 @@ void display_start(const char *sn) {
   snprintf(g_sn, sizeof(g_sn), "%s", sn ? sn : "MCOLD");
   display_apply_insets();
   g_epd = xSemaphoreCreateMutex();
-  xTaskCreatePinnedToCore(task, "display", 4096, nullptr, 1, nullptr, 1);
+  xTaskCreatePinnedToCore(task, "display", 6144, nullptr, 1, nullptr, 1);
 }
 
 void display_note_power(const PowerStatus &ps) {

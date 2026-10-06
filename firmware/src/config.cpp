@@ -73,6 +73,7 @@ constexpr Field FIELDS[] = {
     F(temp_adj_c100, -1000, 1000, 0, "0.01 C"),
     F(usb_drive, 0, 1, 1, ""),
     F(tap_test, 0, 1, 0, ""),
+    F(rx_show, 0, 1, 0, ""),
 };
 #undef F
 

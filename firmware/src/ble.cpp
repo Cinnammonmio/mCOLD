@@ -28,6 +28,7 @@ void ble_store_config_init(void);
 #include <cJSON.h>
 #include "rpc.h"
 #include "trip.h"
+#include "rxlog.h"
 
 namespace {
 
@@ -235,11 +236,13 @@ int on_gap(ble_gap_event *ev, void *) {
         auth_new_nonce(g_session.nonce);
         g_session.has_nonce = true;
         printf("[ble] connected\n");
+        rxlog_note("BLE connected");
       }
       break;
 
     case BLE_GAP_EVENT_DISCONNECT:
       printf("[ble] disconnected (reason 0x%X)\n", ev->disconnect.reason);
+      rxlog_note(g_session.authorized ? "BLE disconnected (was authorized)" : "BLE disconnected");
       g_conn = BLE_HS_CONN_HANDLE_NONE;
       g_sub_status = false;
       g_sub_rsp = false;
