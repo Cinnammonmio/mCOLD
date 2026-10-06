@@ -38,6 +38,8 @@ struct AccelEvent {
   bool free_fall;
   bool x, y, z;         // which axes crossed the threshold
   uint8_t raw_src;      // WAKE_UP_SRC as read, for diagnostics
+  bool double_tap;      // a double tap, with taps armed (tap_test, test only)
+  uint8_t tap_src;      // TAP_SRC as read
 };
 
 // Checks WHO_AM_I, writes the complete configuration (every register
@@ -45,7 +47,11 @@ struct AccelEvent {
 // the part in) and arms wake-up detection on INT1. Any event already
 // latched -- the one that woke the chip, say -- is returned in
 // `pending` rather than thrown away.
-bool accel_begin(uint8_t wake_threshold, AccelEvent *pending);
+//
+// `taps` (config tap_test, a bench aid, never in the product) also arms
+// the part's double-tap detector on INT1 in place of wake-up, at 400 Hz
+// high-performance: ~90 uA, and no motion counted, while it is on.
+bool accel_begin(uint8_t wake_threshold, AccelEvent *pending, bool taps = false);
 
 // Change the wake threshold, 1..63 in units of FS/64 (31.25 mg at
 // +-2 g). Re-arms and clears anything latched under the old value.
@@ -73,3 +79,8 @@ static const uint8_t ACCEL_WAKE_THS_DEFAULT = 2;
 
 // The INT1 line as the MCU sees it, for diagnostics.
 int accel_int_level(void);
+
+// Bench (tap_test): the tap threshold, 1..31 x 62.5 mg (9 = 562 mg).
+// Not kept: the next boot is back to 9.
+bool accel_set_tap_threshold(uint8_t ths);
+uint8_t accel_tap_threshold(void);

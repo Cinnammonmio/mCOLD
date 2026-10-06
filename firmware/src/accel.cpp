@@ -24,6 +24,11 @@ const uint8_t WAKE_UP_THS = 0x34;
 const uint8_t WAKE_UP_DUR = 0x35;
 const uint8_t FREE_FALL = 0x36;
 const uint8_t WAKE_UP_SRC = 0x38;
+const uint8_t TAP_THS_X = 0x30;
+const uint8_t TAP_THS_Y = 0x31;
+const uint8_t TAP_THS_Z = 0x32;
+const uint8_t INT_DUR = 0x33;
+const uint8_t TAP_SRC = 0x39;
 const uint8_t CTRL7 = 0x3F;
 
 // CTRL1: ODR 100 Hz, low-power mode 1 (12-bit).
@@ -47,6 +52,24 @@ const uint8_t CTRL2_BDU_INC = 0x0C;
 const uint8_t CTRL3_LIR = 0x10;
 
 const uint8_t CTRL4_INT1_WU = 0x20;
+
+// Double tap (tap_test only), set up as ST AN5038's example: 400 Hz in
+// high-performance mode (low-power mode tops out at 200 Hz), and INT1
+// carrying the double tap alone. With wake-up on INT1 too, every knock
+// raised a dozen motion events whose source reads ran through the tap
+// recognition: TAP_SRC showed the axis and sign, never TAP_IA, at 375,
+// 562 and 750 mg alike (box 002, 2026-10-06). Motion is not counted
+// while tap_test is on.
+const uint8_t CTRL1_400HZ_HP = 0x74;
+const uint8_t CTRL4_INT1_DTAP = 0x08;
+const uint8_t WAKE_UP_THS_DTAP = 0x80;   // SINGLE_DOUBLE_TAP: double taps on
+// 12 x FS/32 = 750 mg on each axis, all three enabled (ST AN5038's
+// double-tap example). INT_DUR: latency 7 (560 ms for the second tap at
+// 400 Hz), quiet 3 (30 ms), shock 3 (60 ms).
+uint8_t g_tap_ths = 9;    // 562 mg, AN5038's value; `tap ths N` on the bench
+const uint8_t TAP_XYZ_EN = 0xE0;
+const uint8_t INT_DUR_DTAP = 0x7F;
+const uint8_t TAP_SRC_DOUBLE = 0x10;
 const uint8_t CTRL6_FS_2G = 0x00;
 const uint8_t CTRL7_INT_EN = 0x20;
 
@@ -66,6 +89,7 @@ TaskHandle_t g_notify = nullptr;
 volatile uint32_t g_events = 0;
 volatile uint32_t g_last_ms = 0;
 bool g_isr_attached = false;
+bool g_taps = false;
 
 uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
@@ -105,7 +129,7 @@ void attach_isr(void) {
 
 }  // namespace
 
-bool accel_begin(uint8_t wake_threshold, AccelEvent *pending) {
+bool accel_begin(uint8_t wake_threshold, AccelEvent *pending, bool taps) {
   if (pending) memset(pending, 0, sizeof(*pending));
 
   uint8_t who = 0;
@@ -126,6 +150,13 @@ bool accel_begin(uint8_t wake_threshold, AccelEvent *pending) {
       pending && (src & (SRC_WU | SRC_FF))) {
     decode(src, pending);
   }
+  // A double tap that woke the chip, if taps were armed before this boot.
+  uint8_t tsrc = 0;
+  if (i2c_read_reg(Dev::Accel, ADDR_LIS2DW12, TAP_SRC, &tsrc, 1) == BusErr::Ok && pending &&
+      (tsrc & TAP_SRC_DOUBLE)) {
+    pending->double_tap = true;
+    pending->tap_src = tsrc;
+  }
 
   // Interrupts off while the detector is rebuilt, so a half-written
   // configuration cannot fire.
@@ -136,8 +167,15 @@ bool accel_begin(uint8_t wake_threshold, AccelEvent *pending) {
   if (!wr(CTRL5_INT2, 0x00)) return false;     // INT2 is not connected
   if (!wr(FREE_FALL, 0x00)) return false;
   if (!wr(WAKE_UP_DUR, 0x00)) return false;    // one sample over is enough
-  if (!wr(CTRL4_INT1, CTRL4_INT1_WU)) return false;
-  if (!wr(CTRL1, CTRL1_100HZ_LP1)) return false;
+  g_taps = taps;
+  if (taps) {
+    if (!wr(TAP_THS_X, g_tap_ths)) return false;
+    if (!wr(TAP_THS_Y, g_tap_ths)) return false;
+    if (!wr(TAP_THS_Z, TAP_XYZ_EN | g_tap_ths)) return false;
+    if (!wr(INT_DUR, INT_DUR_DTAP)) return false;
+  }
+  if (!wr(CTRL4_INT1, taps ? CTRL4_INT1_DTAP : CTRL4_INT1_WU)) return false;
+  if (!wr(CTRL1, taps ? CTRL1_400HZ_HP : CTRL1_100HZ_LP1)) return false;
 
   attach_isr();
   return accel_set_threshold(wake_threshold);
@@ -146,7 +184,7 @@ bool accel_begin(uint8_t wake_threshold, AccelEvent *pending) {
 bool accel_set_threshold(uint8_t ths) {
   if (ths < 1) ths = 1;
   if (ths > 63) ths = 63;
-  if (!wr(WAKE_UP_THS, ths)) return false;
+  if (!wr(WAKE_UP_THS, ths | (g_taps ? WAKE_UP_THS_DTAP : 0))) return false;
   if (!wr(CTRL7, CTRL7_INT_EN)) return false;
 
   // Let the slope filter settle on the new configuration, then read the
@@ -154,6 +192,7 @@ bool accel_set_threshold(uint8_t ths) {
   // first event after every reconfiguration is the reconfiguration.
   vTaskDelay(pdMS_TO_TICKS(30));
   uint8_t src = 0;
+  if (g_taps) i2c_read_reg(Dev::Accel, ADDR_LIS2DW12, TAP_SRC, &src, 1);
   return i2c_read_reg(Dev::Accel, ADDR_LIS2DW12, WAKE_UP_SRC, &src, 1) ==
          BusErr::Ok;
 }
@@ -165,8 +204,16 @@ bool accel_take_event(AccelEvent *ev) {
   if (i2c_read_reg(Dev::Accel, ADDR_LIS2DW12, WAKE_UP_SRC, &src, 1) != BusErr::Ok) {
     return false;
   }
-  if (!(src & (SRC_WU | SRC_FF))) return false;
-  if (ev) decode(src, ev);
+  // Both latches read, so INT1 drops whichever of them raised it.
+  uint8_t tsrc = 0;
+  if (g_taps) i2c_read_reg(Dev::Accel, ADDR_LIS2DW12, TAP_SRC, &tsrc, 1);
+  const bool dtap = (tsrc & TAP_SRC_DOUBLE) != 0;
+  if (!(src & (SRC_WU | SRC_FF)) && !dtap) return false;
+  if (ev) {
+    decode(src, ev);
+    ev->double_tap = dtap;
+    ev->tap_src = tsrc;
+  }
   g_events = g_events + 1;
   g_last_ms = now_ms();
   return true;
@@ -193,3 +240,12 @@ bool accel_read(AccelSample *out) {
 uint32_t accel_event_count(void) { return g_events; }
 uint32_t accel_last_event_ms(void) { return g_last_ms; }
 int accel_int_level(void) { return gpio_get_level((gpio_num_t)PIN_ACC_INT1); }
+
+bool accel_set_tap_threshold(uint8_t ths) {
+  if (ths < 1 || ths > 31) return false;
+  g_tap_ths = ths;
+  if (!g_taps) return true;
+  return wr(TAP_THS_X, ths) && wr(TAP_THS_Y, ths) && wr(TAP_THS_Z, TAP_XYZ_EN | ths);
+}
+
+uint8_t accel_tap_threshold(void) { return g_tap_ths; }

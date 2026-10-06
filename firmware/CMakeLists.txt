@@ -8,7 +8,7 @@ cmake_minimum_required(VERSION 3.16.0)
 # PlatformIO only re-runs CMake when this file changes, so a version
 # derived from git would silently go stale between builds. Editing this
 # line is what forces the rebuild. See CHANGELOG.md for the scheme.
-set(PROJECT_VER "0.7.0-dev.22")
+set(PROJECT_VER "0.7.0-dev.27")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(firmware)

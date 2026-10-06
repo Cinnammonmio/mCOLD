@@ -38,6 +38,20 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Tap commands, for testing only** (`tap_test`, console only, default
+  off). The box has no button: with `tap_test 1` a double tap is a
+  command, chosen by how the box lies -- normal (z down): start a trip,
+  or stop the one running; left side (-y): redraw the screen; right side
+  (+y): GNSS held 10 minutes; 1/2/3/4 beeps, one long beep for anything
+  else. The LIS2DW12 finds the double tap itself, asleep or not. It
+  recognised none while wake-up shared INT1 (axis and sign in TAP_SRC,
+  never TAP_IA, at 375 to 750 mg); with INT1 carrying the double tap
+  alone, 400 Hz high-performance and 562 mg (ST AN5038) it works through
+  the foam case. Motion is not counted while it is on. Commands within
+  3 s of the last are ignored: four quick knocks started and stopped a
+  trip. Checked on box 002, every position. Also `tap ths N`, and the
+  tap source in every `[accel]` line. 0.7.0-dev.27.
+
 - **Rows keep the last known position.** After a fix, the module's next
   sentence without one marks the fix invalid but keeps its position; rows
   required a valid fix and went out with null latitude/longitude and

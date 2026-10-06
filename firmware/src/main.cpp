@@ -200,15 +200,126 @@ const uint32_t CONSOLE_HOLD_MS = 120000;       // awake after a typed line
 // ---- sensors ---------------------------------------------------------
 
 void report_motion(const AccelEvent &ev, const char *when) {
-  printf("[accel] %lu ms%s%s%s%s%s  (src 0x%02X, event %lu)\n",
+  printf("[accel] %lu ms%s%s%s%s%s  (src 0x%02X, tap 0x%02X, event %lu)\n",
          (unsigned long)now_ms(), when,
          ev.free_fall ? " free-fall" : " motion", ev.x ? " X" : "",
-         ev.y ? " Y" : "", ev.z ? " Z" : "", ev.raw_src,
+         ev.y ? " Y" : "", ev.z ? " Z" : "", ev.raw_src, ev.tap_src,
          (unsigned long)accel_event_count());
   fflush(stdout);
   // Someone is handling the box: worth showing them its status for a
   // little while, within the hourly budget.
   indicate_attention();
+}
+
+// ---- tap commands (tap_test: a bench aid, never in the product) ------
+//
+// The box has no button. With tap_test 1, a double tap is a command, and
+// which one is told by how the box lies when tapped -- the part sees the
+// double tap by itself, asleep or not, and the orientation reads cleanly
+// with the box at rest:
+//
+//   lying as normal    start a trip, or stop the one running  1 / 2 beeps
+//   on its left side   redraw the screen                       3 beeps
+//   on its right side  a GNSS session, held 10 minutes         4 beeps
+//   anything else      nothing                                 one long beep
+
+enum class Face : uint8_t { Unknown, XPos, XNeg, YPos, YNeg, ZPos, ZNeg };
+
+const char *face_name(Face f) {
+  static const char *const N[] = {"unclear", "+X", "-X", "+Y", "-Y", "+Z", "-Z"};
+  return N[(int)f];
+}
+
+// The axis gravity is on: one well over 0.7 g, the other two under 0.5 g.
+Face face_of(const AccelSample &a) {
+  const float v[3] = {a.x_mg, a.y_mg, a.z_mg};
+  int k = 0;
+  for (int i = 1; i < 3; i++) {
+    if (fabsf(v[i]) > fabsf(v[k])) k = i;
+  }
+  if (fabsf(v[k]) < 700) return Face::Unknown;
+  for (int i = 0; i < 3; i++) {
+    if (i != k && fabsf(v[i]) > 500) return Face::Unknown;
+  }
+  return (Face)(1 + k * 2 + (v[k] < 0 ? 1 : 0));
+}
+
+// The axis gravity is on in each position, measured on box 002 with
+// `accel` (2026-10-06): normal z -968 mg, left side y -993, right y +1025.
+const Face TAP_FACE_NORMAL = Face::ZNeg;
+const Face TAP_FACE_LEFT = Face::YNeg;
+const Face TAP_FACE_RIGHT = Face::YPos;
+const uint32_t TAP_GNSS_HOLD_MS = 10 * 60000;
+// Taps within this long of a command are not one: four quick knocks made
+// two double taps 1.7 s apart, and a trip started and stopped (2026-10-06).
+const uint32_t TAP_COOLDOWN_MS = 3000;
+uint32_t g_tap_last_cmd = 0;
+
+void tap_beeps(int n, uint32_t ms) {
+  for (int i = 0; i < n; i++) {
+    buzzer_beep(ms);
+    vTaskDelay(pdMS_TO_TICKS(ms + 200));
+  }
+}
+
+void handle_tap(const AccelEvent &ev) {
+  if (!ev.double_tap || !config().tap_test) return;
+  if (g_tap_last_cmd && now_ms() - g_tap_last_cmd < TAP_COOLDOWN_MS) {
+    printf("[tap] double tap ignored: within %lu s of the last command\n",
+           (unsigned long)(TAP_COOLDOWN_MS / 1000));
+    return;
+  }
+  // A few readings after the knock has died away.
+  vTaskDelay(pdMS_TO_TICKS(60));
+  AccelSample a = {}, s;
+  int n = 0;
+  for (int i = 0; i < 5; i++) {
+    if (accel_read(&s)) {
+      a.x_mg += s.x_mg;
+      a.y_mg += s.y_mg;
+      a.z_mg += s.z_mg;
+      n++;
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+  if (n) {
+    a.x_mg /= n;
+    a.y_mg /= n;
+    a.z_mg /= n;
+  }
+  const Face f = n ? face_of(a) : Face::Unknown;
+  const char *what = "nothing (orientation not a command)";
+  int beeps = 0;
+  if (f == TAP_FACE_NORMAL) {
+    TripStatus ts;
+    trip_status(&ts);
+    if (ts.active) {
+      const TripErr e = trip_stop(1);
+      what = e == TripErr::Ok ? "trip stopped" : trip_err_name(e);
+      beeps = e == TripErr::Ok ? 2 : 0;
+    } else {
+      TripParams p = {20, 80, 5, 300, 0};   // 2..8 C, as `trip start`
+      uint32_t id = 0;
+      const TripErr e = trip_start(p, &id);
+      what = e == TripErr::Ok ? "trip started" : trip_err_name(e);
+      beeps = e == TripErr::Ok ? 1 : 0;
+    }
+  } else if (f == TAP_FACE_LEFT) {
+    display_refresh();
+    what = "screen redraw";
+    beeps = 3;
+  } else if (f == TAP_FACE_RIGHT) {
+    g_gnss_hold_until = now_ms() + TAP_GNSS_HOLD_MS;
+    pm_hold(Hold::Gnss, true);   // awake until the session takes it over
+    what = "GNSS held 10 min";
+    beeps = 4;
+  }
+  printf("[tap] double tap, %s up (x %+.0f y %+.0f z %+.0f mg): %s\n", face_name(f), a.x_mg,
+         a.y_mg, a.z_mg, what);
+  fflush(stdout);
+  if (beeps) tap_beeps(beeps, 120);
+  else tap_beeps(1, 600);
+  g_tap_last_cmd = now_ms();   // after the beeps: they shake the box too
 }
 
 void task_sensors(void *) {
@@ -240,6 +351,7 @@ void task_sensors(void *) {
         } else {
           report_motion(ev, "");
           trip_note_motion(ev);
+          handle_tap(ev);
         }
       }
     }
@@ -255,7 +367,7 @@ void task_sensors(void *) {
     if (health_should_try(Dev::Accel, t)) {
       if (!g_accel_up) {
         AccelEvent pending;
-        g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending);
+        g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending, config().tap_test);
       }
       AccelSample a;
       if (g_accel_up && accel_read(&a)) {
@@ -770,6 +882,8 @@ void print_accel(void) {
     printf("\n  x %+8.1f  y %+8.1f  z %+8.1f mg   |a| %.0f mg\n", a.x_mg,
            a.y_mg, a.z_mg, a.magnitude_mg);
     printf("  (at rest |a| should be close to 1000 whatever the orientation)\n");
+    printf("  face up %s%s\n", face_name(face_of(a)),
+           config().tap_test ? "   (tap_test on: double tap = command)" : "");
   } else {
     printf("\n  accelerometer did not answer\n");
   }
@@ -1121,6 +1235,11 @@ void config_changed(const char *key, int32_t v) {
   settings_touch();     // the app's settings page follows
   if (!strcmp(key, "accel_wake_ths") && g_accel_up) {
     accel_set_threshold((uint8_t)v);
+  } else if (!strcmp(key, "tap_test")) {
+    AccelEvent pending;
+    g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending, v != 0);
+    printf("  double tap = command: %s\n", v ? "on (lying normal: trip, left: screen, "
+                                               "right: GNSS)" : "off");
   } else if (!strcmp(key, "led_bright_pct")) {
     leds_set_brightness((int)v);
   } else if (!strcmp(key, "led_front_pct")) {
@@ -1504,6 +1623,17 @@ void run_command(char *line) {
     printf("  switching off as if the battery were empty\n");
     battery_off(g_power.cell_valid ? g_power.cell_volts : 0.0f);
   }
+  else if (!strncmp(line, "tap ths", 7)) {
+    // Bench (tap_test): the double-tap threshold, live, for finding one
+    // that a knock on the case reaches. Not kept across a reboot.
+    const int n = atoi(line + 7);
+    if (n && !accel_set_tap_threshold((uint8_t)n)) {
+      printf("  tap ths N   (1..31, x 62.5 mg)\n");
+    } else {
+      printf("  tap threshold %u (%u mg)%s\n", accel_tap_threshold(),
+             accel_tap_threshold() * 625 / 10, config().tap_test ? "" : "  (tap_test is off)");
+    }
+  }
   else if (!strcmp(line, "i2c")) {
     // Bench: what is on the bus. Expected: 18 36 40 42 53 57 68 6B.
     uint8_t found[32];
@@ -1879,7 +2009,7 @@ extern "C" void app_main(void) {
   // gone before anyone can tap the box. Bring-up lost three motion
   // tests to that before it was understood.
   AccelEvent pending;
-  g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending);
+  g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending, config().tap_test);
 
   const esp_app_desc_t *app = esp_app_get_description();
   printf("\n\nmCOLD Foam V.1   firmware %s   reset %d   %s (wake %lu)   heap %u B\n",
@@ -1891,6 +2021,7 @@ extern "C" void app_main(void) {
     // reset: motion all the same, and the trip counts it.
     trip_note_motion(pending);
   }
+  handle_tap(pending);   // a double tap that woke the box (tap_test)
   printf("type: help\n");
   fflush(stdout);
 
