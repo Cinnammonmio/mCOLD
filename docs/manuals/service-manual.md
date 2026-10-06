@@ -106,6 +106,8 @@ Bench-only (power measurement and tests):
 | `trip fill N` | Test only: N sample rows at once (a long trip for the USB drive) |
 | `ota rollback-test` | The next new image will not confirm itself |
 | `config set usb_drive 0` | Turn the USB drive off: the box restarts with the port as before |
+| `config set tap_test 1` | Test only, never in the product: a double tap is a command, by how the box lies -- normal: start/stop a trip (1/2 beeps), left side: redraw the screen (3), right side: GNSS for 10 min (4); one long beep: not a command. Motion is not counted while on |
+| `tap ths N` | With tap_test: the double-tap threshold, 1..31 x 62.5 mg (9 = 562 mg), until the next boot |
 | (USB drive) | `DEVICE.TXT` + one `TRIP_<SN>_<YYMMDDhhmm>.csv` per trip, read-only, a snapshot from when the cable went in |
 | `hang` | Hang the console task: the supervisor restarts the box after 5 min |
 
