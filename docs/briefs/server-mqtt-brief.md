@@ -1,10 +1,10 @@
 ---
 name: Server-Brief_MQTT
 lang: th
-version: 0.12
+version: 0.13
 status: draft
 date: 2026-10-07
-firmware: 0.7.0-dev.36
+firmware: 0.7.0-dev.39
 ---
 
 # mCOLD — สิ่งที่ฝั่ง Server ต้องทำ (MQTT)
@@ -219,6 +219,7 @@ publish เอกสารตั้งค่าที่ `mcold/v1/<sn>/config` 
 
 - ส่งแค่ส่วนที่จะเปลี่ยน · **`rev` ต้องเพิ่มทุกครั้ง** กล่องใช้แต่ละ rev ครั้งเดียว
 - ผลกลับมาที่ `mcold/<sn>/config/state` (`ok` / `partial` / `refused`) พร้อมเหตุผลของค่าที่ไม่ได้ตั้ง
+- **Wi-Fi 5 ช่อง:** `add` ใส่ `"slot":N` (1–5) เพื่อแก้ช่องนั้นโดยตรง และ `del` ใส่เลขช่องหรือชื่อ กล่องรายงานทั้ง 5 ช่องให้แอป (ดู Device Protocol)
 - **Wi-Fi แบบ eTEMP:** `dhcp` true/false, `ip`, `gateway`, `subnet`, `dns` ตั้งแยกต่อเครือข่าย
 - **ปรับอุณหภูมิ `temp_adj_c100`** (แบบ tempAdj ของ eTEMP) หน่วย 0.01 °C บวกเพิ่มจากค่าที่วัด
 - ค่าบางตัว (รอบบันทึก, temp adjust) เปลี่ยนไม่ได้ระหว่าง trip — ส่ง rev ใหม่หลังจบ trip
