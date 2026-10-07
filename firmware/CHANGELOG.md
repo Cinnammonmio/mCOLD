@@ -38,6 +38,8 @@ To cut a release:
 
 P7, power: in progress.
 
+- **The app follows every change** to the settings: console `wifi add`, `wifi del` and `ota base` now push the SETTINGS event too (they were silent; `config set`, the app's and the server's changes already pushed). 0.7.0-dev.40.
+
 - **Wi-Fi in five fixed slots** (decided 2026-10-07). A slot keeps its
   place when another is cleared. `GET_NETWORK` and the SETTINGS event's
   `network` always list all five (`{"slot":2,"ssid":null}` for an empty

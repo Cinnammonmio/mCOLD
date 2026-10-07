@@ -1779,6 +1779,7 @@ void run_command(char *line) {
     if (!wifi_args(line + 9, ssid, sizeof(ssid), pass, sizeof(pass))) {
       printf("  wifi add SSID PASS   (\"quotes\" around an SSID with spaces)\n");
     } else if (net_add(ssid, pass)) {
+      settings_touch();     // the app's Wi-Fi list follows
       printf("  %s stored (%d known); joins the strongest in range\n", ssid, net_count());
     } else {
       printf("  refused: SSID 1-32, password 8-63 or none, at most %d networks\n", NET_MAX);
@@ -1803,7 +1804,9 @@ void run_command(char *line) {
   } else if (!strncmp(line, "wifi del ", 9)) {
     char ssid[40] = "", pass[2];
     wifi_args(line + 9, ssid, sizeof(ssid), pass, sizeof(pass));
-    printf("  %s\n", net_remove(ssid) ? "removed" : "not a known network");
+    const bool gone = net_remove(ssid);
+    if (gone) settings_touch();
+    printf("  %s\n", gone ? "removed" : "not a known network");
   } else if (!strncmp(line, "mqtt set ", 9)) {
     char host[64] = "", user[40] = "", pass[72] = "";
     int port = 0;
@@ -1813,7 +1816,9 @@ void run_command(char *line) {
   }
   else if (!strcmp(line, "ota")) ota_print();
   else if (!strncmp(line, "ota base ", 9)) {
-    printf("  %s\n", ota_set_base(line + 9) ? "stored" : "ota base http(s)://host/path (under 128)");
+    const bool saved = ota_set_base(line + 9);
+    if (saved) settings_touch();
+    printf("  %s\n", saved ? "stored" : "ota base http(s)://host/path (under 128)");
   } else if (!strcmp(line, "ota rollback-test")) {
     ota_test_rollback();
     printf("  the next new image will not confirm itself; it rolls back after %lu s\n",
