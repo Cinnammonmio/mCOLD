@@ -1,9 +1,9 @@
 ---
 name: MQTT-Topics
 lang: th
-version: 1.0
+version: 1.1
 date: 2026-10-05
-firmware: 0.7.0-dev.8
+firmware: 0.7.0-dev.35
 ---
 
 # mCOLD — MQTT topics
@@ -55,10 +55,10 @@ firmware: 0.7.0-dev.8
 ### `mcold/<sn>/rec` — แถว log
 
 ```json
-{"sn":"mCDV1-L0169-1069-001","trip":11,"schema":3,"part":1,"parts":1,
+{"sn":"mCDV1-L0169-1069-002","trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"schema":5,"part":1,"parts":1,
  "from":0,"to":6,"last":true,
  "rows":[
-  {"trip":11,"seq":1,"sn":"mCDV1-L0169-1069-001","timestamp":"02:47:27 05/10/2026",
+  {"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"seq":1,"sn":"mCDV1-L0169-1069-002","timestamp":"02:47:27 05/10/2026",
    "utc":1791143247,"event":"SAMPLE","temp":4.25,"tempmin":2,"tempmax":8,"alarm":"",
    "timeok":true,"gnssstate":"last","latitude":13.7563,"longitude":100.5018,
    "motion":0,"battery":97,"internet":"online","detail":""}, ...]}
@@ -66,13 +66,13 @@ firmware: 0.7.0-dev.8
 
 ส่งเฉพาะ trip ที่จบแล้ว ก้อนละ 20 แถว (ก้อนที่ k = `seq` 20(k−1)…20k−1) · `last: true` คือก้อนสุดท้าย
 ระหว่าง trip ส่งแค่ `status` — ดู [`trip-data-flow.md`](trip-data-flow.md)
-ทุกแถวมี column ชุดเดียวกัน ไม่ว่าจะเป็น sample หรือ event · **key คือ (sn, trip, seq)**
+ทุกแถวมี column ชุดเดียวกัน ไม่ว่าจะเป็น sample หรือ event · **key คือ (trip_id, seq)** (`trip_id` เป็น UUID ที่กล่องสร้าง, `sn` อยู่ในทุกแถว)
 ความหมายของแต่ละ column และรายการ event อยู่ใน brief ข้อ 3
 
 ### `mcold/v1/<sn>/ack` — server ตอบ
 
 ```json
-{"trip":11,"upto":15}
+{"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","upto":15}
 ```
 
 แปลว่าแถว `seq` 0–15 ของ trip 11 บันทึกลงฐานข้อมูลแล้วทั้งหมด (ต้องต่อเนื่อง ไม่มีช่องว่าง)
@@ -83,7 +83,7 @@ firmware: 0.7.0-dev.8
 ```json
 {"time":{"utc":1791143247,"quality":"ntp","boot":42},
  "temp":{"ok":true,"c":4.25},
- "trip":{"active":true,"id":11,"samples":12,"min":3.5,"max":5.25,"alarms":[],"acked":false,
+ "trip":{"active":true,"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"samples":12,"min":3.5,"max":5.25,"alarms":[],"acked":false,
          "alarms_raised":1,"last_alarm":{"type":"HIGH","utc":1791146150}},
  "power":{"soc":78,"mv":3987,"ma":-12,"charge":"none","external":false},
  "gnss":{"fix":false,"lat":null,"lon":null,"age_s":null},
