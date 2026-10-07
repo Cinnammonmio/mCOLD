@@ -36,3 +36,6 @@ struct BleStatus {
 void ble_status(BleStatus *out);
 
 static const uint32_t BLE_TAP_WINDOW_MS = 60000;
+// After a phone disconnects: advertising for this long, then off until the
+// next tap (also on external power).
+static const uint32_t BLE_AFTER_DROP_MS = 5000;

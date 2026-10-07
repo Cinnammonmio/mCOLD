@@ -10,7 +10,7 @@ firmware: 0.7.0-dev.5
 
 ตกลงกันเมื่อ 5 ต.ค. 2026: ระหว่าง trip เก็บทุกแถวไว้ในเครื่อง ส่งขึ้น server แค่ `status`
 ส่วนข้อมูลทั้ง trip ส่งหลังจบ trip ทางแอป (BLE) หรือทาง Wi-Fi ของกล่องเอง
-รูปแบบแถวอยู่ที่ [`briefs/server-mqtt-brief.md`](briefs/server-mqtt-brief.md) ข้อ 3
+รูปแบบแถวอยู่ที่ [`server-mqtt-brief.md`](server-mqtt-brief.md) ข้อ 3
 และ topic ทั้งหมดอยู่ที่ [`mqtt-topics.md`](mqtt-topics.md)
 
 ## Flow

@@ -34,7 +34,7 @@ firmware: 0.7.0-dev.39
 - broker และ login ตั้งในเครื่องแต่ละกล่อง ไม่อยู่ใน firmware หรือ git
 - แบบเดียวกับ eTEMP: **ที่กล่อง publish อยู่ใต้ `mcold/<sn>/`** และ **ที่กล่อง subscribe
   (server publish) อยู่ใต้ `mcold/v1/<sn>/`** (`v1` คือเวอร์ชันของคำสั่งที่กล่องเข้าใจ)
-- สรุปทุก topic อยู่ที่ `docs/mqtt-topics.md`
+- สรุปทุก topic อยู่ที่ `mqtt-topics.md`
 
 | Topic | ทิศทาง | QoS | Retained | เนื้อหา |
 |---|---|---|---|---|
@@ -66,7 +66,7 @@ firmware: 0.7.0-dev.39
    ...}, ...]}
 ```
 
-- **ส่งเฉพาะ trip ที่จบแล้ว** (ตกลง 5 ต.ค., `docs/trip-data-flow.md`): ระหว่าง trip แถวอยู่ในกล่อง
+- **ส่งเฉพาะ trip ที่จบแล้ว** (ตกลง 5 ต.ค., `trip-data-flow.md`): ระหว่าง trip แถวอยู่ในกล่อง
   server ได้แค่ `status` · จบแล้วส่งเป็นก้อนละ 20 แถว trip เก่าก่อน
 - `part` / `parts`: ก้อนที่ k มีแถว `seq` 20(k−1)…20k−1 เสมอ · `last: true` คือก้อนสุดท้าย (มี `TRIP_STOP`)
 - trip ที่แอปส่งให้ server เองแล้ว (แอปเรียก `MARK_DELIVERED`) กล่องจะไม่ส่งซ้ำทาง Wi-Fi
@@ -224,6 +224,6 @@ publish เอกสารตั้งค่าที่ `mcold/v1/<sn>/config` 
 - **ปรับอุณหภูมิ `temp_adj_c100`** (แบบ tempAdj ของ eTEMP) หน่วย 0.01 °C บวกเพิ่มจากค่าที่วัด
 - ค่าบางตัว (รอบบันทึก, temp adjust) เปลี่ยนไม่ได้ระหว่าง trip — ส่ง rev ใหม่หลังจบ trip
 - **MQTT broker ตั้งจาก server ไม่ได้** ตั้งที่ตัวเครื่องผ่าน console เท่านั้น
-- รายการค่าทั้งหมด: `docs/device-settings.md` · แอปใช้เอกสารเดียวกันผ่าน BLE (`APPLY_CONFIG`)
+- รายการค่าทั้งหมด: [`../app/device-settings.md`](../app/device-settings.md) · แอปใช้เอกสารเดียวกันผ่าน BLE (`APPLY_CONFIG`)
 
 ⚠️ เอกสารนี้มีรหัส Wi-Fi: บนพอร์ต 1883 ที่ไม่เข้ารหัส ใครดักฟังก็เห็น — เป็นอีกเหตุผลที่ต้องเปิด TLS (ข้อ 6)

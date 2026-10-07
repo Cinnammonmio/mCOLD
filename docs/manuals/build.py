@@ -2,7 +2,7 @@
 
     python docs/manuals/build.py            every manual
     python docs/manuals/build.py quick-guide.md
-    python docs/manuals/build.py docs/briefs/server-mqtt-brief.md   (any path)
+    python docs/manuals/build.py docs/server/server-mqtt-brief.md   (any path)
 
 Each source starts with a version block (--- name / lang / version /
 status / date / firmware ---). The version goes into the PDF's file name
@@ -148,7 +148,7 @@ hr ~ ul, hr ~ ul li { color: var(--muted); font-size: 9pt; }
 
 
 def build(src):
-    # A name here, or any path: other documents (docs/briefs/...) build the
+    # A name here, or any path: other documents (docs/server/..., docs/app/...) build the
     # same way, into a pdf/ folder beside their source.
     path = HERE / src if (HERE / src).exists() else pathlib.Path(src).resolve()
     out = path.parent / "pdf"

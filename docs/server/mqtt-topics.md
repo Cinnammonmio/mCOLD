@@ -9,8 +9,8 @@ firmware: 0.7.0-dev.35
 # mCOLD — MQTT topics
 
 สรุปทุก topic ที่กล่อง mCOLD ใช้ ว่าใคร publish ใคร subscribe และข้อมูลหน้าตาเป็นอย่างไร
-รายละเอียดสำหรับทีม server อยู่ที่ [`briefs/server-mqtt-brief.md`](briefs/server-mqtt-brief.md)
-และสเปกเต็มภาษาอังกฤษอยู่ที่ [`../firmware/PROTOCOL.md`](../firmware/PROTOCOL.md) ข้อ 6
+รายละเอียดสำหรับทีม server อยู่ที่ [`server-mqtt-brief.md`](server-mqtt-brief.md)
+และสเปกเต็มภาษาอังกฤษอยู่ที่ [`../firmware/PROTOCOL.md`](../../firmware/PROTOCOL.md) ข้อ 6
 
 ## หลักการตั้งชื่อ (แบบเดียวกับ eTEMP)
 
@@ -121,7 +121,7 @@ payload คือชื่อไฟล์อย่างเดียว เช�
 
 `rev` เพิ่มขึ้นทุกครั้ง กล่องใช้แต่ละ rev ครั้งเดียว · MQTT broker ตั้งทางนี้ไม่ได้ (console เท่านั้น)
 · รายการค่าทั้งหมดและกติกาอยู่ที่
-[`device-settings.md`](device-settings.md) · ผลส่งกลับที่ `mcold/<sn>/config/state`
+[`device-settings.md`](../app/device-settings.md) · ผลส่งกลับที่ `mcold/<sn>/config/state`
 
 ```json
 {"rev":3,"applied":["upload_period_s","wifi add Warehouse-2"],"errors":{},"state":"ok"}

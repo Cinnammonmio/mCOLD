@@ -64,6 +64,9 @@ volatile bool g_adv = false;
 volatile uint16_t g_conn = BLE_HS_CONN_HANDLE_NONE;
 volatile uint16_t g_mtu = 23;
 volatile uint32_t g_window_until = 0;
+// A phone has connected and left since the last tap: external power alone
+// no longer keeps the box advertising.
+volatile bool g_dropped = false;
 volatile uint32_t g_requests = 0;
 volatile bool g_sub_status = false, g_sub_rsp = false, g_sub_evt = false;
 
@@ -252,9 +255,14 @@ int on_gap(ble_gap_event *ev, void *) {
       // replaced shortly after it ends.
       if (g_session.authorized) auth_session_ended();
       g_session = {};
-      // A phone that drops off may come straight back: keep the door
-      // open a little longer.
-      if ((int32_t)(g_window_until - now_ms()) < 30000) g_window_until = now_ms() + 30000;
+      // BLE goes off BLE_AFTER_DROP_MS after a phone leaves (decided
+      // 2026-10-07): long enough for a link that dropped to come straight
+      // back, then no advertising -- on external power too -- until the
+      // next tap opens a window. The window is cut to that, not only
+      // extended.
+      g_window_until = now_ms() + BLE_AFTER_DROP_MS;
+      if (!g_window_until) g_window_until = 1;
+      g_dropped = true;
       break;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -388,7 +396,7 @@ void worker(void *) {
 
     // Advertise only with a reason: a tap's window, or external power.
     const bool want = g_up && g_enabled && g_conn == BLE_HS_CONN_HANDLE_NONE &&
-                      (external_power() || window_open());
+                      ((external_power() && !g_dropped) || window_open());
     if (want) advertise();
     else if (g_adv) stop_advertising();
     // Asleep, the radio is off and no phone can reach the box.
@@ -476,6 +484,7 @@ bool stack_up(void) {
 }  // namespace
 
 void ble_window(uint32_t ms) {
+  g_dropped = false;      // a tap: BLE is wanted again
   const uint32_t until = now_ms() + ms;
   if ((int32_t)(until - g_window_until) > 0) g_window_until = until;
   // At once, not at the worker's next pass: the tap that opened the
@@ -486,6 +495,7 @@ void ble_window(uint32_t ms) {
 
 void ble_enable(bool on) {
   g_enabled = on;
+  if (on) g_dropped = false;     // `ble on` at the console: advertise as on external power
   if (!on) {
     stop_advertising();
     if (g_conn != BLE_HS_CONN_HANDLE_NONE) {

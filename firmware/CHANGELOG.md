@@ -38,6 +38,15 @@ To cut a release:
 
 P7, power: in progress.
 
+- **BLE goes off 5 s after a phone leaves** (decided 2026-10-07), also on
+  external power; the next tap opens it again (`ble on` at the console
+  too). Before, it stayed 30 s, and on USB power always. 0.7.0-dev.41/.42.
+- **Docs for the app and server teams in their own folders**, each with
+  `.md` and `pdf/`: `docs/app/` (BLE protocol 0.3, device settings) and
+  `docs/server/` (server brief, MQTT topics, trip data flow), with a
+  README each. `firmware/PROTOCOL-th.md` is gone (split between them);
+  `firmware/PROTOCOL.md` is the old English original, marked out of date.
+
 - **The app follows every change** to the settings: console `wifi add`, `wifi del` and `ota base` now push the SETTINGS event too (they were silent; `config set`, the app's and the server's changes already pushed). 0.7.0-dev.40.
 
 - **Wi-Fi in five fixed slots** (decided 2026-10-07). A slot keeps its
