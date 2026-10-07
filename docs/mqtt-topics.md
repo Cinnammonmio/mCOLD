@@ -58,15 +58,14 @@ firmware: 0.7.0-dev.35
 {"sn":"mCDV1-L0169-1069-002","trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"schema":5,"part":1,"parts":1,
  "from":0,"to":6,"last":true,
  "rows":[
-  {"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"seq":1,"sn":"mCDV1-L0169-1069-002","timestamp":"02:47:27 05/10/2026",
-   "utc":1791143247,"event":"SAMPLE","temp":4.25,"tempmin":2,"tempmax":8,"alarm":"",
+  {"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"seq":1,"timestamp":1791143247,"event":"SAMPLE","temp":4.25,"tempmin":2,"tempmax":8,"alarm":"",
    "timeok":true,"gnssstate":"last","latitude":13.7563,"longitude":100.5018,
-   "motion":0,"battery":97,"internet":"online","detail":""}, ...]}
+   "motion":0,"battery":97,"internet":"online"}, ...]}
 ```
 
 ส่งเฉพาะ trip ที่จบแล้ว ก้อนละ 20 แถว (ก้อนที่ k = `seq` 20(k−1)…20k−1) · `last: true` คือก้อนสุดท้าย
 ระหว่าง trip ส่งแค่ `status` — ดู [`trip-data-flow.md`](trip-data-flow.md)
-ทุกแถวมี column ชุดเดียวกัน ไม่ว่าจะเป็น sample หรือ event · **key คือ (trip_id, seq)** (`trip_id` เป็น UUID ที่กล่องสร้าง, `sn` อยู่ในทุกแถว)
+ทุกแถวมี column ชุดเดียวกัน ไม่ว่าจะเป็น sample หรือ event · **key คือ (trip_id, seq)** (`trip_id` เป็น UUID ที่กล่องสร้าง, `sn` อยู่ที่หัวชุดและใน topic) · แถวใน MQTT ไม่มี `sn`, `utc`, `detail` และ `timestamp` เป็นวินาที Unix
 ความหมายของแต่ละ column และรายการ event อยู่ใน brief ข้อ 3
 
 ### `mcold/v1/<sn>/ack` — server ตอบ

@@ -1,10 +1,10 @@
 ---
 name: Server-Brief_MQTT
 lang: th
-version: 0.11
+version: 0.12
 status: draft
 date: 2026-10-07
-firmware: 0.7.0-dev.35
+firmware: 0.7.0-dev.36
 ---
 
 # mCOLD — สิ่งที่ฝั่ง Server ต้องทำ (MQTT)
@@ -59,12 +59,10 @@ firmware: 0.7.0-dev.35
 {"sn":"mCDV1-L0169-1069-002","trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"schema":5,"part":1,"parts":1,
  "from":0,"to":6,"last":true,
  "rows":[
-  {"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"seq":1,"sn":"mCDV1-L0169-1069-002","timestamp":"02:47:27 05/10/2026",
-   "utc":1791143247,"event":"SAMPLE","temp":4.25,"tempmin":2,"tempmax":8,"alarm":"",
+  {"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"seq":1,"timestamp":1791143247,"event":"SAMPLE","temp":4.25,"tempmin":2,"tempmax":8,"alarm":"",
    "timeok":true,"gnssstate":"last","latitude":13.7563,"longitude":100.5018,"motion":0,
-   "battery":97,"internet":"online","detail":""},
-  {"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"seq":2,"sn":"mCDV1-L0169-1069-002","timestamp":"02:47:28 05/10/2026",
-   "utc":1791143248,"event":"ALARM_HIGH","temp":8.5,"tempmin":2,"tempmax":8,"alarm":"HIGH",
+   "battery":97,"internet":"online"},
+  {"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"seq":2,"timestamp":1791143248,"event":"ALARM_HIGH","temp":8.5,"tempmin":2,"tempmax":8,"alarm":"HIGH",
    ...}, ...]}
 ```
 
@@ -78,6 +76,8 @@ firmware: 0.7.0-dev.35
 
 | column | ความหมาย |
 |---|---|
+**แถวใน MQTT ไม่มี `sn`, `utc` และ `detail`** (ตกลง 7 ต.ค.): `sn` อยู่ที่หัวชุดและใน topic อยู่แล้ว, `timestamp` เป็นวินาที Unix (ว่างเป็น `null` เมื่อ `timeok` เป็น false), ส่วน `detail` ไม่ส่ง ไฟล์ CSV ยังมีครบทุกคอลัมน์ (`sn`, `timestamp` ข้อความเวลาท้องถิ่น, `utc`, `detail`)
+
 | `trip_id` | UUID ของ trip ที่กล่องสร้าง |
 | `trip_date` | วันที่ท้องถิ่นตอนเริ่ม trip รูปแบบ YYYYMMDD (ข้อความ) |
 | `trip_number` | เลขรันของ trip ในวันนั้น เริ่มที่ 1 |
@@ -166,7 +166,7 @@ firmware: 0.7.0-dev.35
 2. เปิด TLS 8883 และ login แยกเครื่องได้เมื่อไหร่
 3. ~~OTA แบบไหน~~ ตกลงแล้ว: แบบเดียวกับ eTEMP (ข้อ 8)
 4. ใครเป็นผู้ติดต่อฝั่ง server สำหรับทดสอบร่วมกัน
-5. broker จำกัดขนาดข้อความไว้เท่าไร (ก้อนละ 20 แถว ≈ 9 KB ต้องไม่ต่ำกว่า 12 KB)
+5. broker จำกัดขนาดข้อความไว้เท่าไร (ก้อนละ 20 แถว ≈ 6 KB ต้องไม่ต่ำกว่า 8 KB)
 6. แอปจะส่งไฟล์ CSV ของ trip ขึ้น server ทางไหน (HTTPS endpoint หรือ MQTT) และ server ตอบอะไรเมื่อเก็บแล้ว
    — แอปต้องได้คำยืนยันก่อนบอกกล่องว่า "ส่งแล้ว" (`MARK_DELIVERED`)
 
