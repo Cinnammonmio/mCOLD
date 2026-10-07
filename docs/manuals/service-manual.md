@@ -101,7 +101,7 @@ Bench-only (power measurement and tests):
 | `pin N 0\|1\|in` | Take a pin over as plain GPIO (until reboot) |
 | `log write N` · `log read` · `log erase` | Bench trip records |
 | `ack {json}` | Inject a server ACK |
-| `cfgdoc {json}` | Inject a server settings document (`docs/device-settings.md`) |
+| `cfgdoc {json}` | Inject a server settings document (`docs/app/device-settings.md`) |
 | `i2c` | SDA/SCL levels and every I2C address that answers |
 | `trip fill N` | Test only: N sample rows at once (a long trip for the USB drive) |
 | `ota rollback-test` | The next new image will not confirm itself |
@@ -146,7 +146,7 @@ range and whether it is the default.
 
 Wi-Fi and broker credentials are separate (`wifi add`, `mqtt set`) and never
 appear in documents or the repository. Which keys the app and the server may
-set, and the settings document they use, are in `docs/device-settings.md`;
+set, and the settings document they use, are in `docs/app/device-settings.md`;
 the calibration (`cal_*`), the battery limits and the bench switches are the
 console's only.
 

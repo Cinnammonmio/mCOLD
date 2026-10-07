@@ -1,3 +1,16 @@
+---
+name: Device-Protocol
+lang: en
+version: 0.1
+status: draft
+date: 2026-10-07
+firmware: 0.7.0-dev.33
+---
+
+> **ล้าสมัย (7 ต.ค. 2026):** ไฟล์นี้เป็นต้นฉบับภาษาอังกฤษของ 2 ต.ค. และยังใช้ `trip` แบบตัวเลข ฉบับปัจจุบันแยกเป็น
+> [`docs/app/ble-protocol.md`](../docs/app/ble-protocol.md) (BLE สำหรับทีมแอป) และ
+> [`docs/server/`](../docs/server/README.md) (MQTT สำหรับทีม server)
+
 # mCOLD device protocol
 
 **Status: PROPOSED (protocol 1), 2026-10-02.** Written by the firmware
@@ -53,6 +66,14 @@ One primary service. All UUIDs share the base
 - **EVENT** notifies trip and alarm events as they happen:
   `{"ev":"ALARM_RAISE","alarm":"TEMP_HIGH"}`, `ALARM_CLEAR`, `ALARM_ACK`,
   `TRIP_START`, `TRIP_STOP`.
+- **SETTINGS** comes on EVENT by itself (decided 2026-10-05): as soon as
+  the app subscribes, again when the session gets AUTH, and whenever a
+  setting changes (from the app, the server or the console) -- so the
+  app's settings page is always the box's:
+  `{"ev":"SETTINGS","config":{...every key...},"editable":[...],
+  "trip_locked":[...],"server_rev":1,"network":{...}}`. `network`
+  (each Wi-Fi network with its DHCP or fixed address, the OTA base; never
+  a password) only after AUTH. About 1.1 KB, so it arrives in several fragments.
 
 ### Authorization: tap to authorize
 
@@ -158,12 +179,16 @@ A value the device does not have is **absent or `null`, never 0**.
 | `AUTH` | | `proof` (hex) | authorizes this connection (section 2) |
 | `GET_STATUS` | | | see below |
 | `GET_CONFIG` | | | `config`: every setting with its value |
-| `SET_CONFIG` | ✎ | `key`, `value` | |
+| `SET_CONFIG` | ✎ | `key`, `value` | over BLE only the keys of `docs/app/device-settings.md`; the trip-locked ones not while a trip runs |
 | `SET_TIME` | ✎ | `utc` (Unix s) | `quality` |
 | `START_TRIP` | ✎ | `low`, `high` (°C); `hyst` (°C, 0.5), `dwell_s` (300) | `trip` |
 | `STOP_TRIP` | ✎ | | `trip` |
 | `ACK_ALARM` | ✎ | | `alarms` still active |
-| `LIST_TRIPS` | | | `trips`: `[{"trip", "last_seq"}]`, oldest first |
+| `LIST_TRIPS` | | | `trips`: `[{"trip", "last_seq", "sent"}]`, oldest first; `sent`: the server has every row |
+| `APPLY_CONFIG` | ✎ | `config`, `wifi`, `ota_base` (each optional; `mqtt` is refused: console only) | `applied`, `errors`: the settings document of `docs/app/device-settings.md`, the same one the server sends on `mcold/v1/<sn>/config`; only the keys listed there |
+| `GET_NETWORK` | ✎ | | `wifi`: `[{"ssid","dhcp"[,"ip","gateway","subnet","dns"]}]`, `ota_base`: no passwords; needs AUTH |
+| `GET_SETTINGS` | | | the SETTINGS event's content, asked for; `network` only after AUTH |
+| `MARK_DELIVERED` | ✎ | `trip` | `trip`, `rows`: the app gave this finished trip to the server itself; the box will not upload it (`ALREADY_ACTIVE` while it runs) |
 | `GET_TRIP_SUMMARY` | | `trip` | thresholds, `samples`, `min`, `max`, `alarms`, `stopped` |
 | `READ_LOG_CHUNK` | | `trip`, `from` (seq), `max` (1-16) | `records`, `next` |
 | `GET_STORAGE_STATUS` | | | `sectors`, `used`, `free`, `trips`, `days_left` |
@@ -171,7 +196,7 @@ A value the device does not have is **absent or `null`, never 0**.
 | `REBOOT` | ✎ | | (answered, then the device restarts) |
 | `GET_SYNC_STATUS` | | | `wifi` (connected, ssid, rssi, `known`: names only), `server` (broker, `pending` records, `last_ack_s`) |
 | `SYNC_NOW` | ✎ | | upload now rather than at the next pass |
-| `SET_WIFI` | ✎ | `ssid`, `pass` (empty for open) | adds a network or changes its password; up to 5; joins the strongest in range |
+| `SET_WIFI` | ✎ | `ssid`, `pass` (empty for open; may be left out for a known network), `dhcp`, `ip`, `gateway`, `subnet`, `dns` | adds a network or changes its password and/or address (DHCP or fixed, as eTEMP has it); up to 5; joins the strongest in range |
 | `DEL_WIFI` | ✎ | `ssid` | forgets a network |
 | `GET_USB_SNAPSHOT_STATUS` | | | `NOT_SUPPORTED` until the USB drive |
 
@@ -185,13 +210,22 @@ A value the device does not have is **absent or `null`, never 0**.
          "alarms":["TEMP_HIGH"],"acked":false},
  "power":{"soc":78,"mv":3987,"ma":-12,"charge":"none","external":false},
  "gnss":{"fix":false,"age_s":null},
- "storage":{"used_pct":1}}
+ "storage":{"used_pct":1},
+ "fw":{"ver":"0.7.0-dev.1","slot":"ota_1"},
+ "net":{"connected":true,"ssid":"Office","rssi":-59,"ip":"192.168.1.147",
+        "mac":"28:84:85:27:9A:74"}}
 ```
 
+`fw` is the running firmware and the OTA slot it runs from; `net.ssid`,
+`rssi` and `ip` are there only while connected. `trip` also carries
+`alarms_raised` (in the whole trip) and `last_alarm` (`{"type":"HIGH",
+"utc":...}` or `null`): a server that was out of reach learns from them
+that an alarm came and went while it could not see.
+
 `READ_LOG_CHUNK` returns records exactly as the device stored them, one
-JSON object each, `{"seq":5,"type":2,"data":"<base64>"}`, where `data` is
-the record payload laid out as in `src/record.h` (little-endian, the
-11-byte stamp first). `next` is the sequence to ask for next, or `null`
+JSON object each, `{"seq":5,"type":16,"data":"<base64>"}`, where `data` is
+the row laid out as in `src/record.h` (record format 3: type 16, every
+record a ROW -- the same columns the server gets, section 6). `next` is the sequence to ask for next, or `null`
 when there is no more. The app keeps the byte layout, not the device's
 interpretation of it -- so a record from a newer firmware is not lost
 by an older app, only not yet understood.
@@ -211,30 +245,94 @@ by an older app, only not yet understood.
 against the team's broker; the server side -- above all the ACK -- is
 what is missing.
 
-The device connects as client id `<sn>` (e.g. `MCOLD-9A74`) to the
-broker and login set in its NVS. All topics are under `mcold/<sn>/`:
+The device connects as client id `<sn>` -- the factory serial number,
+e.g. `mCDV1-L0169-1069-001`; `MCOLD-xxxx` until one is set -- to the
+broker and login set in its NVS. As eTEMP does it (decided 2026-10-05),
+**what the box publishes is under `mcold/<sn>/`, what it subscribes to is
+under `mcold/v1/<sn>/`** -- `v1` is the version of the commands it
+understands; a box that understands `v2` subscribes there, and both can
+run on one broker while boxes move over:
 
 | Topic | Direction | QoS | Retained | Payload |
 |---|---|---|---|---|
 | `mcold/<sn>/rec` | device → server | 1 | no | a batch of records |
-| `mcold/<sn>/ack` | **server → device** | 1 | no | `{"trip":T,"upto":S}` |
+| `mcold/v1/<sn>/ack` | **server → device** | 1 | no | `{"trip":T,"upto":S}` |
 | `mcold/<sn>/status` | device → server | 0 | yes | `GET_STATUS` result (section 4) |
-| `mcold/<sn>/online` | device → server | 1 | yes | `"1"`; the broker publishes `"0"` (last will) if the device drops |
+| `mcold/<sn>/online` | device → server | 1 | yes | `"1"` while connected; `"0"` when a battery session ends, or from the broker (last will) if the device drops |
+| `mcold/v1/<sn>/firmware` | **server → device** | 1 | **yes** | a file name to install, e.g. `mCOLD_0.7.1.bin` (below) |
+| `mcold/v1/<sn>/config` | **server → device** | 1 | **yes** | a settings document (`docs/app/device-settings.md`), applied once per `rev` |
+| `mcold/<sn>/config/state` | device → server | 1 | yes | what came of it: `rev`, `applied`, `errors`, `state` |
+| `mcold/<sn>/ota/state` | device → server | 1 | yes | what came of it (below) |
 
 Subscribing to `mcold/+/rec` gets every device's records.
 
 ### Batches
 
 ```json
-{"sn":"MCOLD-9A74","trip":8,"schema":1,"from":0,"to":15,
- "records":[{"seq":0,"type":1,"data":"<base64>"}, ...]}
+{"sn":"mCDV1-L0169-1069-001","trip":11,"schema":3,"part":1,"parts":1,
+ "from":0,"to":6,"last":true,
+ "rows":[
+  {"trip":11,"seq":1,"sn":"mCDV1-L0169-1069-001","timestamp":"02:47:27 05/10/2026",
+   "utc":1791143247,"event":"SAMPLE","temp":4.25,"tempmin":2,"tempmax":8,"alarm":"",
+   "timeok":true,"gnssstate":"last","latitude":13.7563,"longitude":100.5018,"motion":0,
+   "battery":97,"internet":"online","detail":""},
+  {"trip":11,"seq":2,"sn":"mCDV1-L0169-1069-001","timestamp":"02:47:28 05/10/2026",
+   "utc":1791143248,"event":"ALARM_HIGH","temp":8.5,"tempmin":2,"tempmax":8,"alarm":"HIGH",
+   ...}, ...]}
 ```
 
-Up to 16 records, in sequence order, of one trip. `data` is the record
-payload exactly as `src/record.h` lays it out (little-endian, an 11-byte
-stamp first: UTC seconds, time quality, boot, tick) -- the same records
-`READ_LOG_CHUNK` returns over BLE. Types: 1 trip start, 2 sample,
-3 event, 4 trip stop.
+**Only finished trips are uploaded** (decided 2026-10-05,
+`docs/server/trip-data-flow.md`): while a trip runs its rows stay in the box
+and the server gets the `status`; once it has ended it goes up in parts
+of 20 rows, oldest trip first. Part k always holds seq 20(k-1)..20k-1,
+`parts` is how many the trip has, and `last` marks the one with
+TRIP_STOP. A trip the app has already delivered (`MARK_DELIVERED`) is not
+uploaded at all.
+
+**Every record is a row
+with the same columns** (record format 3, decided 2026-10-05): a sample
+and every event alike carry the state of the box at that moment, so the
+server stores one table, and the CSV a person opens has the same columns
+(`trip csv` at the console prints one, `src/logrow.h` defines it).
+
+| Column | Meaning |
+|---|---|
+| `trip` | the trip number, made by the box (unique with `sn`) |
+| `seq` | the row's place in the trip, from 0; **(sn, trip, seq) is the key** |
+| `sn` | the box's serial number |
+| `timestamp` | local time, `hh:mm:ss DD/MM/YYYY` (config `tz_offset_min`, +07:00 by default) |
+| `utc` | the same moment in Unix seconds |
+| `event` | what the row is (below) |
+| `temp` | °C, calibrated; `null` when the probe gives none |
+| `tempmin` / `tempmax` | the trip's alarm limits, from its start |
+| `alarm` | alarms active after this row: `HIGH`, `LOW`, `PROBE`, `BATTERY`, joined with `\|`; empty for none |
+| `timeok` | false when the box did not know the time; then `timestamp`/`utc` are `null` and `boot` + `up_s` order the row |
+| `gnssstate` | `fix` (within the last sample period), `last` (an older fix), `none` |
+| `latitude` / `longitude` | degrees; `null` with `none` |
+| `motion` | motion events since the previous row |
+| `battery` | state of charge, %; `null` unknown |
+| `internet` | how the last upload attempt went: `online`, `wifi_only` (Wi-Fi, no broker), `offline` |
+| `detail` | per event, in words (below); usually empty |
+
+| `event` | When | `detail` |
+|---|---|---|
+| `TRIP_START` / `TRIP_STOP` | the trip begins / ends | |
+| `SAMPLE` | every sample period | |
+| `ALARM_HIGH` / `ALARM_LOW` | outside `tempmax`/`tempmin` for longer than the dwell | |
+| `ALARM_PROBE` | no temperature for over a minute | |
+| `BATTERY_LOW` | battery under 15 % | the % |
+| `ALARM_CLEAR` | an alarm is over | which |
+| `ALARM_ACK` | someone acknowledged | the alarms |
+| `PROBE_FAULT` / `PROBE_OK` | the probe stops / starts answering | the fault |
+| `USB_IN` / `USB_OUT` | external power plugged in / pulled out | |
+| `POWER_ON` | the trip carried on after a reset | reset reason |
+| `POWER_OFF` | battery empty: the box switched itself off | cell mV |
+| `TIME_SET` | the clock was set | the time before |
+| `DATA_LOST` | a trip deleted because the log was full | its trip number |
+| `SHOCK` | reserved: a shock above a threshold (none set yet) | |
+
+Ordinary motion is not a row: it is counted in `motion`. Trips recorded
+before format 3 are not uploaded.
 
 ### The ACK -- what the server must do
 
@@ -245,7 +343,7 @@ the broker took the message.
 1. Store the batch's records durably. **The key is (sn, trip, seq)**: a
    record that arrives twice -- the device resends whenever an ACK does
    not come -- must be stored once, not twice.
-2. Then publish to `mcold/<sn>/ack`:
+2. Then publish to `mcold/v1/<sn>/ack`:
    ```json
    {"trip":8,"upto":15}
    ```
@@ -258,14 +356,80 @@ trip it does not have, or past the last record it holds; a rejected ACK
 marks nothing. The mark only ever moves forward, so a late or repeated
 ACK is harmless.
 
-Timing: after a batch the device waits 15 s for the ACK, then resends,
-doubling the wait up to 5 minutes while the server stays silent, and
-going back to 15 s at the next ACK. While a trip is running, every other
-batch is its newest records, so live data is not stuck behind backlog.
+Timing on USB power (always connected): after a batch the device waits
+15 s for the ACK, then resends, doubling the wait up to 5 minutes while
+the server stays silent, and going back to 15 s at the next ACK. The
+status goes on every change, every five minutes, and at once whenever
+the broker answers again.
+
+### On battery: sessions, not a connection
+
+On battery the box sleeps between samples and Wi-Fi is off. While a trip
+runs, or rows of a finished one are waiting, it connects for a **session**
+once per `upload_period_s`
+(default 300 s, one sample period): Wi-Fi up, broker connect, `status`,
+batches, then `"0"` on `online` and a clean disconnect. Inside a session
+it waits **10 s** for each ACK; an ACK later than that is too late for
+the session, and the batch goes again next time. A session that gets no
+ACK at all doubles the wait before the next one (10, 20, 40 ... minutes,
+up to 4 hours) -- a server that is not answering would otherwise cost a
+session of radio every five minutes.
+
+So, for the server:
+
+- **ACK fast.** Each second the server takes is a second of radio on
+  every box, every session; an ACK within one or two seconds of the
+  batch keeps a session around 5 s. No ACK means the box backs off and
+  data arrives hours late.
+- Treat a box as reachable by when its last `status` arrived, not by
+  `online`: a sleeping box is `"0"` most of the time and is fine.
+- An ACK published after the session has ended is lost (the box
+  connects with a clean session); the box sends that batch again next
+  time, and the server, keyed on (sn, trip, seq), simply ACKs it again.
+
+`tick` in the record stamp is milliseconds on a clock that runs through
+sleep, restarted only by a real reset (which also increments `boot`);
+together they order every record of a device.
 
 When the log fills, the device first deletes trips the server has
 acknowledged in full -- no data lost. Only if there are none does it
 delete the oldest unacknowledged trip, and then it records the loss.
+
+### Firmware updates (OTA)
+
+Built and tested 2026-10-04, the way eTEMP V2 does it: the server names
+a file, and the box downloads it itself.
+
+1. Put the image on the file server, in the folder the box knows (its
+   base URL, in NVS; `ota base URL` at the console). The build leaves it
+   as `.pio/build/mcold/mCOLD_<version>.bin`.
+2. Publish the file name to `mcold/v1/<sn>/firmware`, **retained** -- a box
+   on battery is asleep almost all the time and only sees it at its next
+   session. A whole `https://...` URL is accepted too.
+3. Watch `mcold/<sn>/ota/state`:
+   ```json
+   {"ver":"0.7.1","state":"downloading","pct":40}
+   {"ver":"0.7.1","state":"rebooting","from":"0.7.0"}
+   {"ver":"0.7.1","state":"ok","from":"0.7.0"}
+   {"file":"mCOLD_0.7.1.bin","state":"failed","reason":"..."}
+   {"file":"mCOLD_0.7.1.bin","state":"deferred","reason":"trip"}
+   {"ver":"0.7.1","state":"rolled_back","running":"0.7.0"}
+   {"file":"...","ver":"0.7.0","state":"skipped","reason":"not newer","running":"0.7.0"}
+   ```
+4. After `ok`, clear the retained message (publish an empty retained
+   payload). A name the box has already handled is ignored anyway, so
+   leaving it costs nothing but a few bytes per session.
+
+The box checks everything itself; the server needs to know none of it:
+the image header (same project, newer version), the image's SHA-256,
+the **signature** (RSA-3072, checked against the key of the image it is
+running -- an image not signed with the project key is refused), and
+after the reboot it must reach the broker within 3 minutes or the
+bootloader goes back to the old image, which then says `rolled_back`.
+It waits (`deferred`) while a trip runs or the battery is under 30 %,
+and goes ahead by itself once both allow. On battery with nothing to
+send it still checks in every 6 hours, so a box between trips sees a
+firmware message too.
 
 ### Open questions for the server team
 
@@ -274,5 +438,5 @@ delete the oldest unacknowledged trip, and then it records the loss.
    included, crosses the network in clear, and one shared login means
    anyone holding it can publish as any box -- including false ACKs that
    make devices delete data they never delivered. §10.4 asks for TLS.
-3. OTA: a file server for images (HTTPS), or images over MQTT? Either
-   way images will be signed and checked on the device.
+3. ~~OTA: a file server or MQTT?~~ Answered by the eTEMP way: the
+   server sends the file name, the box fetches it (above).
