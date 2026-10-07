@@ -1,3 +1,12 @@
+---
+name: Device-Protocol
+lang: en
+version: 0.1
+status: draft
+date: 2026-10-07
+firmware: 0.7.0-dev.33
+---
+
 # mCOLD device protocol
 
 **Status: PROPOSED (protocol 1), 2026-10-02.** Written by the firmware
@@ -292,7 +301,7 @@ server stores one table, and the CSV a person opens has the same columns
 | `event` | what the row is (below) |
 | `temp` | °C, calibrated; `null` when the probe gives none |
 | `tempmin` / `tempmax` | the trip's alarm limits, from its start |
-| `alarm` | alarms active after this row: `HIGH`, `LOW`, `PROBE`, `BATTERY`, joined with `|`; empty for none |
+| `alarm` | alarms active after this row: `HIGH`, `LOW`, `PROBE`, `BATTERY`, joined with `\|`; empty for none |
 | `timeok` | false when the box did not know the time; then `timestamp`/`utc` are `null` and `boot` + `up_s` order the row |
 | `gnssstate` | `fix` (within the last sample period), `last` (an older fix), `none` |
 | `latitude` / `longitude` | degrees; `null` with `none` |
