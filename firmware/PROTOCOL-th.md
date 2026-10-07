@@ -221,7 +221,7 @@ subscribe `mcold/+/rec` ได้แถวของทุกกล่อง
 
 ```json
 {"sn":"mCDV1-L0169-1069-002","trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424",
- "trip_date":"20261007","trip_number":2,"schema":5,
+ "trip_date":"20261007","trip_number":2,
  "part":1,"parts":1,"from":0,"to":3,"last":true,
  "rows":[
   {"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"seq":0,

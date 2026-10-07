@@ -1264,6 +1264,18 @@ void trip_json(uint32_t id) {
   if (!id) id = trip_last_id();
   CsvCtx c = {};
   device_sn(c.sn, sizeof(c.sn));
+  // The first batch's head as the server gets it (uplink.cpp send_batch),
+  // then every row of the trip, though the box sends 20 to a message.
+  RowHeader h;
+  uint32_t last;
+  if (trip_info(id, &h) && flashlog_last_seq(id, &last)) {
+    char u[37];
+    uuid_str(h.uuid, u);
+    printf("{\"sn\":\"%s\",\"trip_id\":\"%s\",\"trip_date\":\"%08lu\",\"trip_number\":%u,"
+           "\"part\":1,\"parts\":%lu,\"from\":0,\"to\":%lu,\"last\":%s,\"rows\":[...]}\n",
+           c.sn, u, (unsigned long)h.date, (unsigned)h.number, (unsigned long)(last / 20 + 1),
+           (unsigned long)(last < 19 ? last : 19), last < 20 ? "true" : "false");
+  }
   flashlog_read(id, 0, json_visit, &c, nullptr);
 }
 

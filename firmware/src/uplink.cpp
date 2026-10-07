@@ -405,7 +405,6 @@ void send_batch(void) {
     cJSON_AddStringToObject(o, "trip_date", d);
     cJSON_AddNumberToObject(o, "trip_number", th.number);
   }
-  cJSON_AddNumberToObject(o, "schema", ROW_HEADER_FORMAT);
   cJSON_AddNumberToObject(o, "part", part + 1);
   cJSON_AddNumberToObject(o, "parts", last / UPLINK_BATCH + 1);
   Batch b = {cJSON_AddArrayToObject(o, "rows"), 0, from, {}, config().tz_offset_min,

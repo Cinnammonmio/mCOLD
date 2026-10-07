@@ -38,6 +38,8 @@ To cut a release:
 
 P7, power: in progress.
 
+- **No `schema` in the MQTT batch** (decided 2026-10-07); `trip json` prints the batch head too. 0.7.0-dev.37.
+
 - **A slimmer row on MQTT** (decided 2026-10-07): no `sn` (the batch and
   the topic say it), `timestamp` is Unix seconds (no `utc`, no local
   text), no `detail`. ~300 B a row, a part ~6 KB (was ~9). The CSV keeps
