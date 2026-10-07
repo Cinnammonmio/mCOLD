@@ -99,23 +99,61 @@ void str16(const cJSON *o, const char *k, char *out) {
 bool settings_wifi_entry(const cJSON *e, const char **why) {
   const cJSON *s = cJSON_GetObjectItemCaseSensitive(e, "ssid");
   const cJSON *p = cJSON_GetObjectItemCaseSensitive(e, "pass");
-  if (!cJSON_IsString(s)) {
-    *why = "each entry needs an ssid";
-    return false;
-  }
-  bool known = false;
-  for (int i = 0; i < net_count(); i++) {
-    char n[33];
-    known = known || (net_known(i, n, sizeof(n)) && !strcmp(n, s->valuestring));
-  }
-  if (cJSON_IsString(p) || !known) {
-    if (!known && !cJSON_IsString(p)) {
-      *why = "a new network needs pass (\"\" for an open one)";
+  const cJSON *sl = cJSON_GetObjectItemCaseSensitive(e, "slot");
+  char name[33] = "";
+  if (cJSON_IsNumber(sl)) {
+    // By slot (1..5): rename, change the password or the address of what
+    // is there, or fill an empty one. The password may be left out only
+    // when the ssid stays.
+    const int slot = (int)sl->valuedouble - 1;
+    if (slot < 0 || slot >= NET_MAX) {
+      *why = "slot 1..5";
       return false;
     }
-    if (!net_add(s->valuestring, p->valuestring)) {
-      *why = "ssid 1-32 bytes, pass empty or 8-63, at most 5 networks";
+    char cur[33];
+    const bool have = net_slot_ssid(slot, cur, sizeof(cur));
+    if (cJSON_IsString(s)) snprintf(name, sizeof(name), "%s", s->valuestring);
+    else if (have) snprintf(name, sizeof(name), "%s", cur);
+    else {
+      *why = "an empty slot needs ssid and pass";
       return false;
+    }
+    const bool same = have && !strcmp(cur, name);
+    if (!same && !cJSON_IsString(p)) {
+      *why = "a new ssid needs pass (\"\" for an open one)";
+      return false;
+    }
+    for (int j = 0; j < NET_MAX; j++) {
+      char other[33];
+      if (j != slot && net_slot_ssid(j, other, sizeof(other)) && !strcmp(other, name)) {
+        *why = "that network is already in another slot";
+        return false;
+      }
+    }
+    if (!net_slot_put(slot, name, cJSON_IsString(p) ? p->valuestring : nullptr)) {
+      *why = "ssid 1-32 bytes, pass empty or 8-63";
+      return false;
+    }
+  } else {
+    if (!cJSON_IsString(s)) {
+      *why = "each entry needs an ssid (or a slot)";
+      return false;
+    }
+    snprintf(name, sizeof(name), "%s", s->valuestring);
+    bool known = false;
+    for (int i = 0; i < net_count(); i++) {
+      char n[33];
+      known = known || (net_known(i, n, sizeof(n)) && !strcmp(n, name));
+    }
+    if (cJSON_IsString(p) || !known) {
+      if (!known && !cJSON_IsString(p)) {
+        *why = "a new network needs pass (\"\" for an open one)";
+        return false;
+      }
+      if (!net_add(name, p->valuestring)) {
+        *why = "ssid 1-32 bytes, pass empty or 8-63, at most 5 networks";
+        return false;
+      }
     }
   }
   const cJSON *dhcp = cJSON_GetObjectItemCaseSensitive(e, "dhcp");
@@ -129,7 +167,7 @@ bool settings_wifi_entry(const cJSON *e, const char **why) {
       str16(e, "subnet", n.subnet);
       str16(e, "dns", n.dns);
     }
-    if (!net_set_ip(s->valuestring, n)) {
+    if (!net_set_ip(name, n)) {
       *why = "dhcp true, or ip, gateway, subnet (and dns) as dotted quads on one subnet";
       return false;
     }
@@ -149,8 +187,14 @@ void apply_wifi(const cJSON *w, cJSON *applied, cJSON *errors) {
   const cJSON *it;
   if (del) {
     cJSON_ArrayForEach(it, del) {
-      if (!cJSON_IsString(it)) continue;
       char what[48];
+      if (cJSON_IsNumber(it)) {          // a slot, 1..5
+        snprintf(what, sizeof(what), "wifi del slot %d", (int)it->valuedouble);
+        if (net_slot_clear((int)it->valuedouble - 1)) did(applied, what);
+        else err(errors, what, "that slot is empty");
+        continue;
+      }
+      if (!cJSON_IsString(it)) continue;
       snprintf(what, sizeof(what), "wifi del %s", it->valuestring);
       if (net_remove(it->valuestring)) did(applied, what);
       else err(errors, what, "not a known network");
@@ -161,7 +205,10 @@ void apply_wifi(const cJSON *w, cJSON *applied, cJSON *errors) {
     cJSON_ArrayForEach(it, add) {
       const cJSON *s = cJSON_GetObjectItemCaseSensitive(it, "ssid");
       char what[48];
-      snprintf(what, sizeof(what), "wifi add %s", cJSON_IsString(s) ? s->valuestring : "?");
+      const cJSON *sl = cJSON_GetObjectItemCaseSensitive(it, "slot");
+      if (cJSON_IsString(s)) snprintf(what, sizeof(what), "wifi add %s", s->valuestring);
+      else if (cJSON_IsNumber(sl)) snprintf(what, sizeof(what), "wifi slot %d", (int)sl->valuedouble);
+      else snprintf(what, sizeof(what), "wifi add ?");
       const char *why = nullptr;
       if (settings_wifi_entry(it, &why)) did(applied, what);
       else err(errors, what, why);
@@ -223,12 +270,19 @@ bool settings_apply(const cJSON *doc, cJSON *report) {
 }
 
 void settings_network(cJSON *out) {
+  // All five slots, empty ones too: {"slot":3,"ssid":null}. The app shows
+  // them as they are and edits or clears any by its number.
   cJSON *w = cJSON_AddArrayToObject(out, "wifi");
-  for (int i = 0; i < net_count(); i++) {
+  for (int i = 0; i < NET_MAX; i++) {
     char s[33];
     NetIp ip;
-    if (!net_known(i, s, sizeof(s)) || !net_get_ip(i, &ip)) continue;
     cJSON *e = cJSON_CreateObject();
+    cJSON_AddNumberToObject(e, "slot", i + 1);
+    if (!net_slot_ssid(i, s, sizeof(s)) || !net_get_ip(i, &ip)) {
+      cJSON_AddNullToObject(e, "ssid");
+      cJSON_AddItemToArray(w, e);
+      continue;
+    }
     cJSON_AddStringToObject(e, "ssid", s);
     cJSON_AddBoolToObject(e, "dhcp", ip.dhcp);
     if (!ip.dhcp) {

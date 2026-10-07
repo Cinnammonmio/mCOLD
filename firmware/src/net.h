@@ -40,6 +40,15 @@ void net_stop(void);
 bool net_add(const char *ssid, const char *pass);
 bool net_remove(const char *ssid);
 
+// The list is five fixed slots, 0..4 here (1..5 on the wire): the app
+// edits or clears a slot by its place. An empty slot has no ssid.
+// net_slot_put: the ssid and its password in that slot; pass null keeps
+// the password, which only an unchanged ssid has (a new name needs one).
+// A changed ssid starts on DHCP again; no two slots hold one network.
+bool net_slot_ssid(int slot, char *ssid, int n);
+bool net_slot_put(int slot, const char *ssid, const char *pass);
+bool net_slot_clear(int slot);
+
 // How a network gives the box its address, per network as eTEMP has it
 // (decided 2026-10-05): DHCP, or a fixed address with its gateway, subnet
 // mask and DNS server. Dotted quads; dns may be empty (then the gateway).
@@ -50,9 +59,9 @@ struct NetIp {
 // False for a network not in the list, or an address that does not parse
 // (or a gateway outside the subnet). Takes effect at the next join.
 bool net_set_ip(const char *ssid, const NetIp &ip);
-bool net_get_ip(int i, NetIp *out);
-int net_count(void);
-// The i-th known SSID (never the password), for listing.
+bool net_get_ip(int slot, NetIp *out);    // by slot, 0..4; false if empty
+int net_count(void);     // how many slots are in use
+// The i-th SSID that is in use (never the password), for listing.
 bool net_known(int i, char *ssid, int n);
 bool net_configured(void);
 

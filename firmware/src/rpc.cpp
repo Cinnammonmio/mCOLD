@@ -690,8 +690,11 @@ cJSON *c_set_wifi(uint32_t id, const cJSON *req, RpcSession *) {
 
 cJSON *c_del_wifi(uint32_t id, const cJSON *req, RpcSession *) {
   const cJSON *s = cJSON_GetObjectItemCaseSensitive(req, "ssid");
-  if (!cJSON_IsString(s) || !net_remove(s->valuestring)) {
-    return fail(id, "BAD_ARGS", "ssid: a known network");
+  const cJSON *sl = cJSON_GetObjectItemCaseSensitive(req, "slot");
+  if (cJSON_IsNumber(sl)) {
+    if (!net_slot_clear((int)sl->valuedouble - 1)) return fail(id, "BAD_ARGS", "slot 1..5, one in use");
+  } else if (!cJSON_IsString(s) || !net_remove(s->valuestring)) {
+    return fail(id, "BAD_ARGS", "slot (1..5) or ssid: a known network");
   }
   settings_touch();
   return ok(id);

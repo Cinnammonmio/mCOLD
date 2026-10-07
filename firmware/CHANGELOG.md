@@ -38,6 +38,15 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Wi-Fi in five fixed slots** (decided 2026-10-07). A slot keeps its
+  place when another is cleared. `GET_NETWORK` and the SETTINGS event's
+  `network` always list all five (`{"slot":2,"ssid":null}` for an empty
+  one); `SET_WIFI`/`APPLY_CONFIG` `add` take a `slot` (edit in place; the
+  password may be left out only while the ssid stays; a changed ssid
+  starts on DHCP), `DEL_WIFI` and `del` take a slot number or a name; one
+  network in one slot only. Networks stored before sit in slots 1..n.
+  Checked on box 002 over `rpc`. 0.7.0-dev.38/.39.
+
 - **No `schema` in the MQTT batch** (decided 2026-10-07); `trip json` prints the batch head too. 0.7.0-dev.37.
 
 - **A slimmer row on MQTT** (decided 2026-10-07): no `sn` (the batch and

@@ -74,7 +74,12 @@ struct Lock {
 
 // ---- the list in NVS: s0..s4 and p0..p4 ---------------------------------
 
+// The list is five fixed slots (decided 2026-10-07): a slot is empty when
+// its ssid is, and keeps its place when another is cleared, so the app can
+// name "slot 3" and mean the same network until it changes it. Stored
+// networks from before it sit in slots 1..n, as they were written.
 void load(void) {
+  memset(g_nets, 0, sizeof(g_nets));
   g_n = 0;
   nvs_handle_t h;
   if (nvs_open(NS, NVS_READONLY, &h) != ESP_OK) return;
@@ -97,7 +102,8 @@ void load(void) {
       k.mask = a[2];
       k.dns = a[3];
     }
-    g_nets[g_n++] = k;
+    g_nets[i] = k;
+    g_n++;
   }
   nvs_close(h);
 }
@@ -112,7 +118,7 @@ bool save(void) {
     snprintf(kp, sizeof(kp), "p%d", i);
     char ki[4];
     snprintf(ki, sizeof(ki), "i%d", i);
-    if (i < g_n) {
+    if (g_nets[i].ssid[0]) {
       ok = ok && nvs_set_str(h, ks, g_nets[i].ssid) == ESP_OK &&
            nvs_set_str(h, kp, g_nets[i].pass) == ESP_OK;
       if (g_nets[i].ip) {
@@ -143,8 +149,15 @@ void migrate(void) {
     n = sizeof(k.pass);
     if (nvs_get_str(h, "pass", k.pass, &n) != ESP_OK) k.pass[0] = 0;
     bool have = false;
-    for (int i = 0; i < g_n; i++) have = have || !strcmp(g_nets[i].ssid, k.ssid);
-    if (!have && g_n < NET_MAX) g_nets[g_n++] = k;
+    int room = -1;
+    for (int i = 0; i < NET_MAX; i++) {
+      have = have || !strcmp(g_nets[i].ssid, k.ssid);
+      if (room < 0 && !g_nets[i].ssid[0]) room = i;
+    }
+    if (!have && room >= 0) {
+      g_nets[room] = k;
+      g_n++;
+    }
     nvs_erase_key(h, "ssid");
     nvs_erase_key(h, "pass");
     nvs_commit(h);
@@ -195,13 +208,13 @@ void join(const Known &k, const uint8_t *bssid, uint8_t channel) {
 // the one that just refused us and there is another to try.
 void attempt(void) {
   Known list[NET_MAX];
-  int n;
+  int n = NET_MAX, known;
   {
     Lock l;
-    n = g_n;
+    known = g_n;
     memcpy(list, g_nets, sizeof(list));
   }
-  if (!n) return;
+  if (!known) return;
 
   // First the network that worked last time, straight to it.
   if (!g_fast_tried && g_fast.magic == FAST_MAGIC) {
@@ -229,6 +242,7 @@ void attempt(void) {
   int best = -1, second = -1;
   int8_t best_rssi = -128, second_rssi = -128;
   for (int i = 0; i < n; i++) {
+    if (!list[i].ssid[0]) continue;      // an empty slot is not a hidden network
     int8_t rssi = -128;
     bool seen = false;
     for (int a = 0; a < found; a++) {
@@ -249,7 +263,7 @@ void attempt(void) {
     }
   }
   if (best < 0) {
-    printf("[net] none of the %d known networks in range\n", n);
+    printf("[net] none of the %d known networks in range\n", known);
     schedule_retry();
     return;
   }
@@ -450,14 +464,25 @@ void net_stop(void) {
   g_ip[0] = 0;
 }
 
+namespace {
+// The slot a network is in; -1 if it is not known. Under the lock.
+int slot_of(const char *ssid) {
+  for (int i = 0; i < NET_MAX; i++) {
+    if (g_nets[i].ssid[0] && !strcmp(g_nets[i].ssid, ssid)) return i;
+  }
+  return -1;
+}
+}  // namespace
+
 bool net_add(const char *ssid, const char *pass) {
   if (!fits(ssid, pass)) return false;
   {
     Lock l;
-    int i = 0;
-    while (i < g_n && strcmp(g_nets[i].ssid, ssid)) i++;
-    if (i == g_n) {
-      if (g_n >= NET_MAX) return false;
+    int i = slot_of(ssid);
+    if (i < 0) {
+      for (i = 0; i < NET_MAX && g_nets[i].ssid[0]; i++) {
+      }
+      if (i == NET_MAX) return false;
       g_n++;
     }
     snprintf(g_nets[i].ssid, sizeof(g_nets[i].ssid), "%s", ssid);
@@ -476,15 +501,52 @@ bool net_add(const char *ssid, const char *pass) {
 bool net_remove(const char *ssid) {
   {
     Lock l;
-    int i = 0;
-    while (i < g_n && strcmp(g_nets[i].ssid, ssid)) i++;
-    if (i == g_n) return false;
-    for (; i + 1 < g_n; i++) g_nets[i] = g_nets[i + 1];
+    const int i = slot_of(ssid);
+    if (i < 0) return false;
+    memset(&g_nets[i], 0, sizeof(g_nets[i]));
     g_n--;
     if (!save()) return false;
   }
   if (g_connected && !strcmp(g_cur, ssid)) esp_wifi_disconnect();
   return true;
+}
+
+bool net_slot_ssid(int slot, char *ssid, int n) {
+  Lock l;
+  if (slot < 0 || slot >= NET_MAX || !g_nets[slot].ssid[0]) return false;
+  snprintf(ssid, (size_t)n, "%s", g_nets[slot].ssid);
+  return true;
+}
+
+bool net_slot_put(int slot, const char *ssid, const char *pass) {
+  if (slot < 0 || slot >= NET_MAX || !fits(ssid, pass ? pass : "")) return false;
+  char was[33] = "";
+  {
+    Lock l;
+    const bool had = g_nets[slot].ssid[0] != 0;
+    const bool same = had && !strcmp(g_nets[slot].ssid, ssid);
+    if (!same && !pass) return false;              // a new name has no password to keep
+    for (int i = 0; i < NET_MAX; i++) {
+      if (i != slot && !strcmp(g_nets[i].ssid, ssid)) return false;   // one slot per network
+    }
+    if (had) snprintf(was, sizeof(was), "%s", g_nets[slot].ssid);
+    if (!had) g_n++;
+    if (!same) memset(&g_nets[slot], 0, sizeof(g_nets[slot]));   // DHCP again, no old address
+    snprintf(g_nets[slot].ssid, sizeof(g_nets[slot].ssid), "%s", ssid);
+    if (pass) snprintf(g_nets[slot].pass, sizeof(g_nets[slot].pass), "%s", pass);
+    if (!save()) return false;
+  }
+  if (g_connected && (!strcmp(g_cur, ssid) || !strcmp(g_cur, was))) esp_wifi_disconnect();
+  if (!strcmp(g_failed, ssid)) g_failed[0] = 0;
+  g_backoff_ms = 2000;
+  g_retry_at = 1;
+  return true;
+}
+
+bool net_slot_clear(int slot) {
+  char name[33];
+  if (!net_slot_ssid(slot, name, sizeof(name))) return false;
+  return net_remove(name);
 }
 
 namespace {
@@ -516,9 +578,8 @@ bool net_set_ip(const char *ssid, const NetIp &ip) {
   }
   {
     Lock l;
-    int i = 0;
-    while (i < g_n && strcmp(g_nets[i].ssid, ssid)) i++;
-    if (i == g_n) return false;
+    const int i = slot_of(ssid);
+    if (i < 0) return false;
     g_nets[i].ip = a;
     g_nets[i].gw = g;
     g_nets[i].mask = m;
@@ -533,7 +594,7 @@ bool net_set_ip(const char *ssid, const NetIp &ip) {
 
 bool net_get_ip(int i, NetIp *out) {
   Lock l;
-  if (i < 0 || i >= g_n) return false;
+  if (i < 0 || i >= NET_MAX || !g_nets[i].ssid[0]) return false;
   *out = {};
   out->dhcp = g_nets[i].ip == 0;
   unquad(g_nets[i].ip, out->ip);
@@ -550,9 +611,13 @@ int net_count(void) {
 
 bool net_known(int i, char *ssid, int n) {
   Lock l;
-  if (i < 0 || i >= g_n) return false;
-  snprintf(ssid, (size_t)n, "%s", g_nets[i].ssid);
-  return true;
+  if (i < 0) return false;
+  for (int s = 0; s < NET_MAX; s++) {      // the i-th network that is there
+    if (!g_nets[s].ssid[0] || i--) continue;
+    snprintf(ssid, (size_t)n, "%s", g_nets[s].ssid);
+    return true;
+  }
+  return false;
 }
 
 bool net_configured(void) { return net_count() > 0; }

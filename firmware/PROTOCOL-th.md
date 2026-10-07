@@ -4,7 +4,7 @@ lang: th
 version: 0.2
 status: draft
 date: 2026-10-07
-firmware: 0.7.0-dev.35
+firmware: 0.7.0-dev.39
 ---
 
 # mCOLD Device Protocol
@@ -22,6 +22,7 @@ JSON คำขอและคำตอบชุดเดียวกันใช
 | คำสั่ง BLE ที่อ้าง trip | `"trip": 14` | `"trip_id": "<uuid>"` (`MARK_DELIVERED`, `GET_TRIP_SUMMARY`, `READ_LOG_CHUNK`) |
 | คำตอบที่บอก trip | `"trip": 14` | `trip_id`, `trip_date`, `trip_number` |
 | คอลัมน์ในแถวและ CSV | `trip, seq, sn, …` | `trip_id, trip_date, trip_number, seq, …` (MQTT ไม่มี `sn`, `utc`, `detail`; `timestamp` เป็น Unix) |
+| รายการ Wi-Fi | ส่งเฉพาะที่มี เรียงตามชื่อ | **ส่งครบ 5 ช่อง** (`slot` 1–5, ช่องว่าง `ssid: null`) แก้หรือลบช่องไหนก็ได้ด้วยเลขช่อง |
 | trip เก่า (ก่อน dev.34) | ส่งขึ้น server ได้ | **ไม่ส่งและไม่ปรากฏใน `LIST_TRIPS`** เพราะไม่มี `trip_id` |
 
 เลขนับในกล่องยังมีอยู่ข้างใน แต่ไม่ออกมาข้างนอกอีก
@@ -149,9 +150,9 @@ byte 1.. ส่วนหนึ่งของ JSON แบบ UTF-8
 | `STOP_TRIP` | ✎ | | `trip_id`, `trip_date`, `trip_number` |
 | `ACK_ALARM` | ✎ | | `alarms` ที่ยังค้าง |
 | `LIST_TRIPS` | | | `trips`: `[{"trip_id","trip_date","trip_number","last_seq","sent"}]` เรียงเก่าก่อน; `sent` คือ server ได้ทุกแถวแล้ว; trip ที่ไม่มี `trip_id` ไม่อยู่ในรายการ |
-| `APPLY_CONFIG` | ✎ | `config`, `wifi`, `ota_base` (ใส่ตัวไหนก็ได้; `mqtt` ปฏิเสธ: ตั้งทาง console เท่านั้น) | `applied`, `errors`: เอกสารการตั้งค่าตาม `docs/device-settings.md` ชุดเดียวกับที่ server ส่งที่ `mcold/v1/<sn>/config` เฉพาะ key ที่ระบุไว้ |
-| `GET_NETWORK` | ✎ | | `wifi`: `[{"ssid","dhcp"[,"ip","gateway","subnet","dns"]}]`, `ota_base` ไม่มีรหัสผ่าน ต้อง AUTH |
-| `GET_SETTINGS` | | | เนื้อหาของ event SETTINGS แบบขอเอง; `network` มีหลัง AUTH |
+| `APPLY_CONFIG` | ✎ | `config`, `wifi` (`add`: แต่ละรายการมี `slot` ได้, `del`: เลขช่องหรือชื่อ), `ota_base` (ใส่ตัวไหนก็ได้; `mqtt` ปฏิเสธ: ตั้งทาง console เท่านั้น) | `applied`, `errors`: เอกสารการตั้งค่าตาม `docs/device-settings.md` ชุดเดียวกับที่ server ส่งที่ `mcold/v1/<sn>/config` เฉพาะ key ที่ระบุไว้ |
+| `GET_NETWORK` | ✎ | | `wifi`: **5 ช่องเสมอ** `[{"slot":1,"ssid":"…","dhcp":true[,"ip","gateway","subnet","dns"]}, {"slot":2,"ssid":null}, …]`, `ota_base` ไม่มีรหัสผ่าน ต้อง AUTH (ดูหัวข้อ Wi-Fi 5 ช่อง) |
+| `GET_SETTINGS` | | | เนื้อหาของ event SETTINGS แบบขอเอง; `network` (Wi-Fi 5 ช่องแบบเดียวกับ `GET_NETWORK`) มีหลัง AUTH |
 | `MARK_DELIVERED` | ✎ | `trip_id` | `trip_id`, `trip_date`, `trip_number`, `rows`: แอปส่ง trip ที่จบแล้วให้ server เองแล้ว กล่องจะไม่อัปโหลดซ้ำ (ได้ `ALREADY_ACTIVE` ถ้า trip ยังวิ่ง) |
 | `GET_TRIP_SUMMARY` | | `trip_id` | `trip_id` และเกณฑ์, `samples`, `min`, `max`, `alarms`, `stopped` |
 | `READ_LOG_CHUNK` | | `trip_id`, `from` (seq), `max` (1–16) | `records`, `next` |
@@ -160,9 +161,38 @@ byte 1.. ส่วนหนึ่งของ JSON แบบ UTF-8
 | `REBOOT` | ✎ | | (ตอบก่อน แล้วกล่องรีสตาร์ท) |
 | `GET_SYNC_STATUS` | | | `wifi` (เชื่อมไหม, ssid, rssi, `known`: ชื่อที่รู้จัก), `server` (broker, `pending` แถวค้าง, `last_ack_s`) |
 | `SYNC_NOW` | ✎ | | อัปโหลดเลยแทนที่จะรอรอบถัดไป |
-| `SET_WIFI` | ✎ | `ssid`, `pass` (ว่างสำหรับเครือข่ายเปิด; ไม่ใส่ได้ถ้าเป็นเครือข่ายที่รู้จักแล้ว), `dhcp`, `ip`, `gateway`, `subnet`, `dns` | เพิ่มเครือข่าย หรือเปลี่ยนรหัสผ่านและ/หรือที่อยู่ (DHCP หรือ IP คงที่ แบบ eTEMP) จำได้ 5 เครือข่าย เชื่อมตัวที่สัญญาณแรงสุดในระยะ |
-| `DEL_WIFI` | ✎ | `ssid` | ลืมเครือข่าย |
+| `SET_WIFI` | ✎ | `slot` (1–5, ไม่ใส่ก็ได้), `ssid`, `pass` (ว่างสำหรับเครือข่ายเปิด; ไม่ใส่ได้เมื่อ ssid ในช่องไม่เปลี่ยน), `dhcp`, `ip`, `gateway`, `subnet`, `dns` | เพิ่มเครือข่าย หรือเปลี่ยนรหัสผ่านและ/หรือที่อยู่ (DHCP หรือ IP คงที่ แบบ eTEMP) จำได้ 5 เครือข่าย เชื่อมตัวที่สัญญาณแรงสุดในระยะ |
+| `DEL_WIFI` | ✎ | `slot` (1–5) หรือ `ssid` | ลบเครือข่าย (ช่องนั้นว่าง ช่องอื่นไม่ขยับ) |
 | `GET_USB_SNAPSHOT_STATUS` | | | `NOT_SUPPORTED` จนกว่าจะทำเรื่อง USB drive |
+
+### Wi-Fi 5 ช่อง (ตกลง 7 ต.ค.)
+
+กล่องจำ Wi-Fi ได้ 5 ช่อง ตำแหน่งคงที่ ช่องที่ลบแล้วเป็นช่องว่างและช่องอื่นไม่ขยับ แอปจึงอ้าง "ช่อง 3" แล้วได้เครือข่ายเดิมเสมอจนกว่าจะแก้ `GET_NETWORK` (และ `network` ใน event SETTINGS) ส่งครบทั้ง 5 ช่อง:
+
+```json
+{"id":10,"ok":true,"wifi":[
+  {"slot":1,"ssid":"RDE_2.4GHz","dhcp":true},
+  {"slot":2,"ssid":null},
+  {"slot":3,"ssid":"Warehouse","dhcp":false,"ip":"192.168.1.50","gateway":"192.168.1.1","subnet":"255.255.255.0","dns":""},
+  {"slot":4,"ssid":null},
+  {"slot":5,"ssid":null}],"ota_base":null}
+```
+
+แอปแก้หรือลบช่องไหนก็ได้ ส่งใน `APPLY_CONFIG` ครั้งเดียว (ทำ `del` ก่อน `add` เสมอ):
+
+| ผู้ใช้ทำ | ส่ง |
+|---|---|
+| ลบช่อง 3 | `"wifi":{"del":[3]}` |
+| ใส่เครือข่ายในช่องว่าง | `"wifi":{"add":[{"slot":2,"ssid":"Shop","pass":"รหัส","dhcp":true}]}` ต้องมี `ssid` และ `pass` |
+| เปลี่ยน IP หรือ DHCP ของช่อง | `"add":[{"slot":3,"dhcp":true}]` ไม่ต้องส่ง `ssid` หรือ `pass` กล่องใช้ของเดิมในช่อง |
+| เปลี่ยนรหัสผ่านของช่อง | `"add":[{"slot":3,"pass":"รหัสใหม่"}]` |
+| เปลี่ยนชื่อเครือข่ายในช่อง | `"add":[{"slot":3,"ssid":"ชื่อใหม่","pass":"รหัส"}]` ต้องมี `pass` เสมอ (ชื่อเปลี่ยนแล้วรหัสเก่าใช้ไม่ได้) และช่องกลับเป็น DHCP จนกว่าจะส่ง `ip` |
+
+- **ไม่ส่งรหัสผ่านกลับมา:** แอปจึงดูรหัสเดิมไม่ได้ ถ้าไม่เปลี่ยนรหัส ก็ไม่ต้องส่ง `pass`
+- **ห้ามซ้ำ:** เครือข่ายเดียวกันอยู่ได้ช่องเดียว ได้ error `that network is already in another slot`
+- **ผลทีละรายการ:** คำตอบมี `applied` และ `errors` แยกรายช่อง เช่น `"wifi slot 3"` สำเร็จ ส่วนตัวที่ผิดบอกเหตุผล
+- ส่ง `slot` ที่เกิน 1–5 ได้ `BAD_ARGS` (`slot 1..5`) และลบช่องที่ว่างอยู่ได้ `that slot is empty`
+- กล่องเชื่อมเครือข่ายที่สัญญาณแรงสุดในระยะ ไม่มีลำดับความสำคัญตามช่อง
 
 `GET_STATUS`:
 
