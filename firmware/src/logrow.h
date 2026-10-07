@@ -91,7 +91,8 @@ void row_detail_str(const LogRow &r, char *out, size_t n);
 // hh:mm:ss DD/MM/YYYY, local time; "" if the time is not known.
 void row_time_str(uint32_t utc, int tz_min, char *out, size_t n);
 
-// One row as a JSON object with the columns above.
+// One row as a JSON object for the server: the columns above except sn,
+// utc (`timestamp` is Unix seconds) and detail.
 cJSON *row_json(const LogRow &r, uint32_t seq, const char *sn, const RowHeader &h, int tz_min);
 
 // CSV, the same columns in the same order.

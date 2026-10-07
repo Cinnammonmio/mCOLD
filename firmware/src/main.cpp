@@ -1245,6 +1245,28 @@ void trip_csv(uint32_t id) {
   flashlog_read(id, 0, csv_visit, &c, nullptr);
 }
 
+// The same rows as the server gets them over MQTT (row_json), one per line.
+bool json_visit(const LogRecord &r, void *ctx) {
+  CsvCtx *c = (CsvCtx *)ctx;
+  LogRow row;
+  RowHeader h;
+  if (!row_decode(r.type, r.payload, r.len, &row, &h, nullptr)) return true;
+  if (h.valid) c->h = h;
+  cJSON *o = row_json(row, r.seq, c->sn, c->h, config().tz_offset_min);
+  char *s = cJSON_PrintUnformatted(o);
+  if (s) printf("%s\n", s);
+  free(s);
+  cJSON_Delete(o);
+  return true;
+}
+
+void trip_json(uint32_t id) {
+  if (!id) id = trip_last_id();
+  CsvCtx c = {};
+  device_sn(c.sn, sizeof(c.sn));
+  flashlog_read(id, 0, json_visit, &c, nullptr);
+}
+
 // Settings that take effect the moment they are stored, from the console
 // or the app alike; the rest are read where they are used.
 void config_changed(const char *key, int32_t v) {
@@ -1411,6 +1433,8 @@ void trip_command(const char *args) {
     trip_dump(atoi(args + 4));
   } else if (!strncmp(args, "csv", 3)) {
     trip_csv((uint32_t)strtoul(args + 3, nullptr, 0));
+  } else if (!strncmp(args, "json", 4)) {
+    trip_json((uint32_t)strtoul(args + 4, nullptr, 0));
   } else if (!strncmp(args, "fill ", 5)) {
     // Test only: N sample rows now, all with this moment's readings, so a
     // long trip (the drive's 64-row checkpoints) takes seconds, not hours.

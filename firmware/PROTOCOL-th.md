@@ -21,7 +21,7 @@ JSON คำขอและคำตอบชุดเดียวกันใช
 | ACK จาก server | `{"trip":T,"upto":S}` | `{"trip_id":"<uuid>","upto":S}` |
 | คำสั่ง BLE ที่อ้าง trip | `"trip": 14` | `"trip_id": "<uuid>"` (`MARK_DELIVERED`, `GET_TRIP_SUMMARY`, `READ_LOG_CHUNK`) |
 | คำตอบที่บอก trip | `"trip": 14` | `trip_id`, `trip_date`, `trip_number` |
-| คอลัมน์ในแถวและ CSV | `trip, seq, sn, …` | `trip_id, trip_date, trip_number, seq, sn, …` |
+| คอลัมน์ในแถวและ CSV | `trip, seq, sn, …` | `trip_id, trip_date, trip_number, seq, …` (MQTT ไม่มี `sn`, `utc`, `detail`; `timestamp` เป็น Unix) |
 | trip เก่า (ก่อน dev.34) | ส่งขึ้น server ได้ | **ไม่ส่งและไม่ปรากฏใน `LIST_TRIPS`** เพราะไม่มี `trip_id` |
 
 เลขนับในกล่องยังมีอยู่ข้างใน แต่ไม่ออกมาข้างนอกอีก
@@ -224,19 +224,20 @@ subscribe `mcold/+/rec` ได้แถวของทุกกล่อง
  "trip_date":"20261007","trip_number":2,"schema":5,
  "part":1,"parts":1,"from":0,"to":3,"last":true,
  "rows":[
-  {"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,
-   "seq":0,"sn":"mCDV1-L0169-1069-002","timestamp":"14:24:04 07/10/2026",
-   "utc":1791357844,"event":"TRIP_START","temp":25.83,"tempmin":2,"tempmax":8,"alarm":"",
-   "timeok":true,"gnssstate":"fix","latitude":13.7563,"longitude":100.5018,"motion":0,
-   "battery":99,"internet":"online","detail":""},
-  {"trip_id":"…","seq":1,"event":"SAMPLE", ...}, ...]}
+  {"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"seq":0,
+   "timestamp":1791357844,"event":"TRIP_START","temp":25.83,"tempmin":2,"tempmax":8,
+   "alarm":"","timeok":true,"gnssstate":"none","latitude":null,"longitude":null,
+   "motion":0,"battery":99,"internet":"online"},
+  {"trip_id":"…","seq":1,"timestamp":1791357845,"event":"SAMPLE", ...}, ...]}
 ```
+
+**แถวใน MQTT ไม่มี `sn`, `utc` และ `detail`** (ตกลง 7 ต.ค.): `sn` อยู่ที่หัวชุดและใน topic อยู่แล้ว, `timestamp` เป็นวินาที Unix (ว่างเป็น `null` เมื่อ `timeok` เป็น false), ส่วน `detail` ไม่ส่ง ไฟล์ CSV ยังมีครบทุกคอลัมน์ (`sn`, `timestamp` ข้อความเวลาท้องถิ่น, `utc`, `detail`)
 
 **อัปโหลดเฉพาะ trip ที่จบแล้ว** (ตกลง 5 ต.ค. `docs/trip-data-flow.md`): ระหว่างที่ trip วิ่ง แถวอยู่ในกล่อง server ได้แค่ `status` เมื่อจบแล้วจึงส่งเป็นชุดละ 20 แถว trip เก่าก่อน ชุดที่ k มี `seq` 20(k−1) ถึง 20k−1 เสมอ `parts` คือจำนวนชุดทั้งหมด และ `last` ระบุชุดที่มี `TRIP_STOP` trip ที่แอปส่งให้ server แล้ว (`MARK_DELIVERED`) จะไม่ถูกอัปโหลด
 
 **คีย์ของแต่ละแถวคือ `(trip_id, seq)`** และ `sn` อยู่ในทุกแถวและในชุดเพื่อผูก trip กับกล่อง `trip_id` เป็น UUID ที่ไม่ซ้ำกันทั่วโลก แต่ server ควรเก็บ `sn` คู่ไปด้วย (และตรวจว่า `sn` ใน topic ตรงกับ `sn` ในชุด)
 
-ขนาด: แถว JSON ละประมาณ 440 ไบต์ ชุดละ 20 แถวจึงราว 9 KB **broker ต้องรับข้อความได้อย่างน้อย 12 KB**
+ขนาด: แถว JSON ละประมาณ 300 ไบต์ ชุดละ 20 แถวจึงราว 6 KB **broker ต้องรับข้อความได้อย่างน้อย 8 KB**
 
 ทุกแถวมีคอลัมน์ชุดเดียวกันไม่ว่าจะเป็น sample หรือ event (record format 3) แต่ละแถวบอกสถานะของกล่อง ณ ขณะนั้น server เก็บตารางเดียวได้ และ CSV ที่คนเปิดก็คอลัมน์เดียวกัน (คำสั่ง `trip csv` ใน console พิมพ์ออกมา `src/logrow.h` เป็นตัวกำหนด)
 
@@ -246,9 +247,9 @@ subscribe `mcold/+/rec` ได้แถวของทุกกล่อง
 | `trip_date` | วันที่ท้องถิ่นตอนเริ่ม trip YYYYMMDD |
 | `trip_number` | เลขรันของ trip ในวันนั้น เริ่มที่ 1 |
 | `seq` | ลำดับแถวใน trip เริ่มที่ 0 **`(trip_id, seq)` คือคีย์** |
-| `sn` | serial number ของกล่อง |
-| `timestamp` | เวลาท้องถิ่น `hh:mm:ss DD/MM/YYYY` (ค่า `tz_offset_min` ปกติ +07:00) |
-| `utc` | ช่วงเวลาเดียวกันเป็นวินาที Unix |
+| `sn` | serial number ของกล่อง (มีใน CSV; ใน MQTT อยู่ที่หัวชุด) |
+| `timestamp` | MQTT: วินาที Unix (UTC) เป็นตัวเลข · CSV: เวลาท้องถิ่น `hh:mm:ss DD/MM/YYYY` (ค่า `tz_offset_min` ปกติ +07:00) |
+| `utc` | เฉพาะ CSV: ช่วงเวลาเดียวกันเป็นวินาที Unix |
 | `event` | แถวนี้คืออะไร (ตารางด้านล่าง) |
 | `temp` | °C หลังปรับเทียบ; `null` เมื่อ probe ไม่ให้ค่า |
 | `tempmin` / `tempmax` | เกณฑ์ alarm ของ trip ตั้งแต่เริ่ม |
@@ -259,7 +260,7 @@ subscribe `mcold/+/rec` ได้แถวของทุกกล่อง
 | `motion` | จำนวนครั้งที่ขยับตั้งแต่แถวก่อน |
 | `battery` | แบต %; `null` เมื่อไม่ทราบ |
 | `internet` | ผลการส่งรอบล่าสุด: `online`, `wifi_only` (มี Wi-Fi แต่ไม่ถึง broker), `offline` |
-| `detail` | รายละเอียดของ event เป็นคำ (ด้านล่าง) ส่วนใหญ่ว่าง |
+| `detail` | เฉพาะ CSV: รายละเอียดของ event เป็นคำ (ด้านล่าง) ส่วนใหญ่ว่าง |
 
 | event | เกิดเมื่อ | detail |
 |---|---|---|
@@ -329,4 +330,4 @@ subscribe `mcold/+/rec` ได้แถวของทุกกล่อง
 
 1. รับ topic, รูปแบบแถว (ใช้ `trip_id` UUID) และ ACK ตามนี้ หรือขอแก้อะไร
 2. เปิด TLS ที่พอร์ต 8883 และ login แยกต่อกล่อง: ที่พอร์ต 1883 ทุกอย่างรวมทั้ง login วิ่งแบบไม่เข้ารหัส และ login ร่วมหนึ่งชุดทำให้ใครถือก็ publish แทนกล่องใดก็ได้ รวมถึง ACK ปลอมที่ทำให้กล่องลบข้อมูลที่ยังไม่ถึง server
-3. broker จำกัดขนาดข้อความไว้เท่าไร (ต้องไม่ต่ำกว่า 12 KB)
+3. broker จำกัดขนาดข้อความไว้เท่าไร (ต้องไม่ต่ำกว่า 8 KB)

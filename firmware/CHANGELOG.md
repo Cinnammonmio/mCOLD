@@ -38,6 +38,12 @@ To cut a release:
 
 P7, power: in progress.
 
+- **A slimmer row on MQTT** (decided 2026-10-07): no `sn` (the batch and
+  the topic say it), `timestamp` is Unix seconds (no `utc`, no local
+  text), no `detail`. ~300 B a row, a part ~6 KB (was ~9). The CSV keeps
+  every column. `trip json` prints a trip as the server gets it.
+  0.7.0-dev.36.
+
 - **A trip is named by a UUID, a date and a day number** (decided
   2026-10-07), not by the box's counter. Header format 5 carries
   `trip_id` (UUID v4, made at the start), `trip_date` (local YYYYMMDD,

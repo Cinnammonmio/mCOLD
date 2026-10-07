@@ -235,15 +235,13 @@ cJSON *row_json(const LogRow &r, uint32_t seq, const char *sn, const RowHeader &
     cJSON_AddNullToObject(o, "trip_number");
   }
   cJSON_AddNumberToObject(o, "seq", seq);
-  cJSON_AddStringToObject(o, "sn", sn);
-  if (timeok) {
-    row_time_str(r.utc, tz_min, s, sizeof(s));
-    cJSON_AddStringToObject(o, "timestamp", s);
-    cJSON_AddNumberToObject(o, "utc", r.utc);
-  } else {
-    cJSON_AddNullToObject(o, "timestamp");
-    cJSON_AddNullToObject(o, "utc");
-  }
+  // On the wire (decided 2026-10-07): no sn (the batch and the topic
+  // carry it), `timestamp` is Unix seconds (no `utc`, no local text), and
+  // no `detail`. The CSV keeps its readable columns.
+  (void)sn;
+  (void)tz_min;
+  if (timeok) cJSON_AddNumberToObject(o, "timestamp", r.utc);
+  else cJSON_AddNullToObject(o, "timestamp");
   cJSON_AddStringToObject(o, "event", row_event_name(r.event));
   if (r.temp_c100 == I16_NONE) cJSON_AddNullToObject(o, "temp");
   else cJSON_AddNumberToObject(o, "temp", c100(r.temp_c100));
@@ -266,8 +264,6 @@ cJSON *row_json(const LogRow &r, uint32_t seq, const char *sn, const RowHeader &
   if (r.battery == 0xFF) cJSON_AddNullToObject(o, "battery");
   else cJSON_AddNumberToObject(o, "battery", r.battery);
   cJSON_AddStringToObject(o, "internet", row_link_name(r.internet));
-  row_detail_str(r, s, sizeof(s));
-  cJSON_AddStringToObject(o, "detail", s);
   if (!timeok) {
     cJSON_AddNumberToObject(o, "boot", r.boot);
     cJSON_AddNumberToObject(o, "up_s", r.tick_ms / 1000);
