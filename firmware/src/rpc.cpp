@@ -172,6 +172,45 @@ cJSON *c_auth(uint32_t id, const cJSON *req, RpcSession *s) {
   return ok(id);
 }
 
+// A trip as the app and the server name it (decided 2026-10-07): trip_id,
+// a UUID the box made; trip_date, YYYYMMDD, local; trip_number, the day's
+// running number. The box's own counter does not leave it.
+void add_trip_ident(cJSON *o, const char *uuid, uint32_t date, uint16_t number) {
+  if (uuid && *uuid) {
+    char d[10];
+    snprintf(d, sizeof(d), "%08lu", (unsigned long)date);
+    cJSON_AddStringToObject(o, "trip_id", uuid);
+    cJSON_AddStringToObject(o, "trip_date", d);
+    cJSON_AddNumberToObject(o, "trip_number", number);
+  } else {
+    cJSON_AddNullToObject(o, "trip_id");
+    cJSON_AddNullToObject(o, "trip_date");
+    cJSON_AddNullToObject(o, "trip_number");
+  }
+}
+
+void add_trip_ident(cJSON *o, const RowHeader &h) {
+  char u[37] = "";
+  if (h.has_id) uuid_str(h.uuid, u);
+  add_trip_ident(o, u, h.date, h.number);
+}
+
+// The request's trip_id, as the box's own id and its header. False, with
+// the answer to send, if there is none or the box does not have it.
+bool req_trip(uint32_t id, const cJSON *req, uint32_t *internal, RowHeader *h, cJSON **err) {
+  const cJSON *j = req ? cJSON_GetObjectItemCaseSensitive(req, "trip_id") : nullptr;
+  if (!cJSON_IsString(j)) {
+    *err = fail(id, "BAD_ARGS", "trip_id (a UUID)");
+    return false;
+  }
+  *internal = trip_find(j->valuestring);
+  if (!*internal || !trip_info(*internal, h)) {
+    *err = fail(id, "BAD_ARGS", "no such trip in the log");
+    return false;
+  }
+  return true;
+}
+
 cJSON *c_status(uint32_t id, const cJSON *, RpcSession *) {
   cJSON *o = ok(id);
 
@@ -190,7 +229,7 @@ cJSON *c_status(uint32_t id, const cJSON *, RpcSession *) {
 
   cJSON *tr = cJSON_AddObjectToObject(o, "trip");
   cJSON_AddBoolToObject(tr, "active", s.active);
-  num_or_null(tr, "id", s.id != 0, s.id);
+  add_trip_ident(tr, s.trip_id, s.trip_date, s.trip_number);
   cJSON_AddNumberToObject(tr, "samples", s.samples);
   num_or_null(tr, "min", s.have_temp, s.min_c100 / 100.0);
   num_or_null(tr, "max", s.have_temp, s.max_c100 / 100.0);
@@ -342,7 +381,7 @@ cJSON *c_start(uint32_t id, const cJSON *req, RpcSession *) {
   trip_status(&s);
   if (id == last_id && s.active && s.id == last_trip) {
     cJSON *o = ok(id);
-    cJSON_AddNumberToObject(o, "trip", last_trip);
+    add_trip_ident(o, s.trip_id, s.trip_date, s.trip_number);
     return o;
   }
 
@@ -367,7 +406,9 @@ cJSON *c_start(uint32_t id, const cJSON *req, RpcSession *) {
     nvs_close(h);
   }
   cJSON *o = ok(id);
-  cJSON_AddNumberToObject(o, "trip", trip);
+  TripStatus now;
+  trip_status(&now);
+  add_trip_ident(o, now.trip_id, now.trip_date, now.trip_number);
   return o;
 }
 
@@ -377,7 +418,7 @@ cJSON *c_stop(uint32_t id, const cJSON *, RpcSession *) {
   const TripErr e = trip_stop(2);   // reason 2: the app
   if (e != TripErr::Ok) return fail(id, trip_err_code(e), trip_err_name(e));
   cJSON *o = ok(id);
-  cJSON_AddNumberToObject(o, "trip", s.id);
+  add_trip_ident(o, s.trip_id, s.trip_date, s.trip_number);
   return o;
 }
 
@@ -397,8 +438,10 @@ cJSON *c_list_trips(uint32_t id, const cJSON *, RpcSession *) {
   cJSON *a = cJSON_AddArrayToObject(o, "trips");
   for (int i = 0; i < n && i < 64; i++) {
     if (t[i] > TRIP_ID_REAL_MAX) continue;   // bench records are not trips
+    RowHeader h;
+    if (!trip_info(t[i], &h)) continue;      // from before trip_id: the app cannot name it
     cJSON *e = cJSON_CreateObject();
-    cJSON_AddNumberToObject(e, "trip", t[i]);
+    add_trip_ident(e, h);
     uint32_t last;
     num_or_null(e, "last_seq", flashlog_last_seq(t[i], &last), last);
     // Delivered: the server has every row (ACKs, or the app said so).
@@ -432,19 +475,19 @@ cJSON *c_get_settings(uint32_t id, const cJSON *, RpcSession *ses) {
 // The app has the whole trip and has handed it to the server itself
 // ("stop and send", decided 2026-10-05): the box need not upload it.
 cJSON *c_mark_delivered(uint32_t id, const cJSON *req, RpcSession *) {
-  double trip;
-  if (!get_num(req, "trip", &trip) || trip < 1 || trip > TRIP_ID_REAL_MAX) {
-    return fail(id, "BAD_ARGS", "trip");
-  }
+  uint32_t trip;
+  RowHeader h;
+  cJSON *err = nullptr;
+  if (!req_trip(id, req, &trip, &h, &err)) return err;
   TripStatus s;
   trip_status(&s);
-  if (s.active && s.id == (uint32_t)trip) return fail(id, "ALREADY_ACTIVE", "the trip is still running: stop it first");
+  if (s.active && s.id == trip) return fail(id, "ALREADY_ACTIVE", "the trip is still running: stop it first");
   uint32_t last;
-  if (!uplink_mark_delivered((uint32_t)trip, &last)) {
+  if (!uplink_mark_delivered(trip, &last)) {
     return fail(id, "BAD_ARGS", "no such trip in the log");
   }
   cJSON *o = ok(id);
-  cJSON_AddNumberToObject(o, "trip", trip);
+  add_trip_ident(o, h);
   cJSON_AddNumberToObject(o, "rows", last + 1);
   return o;
 }
@@ -497,15 +540,15 @@ bool summary_visit(const LogRecord &r, void *ctx) {
 }
 
 cJSON *c_summary(uint32_t id, const cJSON *req, RpcSession *) {
-  double trip;
-  if (!get_num(req, "trip", &trip) || trip < 1 || trip > TRIP_ID_REAL_MAX) {
-    return fail(id, "BAD_ARGS", "trip");
-  }
+  uint32_t trip;
+  RowHeader h;
+  cJSON *err = nullptr;
+  if (!req_trip(id, req, &trip, &h, &err)) return err;
   Summary m = {};
-  flashlog_read((uint32_t)trip, 0, summary_visit, &m, nullptr);
+  flashlog_read(trip, 0, summary_visit, &m, nullptr);
   if (!m.header) return fail(id, "BAD_ARGS", "no such trip in the log");
   cJSON *o = ok(id);
-  cJSON_AddNumberToObject(o, "trip", trip);
+  add_trip_ident(o, h);
   cJSON_AddNumberToObject(o, "low", m.lo / 10.0);
   cJSON_AddNumberToObject(o, "high", m.hi / 10.0);
   cJSON_AddNumberToObject(o, "hyst", m.hyst / 10.0);
@@ -548,14 +591,17 @@ bool chunk_visit(const LogRecord &r, void *ctx) {
 }
 
 cJSON *c_read_log(uint32_t id, const cJSON *req, RpcSession *) {
-  double trip, from = 0, max = 8;
-  if (!get_num(req, "trip", &trip) || trip < 1) return fail(id, "BAD_ARGS", "trip");
+  uint32_t trip;
+  RowHeader h;
+  cJSON *err = nullptr;
+  if (!req_trip(id, req, &trip, &h, &err)) return err;
+  double from = 0, max = 8;
   get_num(req, "from", &from);
   get_num(req, "max", &max);
   if (from < 0 || max < 1 || max > 16) return fail(id, "BAD_ARGS", "from >= 0, max 1..16");
   cJSON *o = ok(id);
   Chunk c = {cJSON_AddArrayToObject(o, "records"), (int)max, 0, false, 0};
-  flashlog_read((uint32_t)trip, (uint32_t)from, chunk_visit, &c, nullptr);
+  flashlog_read(trip, (uint32_t)from, chunk_visit, &c, nullptr);
   num_or_null(o, "next", c.more, c.next);
   return o;
 }

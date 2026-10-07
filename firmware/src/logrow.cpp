@@ -49,8 +49,10 @@ size_t row_encode(const LogRow &r, const RowHeader *h, const RowSummary *s, uint
     w.i32(h->cal_gain_ppm);
     w.u32(h->cal_version);
     w.str(h->fw, 16);
-    w.str(h->sn, 24);
     w.i32(h->temp_adj_c100);
+    for (int i = 0; i < 16; i++) w.u8(h->uuid[i]);
+    w.u32(h->date);
+    w.u16(h->number);
   } else if (r.event == RE_TRIP_STOP && s) {
     w.u8(s->reason);
     w.u32(s->samples);
@@ -84,7 +86,7 @@ bool row_decode(uint8_t type, const uint8_t *p, size_t len, LogRow *r, RowHeader
   r->detail = rd.i32();
   uint8_t fmt = 0;
   if (r->event == RE_TRIP_START && h && len >= ROW_START_LEN &&
-      ((fmt = rd.u8()) == 3 || fmt == ROW_HEADER_FORMAT)) {
+      ((fmt = rd.u8()) == 3 || fmt == 4 || fmt == ROW_HEADER_FORMAT)) {
     h->trip = rd.u32();
     h->tempmin_c10 = rd.i16();
     h->tempmax_c10 = rd.i16();
@@ -97,9 +99,23 @@ bool row_decode(uint8_t type, const uint8_t *p, size_t len, LogRow *r, RowHeader
     h->cal_version = rd.u32();
     rd.str(h->fw, 16);
     h->fw[16] = 0;
-    rd.str(h->sn, 24);
-    h->sn[24] = 0;
+    if (fmt < 5) {
+      rd.str(h->sn, 24);
+      h->sn[24] = 0;
+    } else {
+      h->sn[0] = 0;
+    }
     h->temp_adj_c100 = fmt >= 4 ? rd.i32() : 0;
+    h->has_id = fmt >= 5 && len >= ROW_START_LEN5;
+    if (h->has_id) {
+      for (int i = 0; i < 16; i++) h->uuid[i] = rd.u8();
+      h->date = rd.u32();
+      h->number = rd.u16();
+    } else {
+      memset(h->uuid, 0, sizeof(h->uuid));
+      h->date = 0;
+      h->number = 0;
+    }
     h->valid = true;
   } else if (r->event == RE_TRIP_STOP && s && len >= ROW_STOP_LEN) {
     s->reason = rd.u8();
@@ -178,12 +194,46 @@ void row_time_str(uint32_t utc, int tz_min, char *out, size_t n) {
            tm.tm_mday, tm.tm_mon + 1, tm.tm_year + 1900);
 }
 
-cJSON *row_json(const LogRow &r, uint32_t trip, uint32_t seq, const char *sn,
-                const RowHeader &h, int tz_min) {
+void uuid_str(const uint8_t u[16], char out[37]) {
+  snprintf(out, 37, "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", u[0],
+           u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8], u[9], u[10], u[11], u[12], u[13],
+           u[14], u[15]);
+}
+
+bool uuid_parse(const char *s, uint8_t u[16]) {
+  if (!s || strlen(s) != 36) return false;
+  int k = 0;
+  for (int i = 0; i < 36; i++) {
+    if (i == 8 || i == 13 || i == 18 || i == 23) {
+      if (s[i] != '-') return false;
+      continue;
+    }
+    const char c = s[i];
+    const int v = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10
+                  : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+    if (v < 0) return false;
+    if (k & 1) u[k / 2] = (uint8_t)(u[k / 2] | v);
+    else u[k / 2] = (uint8_t)(v << 4);
+    k++;
+  }
+  return true;
+}
+
+cJSON *row_json(const LogRow &r, uint32_t seq, const char *sn, const RowHeader &h, int tz_min) {
   cJSON *o = cJSON_CreateObject();
   const bool timeok = r.time_q != 0;
   char s[40];
-  cJSON_AddNumberToObject(o, "trip", trip);
+  if (h.has_id) {
+    uuid_str(h.uuid, s);
+    cJSON_AddStringToObject(o, "trip_id", s);
+    snprintf(s, sizeof(s), "%08lu", (unsigned long)h.date);
+    cJSON_AddStringToObject(o, "trip_date", s);
+    cJSON_AddNumberToObject(o, "trip_number", h.number);
+  } else {
+    cJSON_AddNullToObject(o, "trip_id");
+    cJSON_AddNullToObject(o, "trip_date");
+    cJSON_AddNullToObject(o, "trip_number");
+  }
   cJSON_AddNumberToObject(o, "seq", seq);
   cJSON_AddStringToObject(o, "sn", sn);
   if (timeok) {
@@ -227,12 +277,12 @@ cJSON *row_json(const LogRow &r, uint32_t trip, uint32_t seq, const char *sn,
 
 void row_csv_header(char *out, size_t n) {
   snprintf(out, n,
-           "trip,seq,sn,timestamp,utc,event,temp,tempmin,tempmax,alarm,timeok,gnssstate,"
-           "latitude,longitude,motion,battery,internet,detail");
+           "trip_id,trip_date,trip_number,seq,sn,timestamp,utc,event,temp,tempmin,tempmax,"
+           "alarm,timeok,gnssstate,latitude,longitude,motion,battery,internet,detail");
 }
 
-void row_csv(const LogRow &r, uint32_t trip, uint32_t seq, const char *sn, const RowHeader &h,
-             int tz_min, char *out, size_t n) {
+void row_csv(const LogRow &r, uint32_t seq, const char *sn, const RowHeader &h, int tz_min,
+             char *out, size_t n) {
   const bool timeok = r.time_q != 0;
   char ts[24] = "", temp[12] = "", tmin[10] = "", tmax[10] = "", al[40], lat[16] = "",
        lon[16] = "", batt[6] = "", det[40];
@@ -251,8 +301,14 @@ void row_csv(const LogRow &r, uint32_t trip, uint32_t seq, const char *sn, const
   row_detail_str(r, det, sizeof(det));
   char utc[12] = "";
   if (timeok) snprintf(utc, sizeof(utc), "%lu", (unsigned long)r.utc);
-  snprintf(out, n, "%lu,%lu,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%u,%s,%s,%s",
-           (unsigned long)trip, (unsigned long)seq, sn, ts, utc, row_event_name(r.event), temp,
+  char tid[37] = "", tdate[10] = "", tnum[8] = "";
+  if (h.has_id) {
+    uuid_str(h.uuid, tid);
+    snprintf(tdate, sizeof(tdate), "%08lu", (unsigned long)h.date);
+    snprintf(tnum, sizeof(tnum), "%u", h.number);
+  }
+  snprintf(out, n, "%s,%s,%s,%lu,%s,%s,%s,%s,%s,%s,%s,%s,%d,%s,%s,%s,%u,%s,%s,%s", tid, tdate,
+           tnum, (unsigned long)seq, sn, ts, utc, row_event_name(r.event), temp,
            tmin, tmax, al, timeok ? 1 : 0, row_gnss_name(r.gnss), lat, lon, r.motion, batt,
            row_link_name(r.internet), det);
 }

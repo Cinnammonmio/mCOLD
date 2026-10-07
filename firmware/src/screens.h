@@ -63,8 +63,10 @@ void scr_set_insets(int top, int bottom, int left, int right);
 // Six nested frames 3 px apart, for measuring those insets by eye.
 void scr_calibrate(Canvas &c);
 
-// rx_show (bench): what a phone sent, a line each, oldest at the top.
-void scr_rxlog(Canvas &c, const char *clock, const char *const *lines, int n);
+// rx_show (bench): the BLE link in the header, then what a phone sent, a
+// line each, oldest at the top.
+void scr_rxlog(Canvas &c, const char *title, const char *clock, const char *const *lines,
+               int n);
 
 // The fourteen design states with the mockup's sample data, for checking
 // the panel against display-mock/out/. 0..13 = A1..A6, B1..B6, C1, C2.

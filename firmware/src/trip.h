@@ -32,6 +32,7 @@
 
 #include "accel.h"
 #include "door.h"
+#include "logrow.h"
 #include "power.h"
 #include "rtcclock.h"
 #include "temp.h"
@@ -78,6 +79,11 @@ struct TripStatus {
   // learns from the status when the box gets through again.
   uint8_t last_alarm;
   uint32_t last_alarm_utc;
+  // Who the trip is (empty when it has no identity: a trip from before
+  // header format 5, or none yet).
+  char trip_id[37];       // UUID
+  uint32_t trip_date;     // YYYYMMDD, local
+  uint16_t trip_number;   // the day's running number
 };
 
 // After the log, config and time are up. Resumes a trip that a reset
@@ -117,6 +123,13 @@ uint32_t trip_next_check(void);
 
 // Writes a sample if a trip is running. The caller decides when.
 void trip_sample(void);
+
+// A trip's identity from its header, by the log's own id (false: not
+// found, or from before format 5), and the other way round from the
+// UUID's text (0: none). The ids are the box's own: only the UUID, the
+// date and the number leave it.
+bool trip_info(uint32_t id, RowHeader *out);
+uint32_t trip_find(const char *uuid);
 
 // Last trip id used, for the console's record dump.
 uint32_t trip_last_id(void);

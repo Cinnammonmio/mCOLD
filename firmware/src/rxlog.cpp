@@ -45,7 +45,7 @@ void add(const char *name, const char *text) {
   now_str(t);
   portENTER_CRITICAL(&g_mux);
   const int last = (g_next + N - 1) % N;
-  if (name[0] && g_count && !strcmp(g_ring[last].name, name) && !strcmp(g_ring[last].text, text)) {
+  if (g_count && !strcmp(g_ring[last].name, name) && !strcmp(g_ring[last].text, text)) {
     // The same command with the same answer: count it on its line.
     memcpy(g_ring[last].time, t, sizeof(t));
     if (g_ring[last].repeat < 999) g_ring[last].repeat++;
@@ -95,6 +95,23 @@ void rxlog_note(const char *what) {
 void rxlog_rpc(const char *req, size_t n, const char *resp, const RpcSession *s) {
   if (!config().rx_show) return;
   cJSON *r = cJSON_ParseWithLength(req, n);
+  // The whole exchange on the console too, for whoever is debugging the
+  // app: the request as it came and the answer as it went, secrets masked.
+  {
+    if (r) mask(r);
+    char *j = r ? cJSON_PrintUnformatted(r) : nullptr;
+    printf("[rx] %s%s\n", s && s->console ? "(usb) " : "", j ? j : "(not JSON)");
+    if (j) cJSON_free(j);
+    cJSON *a = resp ? cJSON_Parse(resp) : nullptr;
+    if (a) mask(a);
+    char *k = a ? cJSON_PrintUnformatted(a) : nullptr;
+    const char *out = k ? k : (resp ? resp : "");
+    const size_t len = strlen(out);
+    printf("[tx] %.*s%s\n", len > 600 ? 600 : (int)len, out, len > 600 ? " ..." : "");
+    if (k) cJSON_free(k);
+    cJSON_Delete(a);
+    fflush(stdout);
+  }
   const cJSON *jc = r ? cJSON_GetObjectItemCaseSensitive(r, "cmd") : nullptr;
   char name[24];
   snprintf(name, sizeof(name), "%s", cJSON_IsString(jc) ? jc->valuestring : "BAD_REQUEST");

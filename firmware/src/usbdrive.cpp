@@ -173,8 +173,8 @@ bool size_visit(const LogRecord &r, void *ctx) {
     }
     c.ck[c.nck++] = {r.seq, w->off};
   }
-  char line[320];
-  row_csv(row, r.trip, r.seq, g_sn, w->c->h, g_tz, line, sizeof(line));
+  char line[400];
+  row_csv(row, r.seq, g_sn, w->c->h, g_tz, line, sizeof(line));
   w->off += strlen(line) + 2;
   w->rows++;
   return true;
@@ -203,13 +203,13 @@ int add_trips(void) {
   uint32_t trips[MAX_FILES];
   const int n = flashlog_trips(trips, MAX_FILES - 1);
   int added = 0;
-  char head[200];
+  char head[256];
   row_csv_header(head, sizeof(head));
   for (int i = 0; i < n; i++) {
     if (trips[i] > TRIP_ID_REAL_MAX) continue;
     First first = {};
     flashlog_read(trips[i], 0, first_visit, &first, nullptr);
-    if (!first.row) continue;                  // the old record format
+    if (!first.row || !first.h.has_id) continue;   // from before trip_id: no file
     Csv &c = g_csv[g_ncsv];
     memset(&c, 0, sizeof(c));
     c.trip = trips[i];
@@ -243,7 +243,7 @@ struct Gen {
   uint32_t pos = 0;            // file offset of the next byte it gives
   bool header = false;         // the header line is next
   uint32_t next_seq = 0;
-  char line[322];
+  char line[402];
   uint16_t len = 0, used = 0;  // the current line, and how much of it is given
   LogRow rows[16];
   uint32_t seqs[16];
@@ -285,7 +285,7 @@ bool next_line(Gen &g) {
       }
     }
     const uint32_t seq = g.seqs[g.irow];
-    row_csv(g.rows[g.irow], c.trip, seq, g_sn, c.h, g_tz, g.line, sizeof(g.line) - 2);
+    row_csv(g.rows[g.irow], seq, g_sn, c.h, g_tz, g.line, sizeof(g.line) - 2);
     g.next_seq = seq + 1;
     g.irow++;
   }
@@ -437,14 +437,15 @@ void snapshot(void) {
   // which file stops at the snapshot.
   char running[160] = "no trip";
   if (st.active) {
-    snprintf(running, sizeof(running), "trip %lu (not in the log yet)", (unsigned long)st.id);
+    snprintf(running, sizeof(running), "trip %s (not in the log yet)", st.trip_id);
     for (int i = 0; i < g_nfiles; i++) {
       const VFile &f = g_files[i];
       if (f.csv < 0 || g_csv[f.csv].trip != st.id) continue;
       snprintf(running, sizeof(running),
-               "trip %lu, %lu rows up to the snapshot\r\n"
+               "trip %08lu #%u, %lu rows up to the snapshot\r\n"
                "            %s",
-               (unsigned long)st.id, (unsigned long)(g_csv[f.csv].last + 1), f.lfn);
+               (unsigned long)st.trip_date, (unsigned)st.trip_number,
+               (unsigned long)(g_csv[f.csv].last + 1), f.lfn);
       break;
     }
   }

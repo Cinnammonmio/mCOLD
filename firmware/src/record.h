@@ -33,8 +33,8 @@
 //
 // TRIP_START rows go on (the trip's header):
 //
-//  32  u8   header format (4; 3 had no temp adjustment)
-//  33  u32  trip id
+//  32  u8   header format (5; 4 had no trip identity, 3 no temp adjustment)
+//  33  u32  trip id (the log's own key; never leaves the box)
 //  37  i16  tempmin, alarm below, 0.1 C
 //  39  i16  tempmax, alarm above, 0.1 C
 //  41  u16  hysteresis, 0.1 C
@@ -45,9 +45,18 @@
 //  53  i32  calibration gain, ppm
 //  57  u32  calibration version
 //  61  c16  firmware version, NUL padded
-//  77  c24  device SN, NUL padded
+//  77  c24  device SN, NUL padded (formats 3 and 4 only)
 // 101  i32  temp adjustment, 0.01 C (format 4)
 // 105
+//
+// Format 5 drops the SN (the frame holds 112 bytes; the box knows its own
+// SN, and every row says it) and adds the trip's identity:
+//
+//  77  i32  temp adjustment, 0.01 C
+//  81  u8[16] trip_id, a random UUID (v4) the box makes at the start
+//  97  u32  trip_date, the local date YYYYMMDD at the start; 0 if the time was not known
+// 101  u16  trip_number, the day's running number of trips, from 1
+// 103
 //
 // TRIP_STOP rows go on (the summary):
 //
@@ -72,7 +81,7 @@ enum RecordType : uint8_t {
   REC_ROW = 0x10,
 };
 
-static const uint8_t ROW_HEADER_FORMAT = 4;
+static const uint8_t ROW_HEADER_FORMAT = 5;
 
 // What the row records. The names are the `event` column (logrow.cpp).
 enum RowEvent : uint8_t {
@@ -114,7 +123,8 @@ enum Link : uint8_t { LINK_OFFLINE = 0, LINK_WIFI_ONLY = 1, LINK_ONLINE = 2 };
 
 static const uint32_t STAMP_LEN = 11;
 static const uint32_t ROW_LEN = 32;
-static const uint32_t ROW_START_LEN = 101;   // format 3; format 4 is 105
+static const uint32_t ROW_START_LEN = 101;   // format 3; format 4 is 105, format 5 is 103
+static const uint32_t ROW_START_LEN5 = 103;
 static const uint32_t ROW_STOP_LEN = 47;
 static const uint16_t U16_NONE = 0xFFFF;
 static const int16_t I16_NONE = INT16_MIN;

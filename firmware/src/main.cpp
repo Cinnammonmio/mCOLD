@@ -197,6 +197,7 @@ RTC_DATA_ATTR SamplePlan g_sample_plan;
 const uint32_t NFC_POLL_MS = 300;
 const uint32_t FIRST_SAMPLE_WAIT_MS = 10000;   // uptime limit, see task_trip
 const uint32_t CONSOLE_HOLD_MS = 120000;       // awake after a typed line
+const uint32_t NFC_TAP_GAP_MS = 3000;            // field edges closer than this: one tap
 
 // ---- sensors ---------------------------------------------------------
 
@@ -567,9 +568,16 @@ void task_nfc(void *) {
                p.field == NfcField::RfBusy ? "I2C refused" : "field",
                (unsigned long)nfc_tap_count());
         fflush(stdout);
-        // "This is the box you tapped."
-        indicate_cue(Cue::NfcTap);
-        rxlog_note("NFC tap");
+        // "This is the box you tapped." Once a tap: a phone resting on the
+        // tag turns its field on and off a dozen times while it reads
+        // (2-21 times in a few seconds, 2026-10-07), each one a new edge.
+        static uint32_t last_field = 0;
+        const uint32_t tf = now_ms();
+        if (!last_field || tf - last_field >= NFC_TAP_GAP_MS) {
+          indicate_cue(Cue::NfcTap);
+          rxlog_note("NFC tap");
+        }
+        last_field = tf ? tf : 1;
         // The tap is how a phone asks for the box: open BLE for it.
         ble_window(BLE_TAP_WINDOW_MS);
       }
@@ -860,7 +868,7 @@ void print_tasks(void) {
   // its 4 KB once (0.7.0-dev.13), with no warning beforehand.
   static const char *const STACKS[] = {"sensors", "power", "gnss", "nfc", "trip",
                                        "console", "super", "uplink", "TinyUSB",
-                                       "display", "ble"};
+                                       "display", "ble", "indicate"};
   printf("  stack never used:");
   for (const char *n : STACKS) {
     TaskHandle_t h = xTaskGetHandle(n);
@@ -1110,13 +1118,18 @@ void print_trip(void) {
   trip_status(&s);
   if (!s.active) {
     printf("\n  no trip running");
-    if (s.id) printf("; last was %08lX", (unsigned long)s.id);
+    if (s.id) {
+      printf("; last was %s (%08lu #%u)", s.trip_id[0] ? s.trip_id : "no trip_id",
+             (unsigned long)s.trip_date, (unsigned)s.trip_number);
+    }
     printf("\n  deleted to make room since new: %lu\n\n",
            (unsigned long)s.lost_trips);
     return;
   }
   const TripParams &p = s.params;
-  printf("\n  trip       %08lX, running\n", (unsigned long)s.id);
+  printf("\n  trip_id    %s, running\n  trip_date  %08lu, number %u\n",
+         s.trip_id[0] ? s.trip_id : "(none: from before trip_id)",
+         (unsigned long)s.trip_date, (unsigned)s.trip_number);
   printf("  alarms at  below %.1f C or above %.1f C, after %u s,"
          " clear %.1f C inside\n",
          p.low_c10 / 10.0, p.high_c10 / 10.0, p.dwell_s, p.hyst_c10 / 10.0);
@@ -1182,8 +1195,8 @@ bool csv_visit(const LogRecord &r, void *ctx) {
   RowHeader h;
   if (!row_decode(r.type, r.payload, r.len, &row, &h, nullptr)) return true;
   if (h.valid) c->h = h;
-  char line[320];
-  row_csv(row, r.trip, r.seq, c->sn, c->h, config().tz_offset_min, line, sizeof(line));
+  char line[400];
+  row_csv(row, r.seq, c->sn, c->h, config().tz_offset_min, line, sizeof(line));
   printf("%s\n", line);
   return true;
 }
@@ -1424,6 +1437,10 @@ void trip_command(const char *args) {
 // motion wakes 0 s after going to sleep, 2026-10-03), so whatever is
 // latched now is ours and is dropped, not counted. INT1 is low after.
 void before_sleep_quiet(void) {
+  // With tap_test, INT1 carries double taps alone, and switching rails
+  // makes none: what is latched is a knock, left for the wake it causes
+  // (pm arms the pin even when it is already high, in that mode).
+  if (config().tap_test) return;
   if (g_accel_up && accel_int_level()) {
     AccelEvent ev;
     accel_take_event(&ev);
@@ -1436,7 +1453,10 @@ void before_sleep(void) {
   // Motion that came in while awake and was not yet read is real: count it.
   if (g_accel_up && accel_int_level()) {
     AccelEvent ev;
-    if (accel_take_event(&ev) && !buzzer_recent(BUZZER_BLANK_MS)) trip_note_motion(ev);
+    if (accel_take_event(&ev) && !buzzer_recent(BUZZER_BLANK_MS)) {
+      trip_note_motion(ev);
+      handle_tap(ev);    // a knock that came just before sleep (tap_test)
+    }
   }
   trip_before_sleep();
   net_stop();

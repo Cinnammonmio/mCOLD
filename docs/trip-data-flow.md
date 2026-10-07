@@ -59,16 +59,16 @@ trip "ส่งแล้ว" ยังอยู่ในเครื่อง �
 `mcold/<sn>/rec` — ก้อนละ 20 แถว เฉพาะ trip ที่จบแล้ว
 
 ```json
-{"sn":"mCDV1-L0169-1069-001","trip":12,"schema":3,"part":2,"parts":6,
+{"sn":"mCDV1-L0169-1069-002","trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"schema":5,"part":2,"parts":6,
  "from":20,"to":39,"last":false,"rows":[ ...20 แถว... ]}
 ```
 
 - `part` / `parts`: ก้อนที่เท่าไรจากทั้งหมด ก้อนที่ k มีแถว `seq` 20(k−1) … 20k−1 เสมอ
 - `last: true` ที่ก้อนสุดท้าย (มี `TRIP_STOP` อยู่ในนั้น)
-- server ตอบ `mcold/v1/<sn>/ack` → `{"trip":12,"upto":39}` หลังเก็บก้อนนั้นแล้ว
+- server ตอบ `mcold/v1/<sn>/ack` → `{"trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","upto":39}` หลังเก็บก้อนนั้นแล้ว
 - ไม่ได้ ACK → กล่องส่งก้อนเดิมซ้ำ (เว้นนานขึ้นเรื่อยๆ) **server ต้องตอบ ACK เสมอ**
 - ตอนใช้แบต แต่ละรอบส่งได้ราว 45 วินาที ที่เหลือส่งต่อรอบถัดไป
-- ขนาด: แถว JSON ละ ~350 byte → ก้อนละ ~7 KB · trip 10 วัน ≈ 2,900 แถว ≈ 145 ก้อน ≈ 1 MB
+- ขนาด: แถว JSON ละ ~350 byte → ก้อนละ ~9 KB · trip 10 วัน ≈ 2,900 แถว ≈ 145 ก้อน ≈ 1 MB
 
 ## ส่งทางแอป (BLE)
 
@@ -77,7 +77,7 @@ trip "ส่งแล้ว" ยังอยู่ในเครื่อง �
 3. แอปแปลงเป็น CSV column เดียวกับที่ server ได้ ชื่อไฟล์ `TRIP_<SN>_<YYMMDDhhmm>.csv`
    เช่น `TRIP_mCDV1-L0169-1069-001_2610050330.csv` (SN เต็มตามฉลาก + เวลาเริ่ม trip)
 4. แอปส่งไฟล์ขึ้น server
-5. server ตอบว่าเก็บแล้ว → แอปเรียก `MARK_DELIVERED {"trip":12}` (ต้อง authorize แล้ว)
+5. server ตอบว่าเก็บแล้ว → แอปเรียก `MARK_DELIVERED {"trip_id":"<uuid>"}` (ต้อง authorize แล้ว)
    กล่องจะไม่ส่ง trip นี้ทาง Wi-Fi อีก
 
 ## งานแต่ละฝ่าย
@@ -85,5 +85,5 @@ trip "ส่งแล้ว" ยังอยู่ในเครื่อง �
 | ฝ่าย | ต้องทำ |
 |---|---|
 | firmware | ✅ เสร็จใน 0.7.0-dev.5 |
-| server | subscribe `mcold/+/rec` · ประกอบ trip จาก `part` · ตอบ ACK ทุกก้อน · กรองซ้ำด้วย (sn, trip, seq) · รับไฟล์ CSV จากแอป · ดู `status` ระหว่าง trip |
+| server | subscribe `mcold/+/rec` · ประกอบ trip จาก `part` · ตอบ ACK ทุกก้อน · กรองซ้ำด้วย (trip_id, seq) · รับไฟล์ CSV จากแอป · ดู `status` ระหว่าง trip |
 | แอป | ปุ่ม "จบ trip" และ "จบ trip และส่งข้อมูล" · ดึง trip ผ่าน BLE · สร้าง CSV · ส่งขึ้น server · เรียก `MARK_DELIVERED` |

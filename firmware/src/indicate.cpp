@@ -6,6 +6,7 @@
 #include <freertos/task.h>
 #include <string.h>
 
+#include "ble.h"
 #include "board.h"
 #include "buzzer.h"
 #include "config.h"
@@ -75,6 +76,9 @@ const uint32_t STEP_MS = 10;
 const uint32_t BOOT_DELAY_MS = 3000;   // let every device be tried once first
 
 volatile int g_cue = -1;               // pending cue; a newer one replaces it
+// The BLE link as this task last saw it: a phone connected, and whether
+// it passed AUTH (docs/led-design.md, "BLE / USB session").
+BleStatus g_ble = {};
 // The hourly budget is kept through deep sleep: forgetting it at every
 // wake would hand a box shaking in a truck a fresh budget every time.
 RTC_DATA_ATTR uint32_t g_window_until = 0;
@@ -186,7 +190,13 @@ void play_status(const TripStatus &s) {
     t[n++] = {LED_CARGO, Pat::Double, RED, 0};
   }
   if (s.active) t[n++] = {LED_ALIVE, Pat::Tick, CYAN, 0};
-  if (device_fault(s)) t[n++] = {LED_DEVICE, Pat::Triple, AMBER, 0};
+  if (device_fault(s)) {
+    t[n++] = {LED_DEVICE, Pat::Triple, AMBER, 0};
+  } else if (g_ble.connected) {
+    // A phone is connected: one blue tick a second on the right, two once
+    // it has passed AUTH. A fault on the box keeps that light amber.
+    t[n++] = {LED_DEVICE, g_ble.authorized ? Pat::Double : Pat::Tick, BLUE, 0};
+  }
   play(t, n);
 }
 
@@ -263,6 +273,19 @@ void task(void *) {
       }
     }
 
+    // The BLE link: the whole row blinks blue when a phone connects or
+    // goes, twice when it passes AUTH (the tap's key was right).
+    BleStatus b;
+    ble_status(&b);
+    if (b.connected != g_ble.connected) {
+      g_ble = b;
+      play_row(Pat::Blink, BLUE);
+    } else if (b.connected && b.authorized && !g_ble.authorized) {
+      g_ble = b;
+      play_row(Pat::Double, BLUE);
+    }
+    g_ble = b;
+
     // Changes in the trip, seen from outside it.
     TripStatus s;
     trip_status(&s);
@@ -287,7 +310,7 @@ void task(void *) {
 
     // The steady status, as often as it can be afforded.
     const uint32_t t = now_ms();
-    const uint32_t period = (external_power() || in_window())
+    const uint32_t period = (external_power() || in_window() || g_ble.connected)
                                 ? 1000
                                 : (uint32_t)config().sample_period_s * 1000;
     if (t - last_status >= period) {

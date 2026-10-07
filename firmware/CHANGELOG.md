@@ -38,6 +38,27 @@ To cut a release:
 
 P7, power: in progress.
 
+- **A trip is named by a UUID, a date and a day number** (decided
+  2026-10-07), not by the box's counter. Header format 5 carries
+  `trip_id` (UUID v4, made at the start), `trip_date` (local YYYYMMDD,
+  0 if the time was unknown) and `trip_number` (the day's running number
+  from 1); the SN left the header to make room (the frame holds 112
+  bytes). Every row in the rec JSON and the CSV has the three columns in
+  place of `trip`; ACKs are `{"trip_id":"<uuid>","upto":N}` (the numeric
+  form is refused); BLE `MARK_DELIVERED`, `GET_TRIP_SUMMARY`,
+  `READ_LOG_CHUNK` take `trip_id`, `LIST_TRIPS` and the status name trips
+  by the three. A trip without an identity (headers 3 and 4) is not
+  uploaded, listed or put on the drive; a trip running across the update
+  carries on, and stays home. Rows are ~440 B, a part ~9 KB: broker limit
+  12 KB. 0.7.0-dev.35.
+- **For testing, never in the product:** tap commands (`tap_test`, works
+  asleep on battery too: INT1 carries the double tap alone and the
+  motion rest is off), `rx_show` (BLE state in the header, what a phone
+  sent below, NFC field edges folded into one tap), the BLE link lights
+  (blue blink on connect/disconnect, two on AUTH, a tick on the right
+  while connected), the `[rx]`/`[tx]` console log of every command, SHT-31
+  detection (`i2c`). 0.7.0-dev.30 to .33.
+
 - **What a phone sent, on the glass, for testing** (`rx_show`, console
   only, default off). Testing tap-then-connect with the app, the screen
   shows the last events -- NFC tap, BLE connected and gone, every command

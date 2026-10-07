@@ -564,9 +564,10 @@ void scr_set_insets(int top, int bottom, int left, int right) {
   layout();
 }
 
-void scr_rxlog(Canvas &c, const char *clock, const char *const *lines, int n) {
+void scr_rxlog(Canvas &c, const char *title, const char *clock, const char *const *lines,
+               int n) {
   begin(c);
-  header(c, "FROM THE PHONE", clock);
+  header(c, title, clock);
   // 14 px a line in the 11 px face: seven lines under the bar.
   const int step = 14;
   int y = BAR + 13;

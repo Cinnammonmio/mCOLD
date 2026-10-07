@@ -193,14 +193,15 @@ void cfg_report(cJSON *o) {
 // ---- incoming ACKs ---------------------------------------------------------
 
 void on_ack(const char *data, int len) {
+  // {"trip_id":"<uuid>","upto":N} (decided 2026-10-07): the UUID the box
+  // sent with the rows. The box's own counter is not on the wire.
   cJSON *j = cJSON_ParseWithLength(data, len);
-  const cJSON *jt = j ? cJSON_GetObjectItemCaseSensitive(j, "trip") : nullptr;
+  const cJSON *jt = j ? cJSON_GetObjectItemCaseSensitive(j, "trip_id") : nullptr;
   const cJSON *ju = j ? cJSON_GetObjectItemCaseSensitive(j, "upto") : nullptr;
   uint32_t last;
-  if (!cJSON_IsNumber(jt) || !cJSON_IsNumber(ju) || jt->valuedouble < 1 ||
-      ju->valuedouble < 0 ||
-      !flashlog_last_seq((uint32_t)jt->valuedouble, &last) ||
-      ju->valuedouble > last) {
+  const uint32_t found = cJSON_IsString(jt) ? trip_find(jt->valuestring) : 0;
+  if (!found || !cJSON_IsNumber(ju) || ju->valuedouble < 0 ||
+      !flashlog_last_seq(found, &last) || ju->valuedouble > last) {
     // Not an ACK for anything in this log: a malformed message, someone
     // else's trip, or records never sent. It marks nothing stored.
     g_rejected++;
@@ -208,7 +209,7 @@ void on_ack(const char *data, int len) {
     cJSON_Delete(j);
     return;
   }
-  const uint32_t trip = (uint32_t)jt->valuedouble;
+  const uint32_t trip = found;
   const uint32_t upto = (uint32_t)ju->valuedouble;
   cJSON_Delete(j);
 
@@ -323,15 +324,16 @@ bool collect(const LogRecord &r, void *ctx) {
   Batch *b = (Batch *)ctx;
   LogRow row;
   if (row_decode(r.type, r.payload, r.len, &row, nullptr, nullptr)) {
-    cJSON_AddItemToArray(b->arr, row_json(row, r.trip, r.seq, g_sn, b->h, b->tz));
+    cJSON_AddItemToArray(b->arr, row_json(row, r.seq, g_sn, b->h, b->tz));
   }
   b->last = r.seq;
   ++b->n;
   return r.seq < b->end;
 }
 
-// The trip's header row (its tempmin/tempmax go on every row). False for
-// a trip in the old record format, which is not uploaded.
+// The trip's header row (its tempmin/tempmax and its identity go on every
+// row). False for a trip from before header format 5 -- no trip_id -- which
+// is not uploaded.
 struct First {
   bool row;
   RowHeader h;
@@ -339,7 +341,8 @@ struct First {
 bool first_visit(const LogRecord &r, void *ctx) {
   First *f = (First *)ctx;
   LogRow row;
-  f->row = row_decode(r.type, r.payload, r.len, &row, &f->h, nullptr) && f->h.valid;
+  f->row = row_decode(r.type, r.payload, r.len, &row, &f->h, nullptr) && f->h.valid &&
+           f->h.has_id;
   return false;
 }
 bool trip_header(uint32_t trip, RowHeader *h) {
@@ -391,7 +394,17 @@ void send_batch(void) {
   const uint32_t part = from / UPLINK_BATCH;
   cJSON *o = cJSON_CreateObject();
   cJSON_AddStringToObject(o, "sn", g_sn);
-  cJSON_AddNumberToObject(o, "trip", trip);
+  RowHeader th = {};
+  trip_header(trip, &th);
+  {
+    char u[37];
+    char d[10];
+    uuid_str(th.uuid, u);
+    snprintf(d, sizeof(d), "%08lu", (unsigned long)th.date);
+    cJSON_AddStringToObject(o, "trip_id", u);
+    cJSON_AddStringToObject(o, "trip_date", d);
+    cJSON_AddNumberToObject(o, "trip_number", th.number);
+  }
   cJSON_AddNumberToObject(o, "schema", ROW_HEADER_FORMAT);
   cJSON_AddNumberToObject(o, "part", part + 1);
   cJSON_AddNumberToObject(o, "parts", last / UPLINK_BATCH + 1);

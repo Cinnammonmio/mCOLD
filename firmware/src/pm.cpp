@@ -230,8 +230,14 @@ void report(uint32_t sleep_ms, uint32_t awake, const char *motion, const char *n
     // INT1 is latched: high now means an event nobody has read, and
     // arming on a level that is already there wakes the chip at once.
     const uint32_t t = mono_ms();
-    const bool rearm = !g_kept.motion_wake_at || t - g_kept.motion_wake_at >= MOTION_REARM_MS;
-    if (rearm && gpio_get_level((gpio_num_t)PIN_ACC_INT1) == 0) {
+    // tap_test: INT1 is double taps alone. No rest after a wake (that is
+    // for a box being carried, which makes no double taps), and armed even
+    // when already high: a knock latched now should wake the box at once.
+    // Without this, a tap within a minute of unplugging did nothing, and a
+    // knock just before sleep waited for the next timer wake (2026-10-06).
+    const bool taps = config().tap_test;
+    const bool rearm = taps || !g_kept.motion_wake_at || t - g_kept.motion_wake_at >= MOTION_REARM_MS;
+    if (rearm && (taps || gpio_get_level((gpio_num_t)PIN_ACC_INT1) == 0)) {
       esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_ACC_INT1, 1);
       armed_motion = "yes";
     } else if (!rearm) {

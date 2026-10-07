@@ -1,9 +1,15 @@
 // A logged row (record.h) as the table everyone sees: the same columns,
 // with the same names, in the server's JSON and in a CSV file.
 //
-//   trip, seq, sn, timestamp, utc, event, temp, tempmin, tempmax, alarm,
-//   timeok, gnssstate, latitude, longitude, motion, battery, internet,
-//   detail
+//   trip_id, trip_date, trip_number, seq, sn, timestamp, utc, event, temp,
+//   tempmin, tempmax, alarm, timeok, gnssstate, latitude, longitude,
+//   motion, battery, internet, detail
+//
+// trip_id is a UUID the box makes at the start of the trip, so a server
+// ties the trip to its sn; trip_date (YYYYMMDD, local) and trip_number
+// (the day's running number) say which trip it was to a person. A trip
+// from before they existed (header format 3, 4) has none: it is not
+// uploaded.
 //
 // tempmin/tempmax come from the trip's header row and are repeated on
 // every row, so each row reads on its own. `timestamp` is local time,
@@ -45,7 +51,15 @@ struct RowHeader {
   char fw[17];
   char sn[25];
   int32_t temp_adj_c100;    // format 4; 0 in format 3
+  bool has_id;              // format 5: the three below are there
+  uint8_t uuid[16];
+  uint32_t date;            // YYYYMMDD, local; 0: the time was not known
+  uint16_t number;          // the day's running number, from 1
 };
+
+// "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", 37 bytes with the NUL.
+void uuid_str(const uint8_t u[16], char out[37]);
+bool uuid_parse(const char *s, uint8_t u[16]);
 
 struct RowSummary {
   bool valid;
@@ -78,13 +92,12 @@ void row_detail_str(const LogRow &r, char *out, size_t n);
 void row_time_str(uint32_t utc, int tz_min, char *out, size_t n);
 
 // One row as a JSON object with the columns above.
-cJSON *row_json(const LogRow &r, uint32_t trip, uint32_t seq, const char *sn,
-                const RowHeader &h, int tz_min);
+cJSON *row_json(const LogRow &r, uint32_t seq, const char *sn, const RowHeader &h, int tz_min);
 
 // CSV, the same columns in the same order.
 void row_csv_header(char *out, size_t n);
-void row_csv(const LogRow &r, uint32_t trip, uint32_t seq, const char *sn, const RowHeader &h,
-             int tz_min, char *out, size_t n);
+void row_csv(const LogRow &r, uint32_t seq, const char *sn, const RowHeader &h, int tz_min,
+             char *out, size_t n);
 
 // The trip's file name: TRIP_<SN>_<YYMMDDhhmm>.csv, the whole SN as on
 // the label and the local start time (decided 2026-10-05): long, but

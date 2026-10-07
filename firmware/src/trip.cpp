@@ -2,6 +2,7 @@
 
 #include <esp_app_desc.h>
 #include <esp_attr.h>
+#include <esp_random.h>
 #include <esp_system.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -77,6 +78,12 @@ bool g_acked = false;
 uint32_t g_high_since = 0, g_low_since = 0;
 uint32_t g_lost_trips = 0;
 
+// Who the latest trip is, to the outside (decided 2026-10-07): a UUID the
+// box makes at the start, the local date and the day's running number.
+// Held in RAM for the active trip, or the last one; the log's own key (a
+// counter) stays inside the box.
+RowHeader g_hdr = {};
+
 // The inputs above, carried through deep sleep. The totals and the alarm
 // state come back from the log on every boot, sleep or not; these are the
 // things the log does not hold -- how long the probe has been above the
@@ -125,6 +132,29 @@ bool nvs_put(const char *k, uint32_t v) {
   const bool ok = nvs_set_u32(h, k, v) == ESP_OK && nvs_commit(h) == ESP_OK;
   nvs_close(h);
   return ok;
+}
+
+// ---- who a trip is ---------------------------------------------------
+
+bool hdr_visit(const LogRecord &r, void *ctx) {
+  LogRow row;
+  RowHeader t = {};
+  if (row_decode(r.type, r.payload, r.len, &row, &t, nullptr) && t.valid) {
+    *(RowHeader *)ctx = t;
+  }
+  return false;     // the first record is the header
+}
+
+// The local date as YYYYMMDD; 0 when the time is not known.
+uint32_t today_ymd(void) {
+  TimeStamp ts;
+  time_now(&ts);
+  if (ts.quality == TimeSource::None) return 0;
+  const time_t local = (time_t)(ts.utc_ms / 1000) + config().tz_offset_min * 60;
+  struct tm tm;
+  gmtime_r(&local, &tm);
+  return (uint32_t)(tm.tm_year + 1900) * 10000 + (uint32_t)(tm.tm_mon + 1) * 100 +
+         (uint32_t)tm.tm_mday;
 }
 
 // ---- writing records -------------------------------------------------
@@ -419,6 +449,7 @@ void trip_init(const char *sn) {
   snprintf(g_sn, sizeof(g_sn), "%s", sn ? sn : "");
   g_lost_trips = nvs_u32("lost", 0);
   g_last_id = nvs_u32("last", 0);
+  if (g_last_id) flashlog_read(g_last_id, 0, hdr_visit, &g_hdr, nullptr);
 
   const uint32_t id = nvs_u32("active", 0);
   if (!id) return;
@@ -537,6 +568,15 @@ TripErr trip_start(const TripParams &p, uint32_t *id_out) {
   h.cal_gain_ppm = config().cal_gain_ppm;
   h.cal_version = (uint32_t)config().cal_version;
   h.temp_adj_c100 = config().temp_adj_c100;
+  // Who this trip is: a random UUID (version 4), the local date, and the
+  // day's running number -- from 1, and starting again when the date turns.
+  h.has_id = true;
+  esp_fill_random(h.uuid, sizeof(h.uuid));
+  h.uuid[6] = (uint8_t)((h.uuid[6] & 0x0F) | 0x40);
+  h.uuid[8] = (uint8_t)((h.uuid[8] & 0x3F) | 0x80);
+  h.date = today_ymd();
+  const uint32_t day_before = nvs_u32("day", 0xFFFFFFFF);
+  h.number = (uint16_t)(day_before == h.date ? nvs_u32("daycnt", 0) + 1 : 1);
   snprintf(h.fw, sizeof(h.fw), "%s", esp_app_get_description()->version);
   snprintf(h.sn, sizeof(h.sn), "%s", g_sn);
 
@@ -546,7 +586,11 @@ TripErr trip_start(const TripParams &p, uint32_t *id_out) {
   const TripErr e = put(snapshot(RE_TRIP_START, 0), &h, nullptr, true);
   if (e != TripErr::Ok) return e;
   nvs_put("next_id", id + 1);
+  nvs_put("day", h.date);
+  nvs_put("daycnt", h.number);
   nvs_put("last", id);
+  g_hdr = h;
+  g_hdr.valid = true;
   nvs_put("active", id);
   g_active = true;
   g_last_id = id;
@@ -703,6 +747,40 @@ void trip_status(TripStatus *out) {
   out->lost_trips = g_lost_trips;
   out->last_alarm = g_t.alarms_raised ? g_t.last_alarm : 0xFF;
   out->last_alarm_utc = g_t.alarms_raised ? g_t.last_alarm_utc : 0;
+  if (g_hdr.has_id && g_hdr.trip == out->id) {
+    uuid_str(g_hdr.uuid, out->trip_id);
+    out->trip_date = g_hdr.date;
+    out->trip_number = g_hdr.number;
+  }
+}
+
+bool trip_info(uint32_t id, RowHeader *out) {
+  if (!id || !out) return false;
+  if (g_mx) {
+    Lock l;
+    if (g_hdr.has_id && g_hdr.trip == id) {
+      *out = g_hdr;
+      return true;
+    }
+  }
+  RowHeader h = {};
+  flashlog_read(id, 0, hdr_visit, &h, nullptr);
+  if (!h.valid || !h.has_id) return false;
+  *out = h;
+  return true;
+}
+
+uint32_t trip_find(const char *uuid) {
+  uint8_t want[16];
+  if (!uuid_parse(uuid, want)) return 0;
+  uint32_t trips[64];
+  const int n = flashlog_trips(trips, 64);
+  for (int i = 0; i < n && i < 64; i++) {
+    if (trips[i] > TRIP_ID_REAL_MAX) continue;
+    RowHeader h;
+    if (trip_info(trips[i], &h) && !memcmp(h.uuid, want, 16)) return trips[i];
+  }
+  return 0;
 }
 
 uint32_t trip_last_id(void) { return g_active ? g_id : g_last_id; }
