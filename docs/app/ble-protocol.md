@@ -4,7 +4,7 @@ lang: th
 version: 0.3
 status: draft
 date: 2026-10-07
-firmware: 0.7.0-dev.42
+firmware: 0.7.0-dev.44
 ---
 
 # mCOLD BLE Protocol (สำหรับทีมแอป)
@@ -54,7 +54,7 @@ firmware: 0.7.0-dev.42
 - **INFO** คือผลของ `GET_INFO` (ข้อ 4) แอปเช็กเวอร์ชัน protocol ได้ก่อนส่งอะไร
 - **STATUS** คือผลของ `GET_STATUS` แจ้ง (notify) เมื่อสถานะ trip หรือ alarm เปลี่ยน และหลังบันทึกแต่ละครั้ง
 - **COMMAND** รับคำขอ **RESPONSE** ส่งคำตอบกลับ
-- **EVENT** แจ้งเหตุการณ์ของ trip และ alarm: `{"ev":"ALARM_RAISE","alarm":"TEMP_HIGH"}`, `ALARM_CLEAR`, `ALARM_ACK`, `TRIP_START`, `TRIP_STOP`
+- **EVENT** แจ้งเหตุการณ์ของ trip และ alarm: `{"ev":"ALARM_RAISE","alarm":"TEMP_HIGH"}`, `ALARM_CLEAR`, `ALARM_ACK`, `TRIP_START`, `TRIP_STOP` และ **`WIFI`** (สถานะ Wi-Fi เปลี่ยน ดูหัวข้อ "แอปเห็นค่าที่เปลี่ยนในกล่องอย่างไร")
 - **SETTINGS** มากับ EVENT เอง (ตกลง 5 ต.ค.): ทันทีที่แอป subscribe, อีกครั้งเมื่อ session ผ่าน AUTH และเมื่อมีการตั้งค่าเปลี่ยน (จากแอป server หรือ console) ทำให้หน้าตั้งค่าของแอปตรงกับกล่องเสมอ: `{"ev":"SETTINGS","config":{...ทุกค่า...},"editable":[...],"trip_locked":[...],"server_rev":1,"network":{...}}` ส่วน `network` (Wi-Fi แต่ละเครือข่ายพร้อม DHCP หรือ IP คงที่ และ OTA base ไม่มีรหัสผ่าน) จะมีหลัง AUTH เท่านั้น ขนาดราว 1.1 KB จึงมาเป็นหลาย fragment
 
 ### Authorization: แตะเพื่อยืนยันตัว
@@ -202,6 +202,7 @@ byte 1.. ส่วนหนึ่งของ JSON แบบ UTF-8
 | ค่าตั้งทั้งหมด และ `network` (Wi-Fi 5 ช่อง, `ota_base`) | event `SETTINGS` ที่ช่อง EVENT | ทันทีที่แอป subscribe, ทันทีที่ session ผ่าน AUTH (เพราะ `network` มีหลัง AUTH เท่านั้น) และทุกครั้งที่ค่าตั้งเปลี่ยน |
 | อุณหภูมิ แบต สถานะ trip และ alarm | STATUS (notify) | เมื่อ trip เริ่มหรือจบ, alarm เปลี่ยน, ได้รับทราบ alarm และหลังบันทึกแต่ละครั้ง |
 | trip, alarm | event `TRIP_START`, `TRIP_STOP`, `ALARM_RAISE`, `ALARM_CLEAR`, `ALARM_ACK` | ทันทีที่เกิด |
+| สถานะ Wi-Fi (ต่ออยู่ไหม, ชื่อเครือข่าย, IP) | event `WIFI` ที่ช่อง EVENT | ทันทีที่แอป subscribe (บอกสถานะตอนนั้นเลย) และทุกครั้งที่กล่องต่อหรือหลุดจากเครือข่าย หรือได้ IP ใหม่ |
 
 ค่าตั้งเปลี่ยนจากที่ไหนก็ได้ ทั้งแอป server (เอกสาร config ทาง MQTT) และ console ของกล่อง `SETTINGS` ส่งให้ทุกกรณี
 
@@ -209,7 +210,7 @@ byte 1.. ส่วนหนึ่งของ JSON แบบ UTF-8
 - **ต้อง subscribe ช่อง EVENT และ STATUS** จึงจะได้ข้อความเหล่านี้ ถ้าไม่ได้เชื่อมตอนค่าเปลี่ยน แอปจะได้ค่าล่าสุดทันทีที่เชื่อมแล้ว subscribe
 - **event เป็นแบบ notify ไม่รับประกันว่าได้ครบ** ถ้าแอปหลุดชั่วครู่หรือไม่แน่ใจ ให้เรียก `GET_SETTINGS` ขอค่าล่าสุด
 - **`SETTINGS` ยาว 1–2 KB** มาเป็นหลาย fragment แอปต้องต่อให้ครบ (บิต FIRST/LAST) ก่อนอ่านเป็น JSON
-- **สถานะ Wi-Fi สด** (ต่ออยู่ไหม, ชื่อเครือข่าย, สัญญาณ `rssi`, แถวที่ค้างส่ง) กล่อง**ไม่ส่งเมื่อเปลี่ยน** ให้แอปเรียก `GET_SYNC_STATUS` เป็นระยะ เช่นทุก 5–10 วินาทีตอนเปิดหน้า Wi-Fi อ่านได้โดยไม่ต้อง AUTH
+- **สถานะ Wi-Fi:** กล่องแจ้งเองเป็น event `WIFI` ผ่านช่อง EVENT เมื่อ `connected`, `ssid` หรือ `ip` เปลี่ยน ไม่ต้องอ่านซ้ำ รูปแบบ `{"ev":"WIFI","connected":true,"ssid":"Office","ip":"192.168.1.14","rssi":-51}` และเมื่อหลุด `{"ev":"WIFI","connected":false}` `rssi` ส่งมาด้วยแต่ไม่ใช่เหตุให้แจ้ง (ค่าแกว่งตลอด) ถ้าแอปต้องการความแรงสัญญาณสดหรือจำนวนแถวที่ค้างส่ง ให้เรียก `GET_SYNC_STATUS` เป็นระยะ (อ่านได้โดยไม่ต้อง AUTH)
 
 `GET_STATUS`:
 
