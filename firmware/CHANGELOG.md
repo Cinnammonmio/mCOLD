@@ -38,6 +38,14 @@ To cut a release:
 
 P7, power: in progress.
 
+- **A Wi-Fi that will not connect is an event too** (2026-10-08): each
+  failed attempt sends `{"ev":"WIFI","connected":false,"error":
+  "wrong_password"|"not_found"|"failed","reason":N,"ssid":..,"attempts":N}`
+  (the same on subscribe while the last attempt failed); a join sends the
+  usual connected event. Checked from a PC over BLE with a wrong password
+  on the Wi-Fi in use: five events, then the right one back and connected.
+  0.7.0-dev.46.
+
 - **The WIFI event carries the whole network** (2026-10-08): mac, ssid,
   dhcp, ip, gateway, subnet, dns and rssi when connected; mac alone with
   `connected:false` otherwise. Sent when the app subscribes (joined or

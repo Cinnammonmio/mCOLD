@@ -36,6 +36,13 @@ SemaphoreHandle_t g_mx = nullptr;
 
 char g_cur[33] = "";            // the network being joined, or joined
 char g_failed[33] = "";         // the last one that refused us
+// The last failed attempt, for the app (decided 2026-10-08): which network
+// (empty: none of the known ones was in range), the driver's reason, how
+// many in a row, and a counter that moves with each so a repeat is news.
+char g_fail_ssid[33] = "";
+volatile uint16_t g_fail_reason = 0;
+volatile uint32_t g_fail_count = 0;      // in a row; 0 once a network is joined
+volatile uint32_t g_fail_seq = 0;
 volatile bool g_started = false;
 volatile bool g_connected = false;
 volatile bool g_connecting = false;
@@ -264,6 +271,10 @@ void attempt(void) {
   }
   if (best < 0) {
     printf("[net] none of the %d known networks in range\n", known);
+    g_fail_ssid[0] = 0;
+    g_fail_reason = 201;                 // WIFI_REASON_NO_AP_FOUND
+    g_fail_count = g_fail_count + 1;
+    g_fail_seq = g_fail_seq + 1;
     schedule_retry();
     return;
   }
@@ -309,6 +320,10 @@ void on_event(void *, esp_event_base_t base, int32_t id, void *data) {
       printf("[net] disconnected from %s, reason %u\n", g_cur, e->reason);
     } else {
       printf("[net] %s refused, reason %u\n", g_cur, e->reason);
+      snprintf(g_fail_ssid, sizeof(g_fail_ssid), "%s", g_cur);
+      g_fail_reason = e->reason;
+      g_fail_count = g_fail_count + 1;
+      g_fail_seq = g_fail_seq + 1;
       snprintf(g_failed, sizeof(g_failed), "%s", g_cur);   // try another next
       g_fast.magic = 0;             // and not directly again
     }
@@ -325,6 +340,7 @@ void on_event(void *, esp_event_base_t base, int32_t id, void *data) {
     g_up_since = now_ms();
     g_backoff_ms = 2000;
     g_failed[0] = 0;
+    g_fail_count = 0;
     wifi_ap_record_t ap;
     if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
       g_fast.magic = FAST_MAGIC;
@@ -635,6 +651,10 @@ void net_status(NetStatus *out) {
   out->last_up_ms = g_fast.magic == FAST_MAGIC ? g_fast.last_up : 0;
   wifi_ap_record_t ap;
   if (g_connected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) out->rssi = ap.rssi;
+  snprintf(out->fail_ssid, sizeof(out->fail_ssid), "%s", g_fail_ssid);
+  out->fail_reason = g_fail_reason;
+  out->fail_count = g_fail_count;
+  out->fail_seq = g_fail_seq;
   uint8_t mac[6];
   if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
     snprintf(out->mac, sizeof(out->mac), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2],

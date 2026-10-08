@@ -362,6 +362,7 @@ void push_wifi(void) {
   static uint16_t conn = BLE_HS_CONN_HANDLE_NONE;
   static bool was_up = false;
   static char was_ssid[33] = "", was_ip[16] = "";
+  static uint32_t was_fail = 0;
   if (g_conn == BLE_HS_CONN_HANDLE_NONE || !g_sub_evt) {
     conn = BLE_HS_CONN_HANDLE_NONE;
     return;
@@ -371,11 +372,28 @@ void push_wifi(void) {
   const bool up = n.connected;
   const char *ssid = up ? n.ssid : "";
   const char *ip = up ? n.ip : "";
-  if (conn == g_conn && up == was_up && !strcmp(ssid, was_ssid) && !strcmp(ip, was_ip)) return;
+  if (conn == g_conn && up == was_up && !strcmp(ssid, was_ssid) && !strcmp(ip, was_ip) &&
+      n.fail_seq == was_fail) {
+    return;
+  }
   cJSON *o = cJSON_CreateObject();
   cJSON_AddStringToObject(o, "ev", "WIFI");
   cJSON_AddBoolToObject(o, "connected", up);
   cJSON_AddStringToObject(o, "mac", n.mac);
+  if (!up && n.fail_count) {
+    // Not joined, and the last attempt failed: say so, and why. A wrong
+    // password (15, 204, 202) and a network out of range (201) are the
+    // ones an app can tell the person.
+    const unsigned r = n.fail_reason;
+    const char *why = (r == 15 || r == 204 || r == 202) ? "wrong_password"
+                      : r == 201                        ? "not_found"
+                                                        : "failed";
+    cJSON_AddStringToObject(o, "error", why);
+    cJSON_AddNumberToObject(o, "reason", r);
+    if (n.fail_ssid[0]) cJSON_AddStringToObject(o, "ssid", n.fail_ssid);
+    else cJSON_AddNullToObject(o, "ssid");
+    cJSON_AddNumberToObject(o, "attempts", n.fail_count);
+  }
   if (up) {
     cJSON_AddStringToObject(o, "ssid", n.ssid);
     cJSON_AddBoolToObject(o, "dhcp", n.dhcp);
@@ -392,6 +410,7 @@ void push_wifi(void) {
   free(j);
   conn = g_conn;
   was_up = up;
+  was_fail = n.fail_seq;
   snprintf(was_ssid, sizeof(was_ssid), "%s", ssid);
   snprintf(was_ip, sizeof(was_ip), "%s", ip);
 }
