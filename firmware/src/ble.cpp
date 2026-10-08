@@ -28,6 +28,7 @@ void ble_store_config_init(void);
 #include <cJSON.h>
 #include "rpc.h"
 #include "trip.h"
+#include "net.h"
 #include "rxlog.h"
 
 namespace {
@@ -349,6 +350,45 @@ void push_settings(void) {
   authorized = auth;
 }
 
+// The Wi-Fi state, pushed as an event (decided 2026-10-08): once the app
+// listens for events, and again when the box joins or loses a network or
+// gets another address. `rssi` goes along but is not a reason to send --
+// it never stops moving; the app reads GET_SYNC_STATUS for it.
+//   {"ev":"WIFI","connected":true,"ssid":"Office","ip":"192.168.1.14","rssi":-51}
+//   {"ev":"WIFI","connected":false}
+void push_wifi(void) {
+  static uint16_t conn = BLE_HS_CONN_HANDLE_NONE;
+  static bool was_up = false;
+  static char was_ssid[33] = "", was_ip[16] = "";
+  if (g_conn == BLE_HS_CONN_HANDLE_NONE || !g_sub_evt) {
+    conn = BLE_HS_CONN_HANDLE_NONE;
+    return;
+  }
+  NetStatus n;
+  net_status(&n);
+  const bool up = n.connected;
+  const char *ssid = up ? n.ssid : "";
+  const char *ip = up ? n.ip : "";
+  if (conn == g_conn && up == was_up && !strcmp(ssid, was_ssid) && !strcmp(ip, was_ip)) return;
+  cJSON *o = cJSON_CreateObject();
+  cJSON_AddStringToObject(o, "ev", "WIFI");
+  cJSON_AddBoolToObject(o, "connected", up);
+  if (up) {
+    cJSON_AddStringToObject(o, "ssid", n.ssid);
+    cJSON_AddStringToObject(o, "ip", n.ip);
+    cJSON_AddNumberToObject(o, "rssi", n.rssi);
+  }
+  char *j = cJSON_PrintUnformatted(o);
+  cJSON_Delete(o);
+  if (!j) return;
+  send_json(h_evt, true, j);
+  free(j);
+  conn = g_conn;
+  was_up = up;
+  snprintf(was_ssid, sizeof(was_ssid), "%s", ssid);
+  snprintf(was_ip, sizeof(was_ip), "%s", ip);
+}
+
 void worker(void *) {
   TripStatus prev;
   trip_status(&prev);
@@ -393,6 +433,7 @@ void worker(void *) {
     }
     prev = s;
     push_settings();
+    push_wifi();
 
     // Advertise only with a reason: a tap's window, or external power.
     const bool want = g_up && g_enabled && g_conn == BLE_HS_CONN_HANDLE_NONE &&

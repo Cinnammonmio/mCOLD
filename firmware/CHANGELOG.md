@@ -38,6 +38,14 @@ To cut a release:
 
 P7, power: in progress.
 
+- **The Wi-Fi state is an event for the app** (decided 2026-10-08):
+  `{"ev":"WIFI","connected":true,"ssid":"..","ip":"..","rssi":-51}` /
+  `{"ev":"WIFI","connected":false}` on the EVENT characteristic, sent
+  when the app subscribes and whenever connected, ssid or ip change (not
+  for rssi). Checked from a PC over BLE while the Wi-Fi was dropped and
+  re-added from the console. The console log of every app command
+  (`[rx]`/`[tx]`) no longer depends on `rx_show`. 0.7.0-dev.43/.44.
+
 - **BLE goes off 5 s after a phone leaves** (decided 2026-10-07), also on
   external power; the next tap opens it again (`ble on` at the console
   too). Before, it stayed 30 s, and on USB power always. 0.7.0-dev.41/.42.

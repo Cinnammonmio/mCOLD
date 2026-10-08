@@ -93,7 +93,9 @@ void rxlog_note(const char *what) {
 }
 
 void rxlog_rpc(const char *req, size_t n, const char *resp, const RpcSession *s) {
-  if (!config().rx_show) return;
+  // The console log below is always on (rx_show only decides whether the
+  // screen shows it): with rx_show off it was silent, and a whole test
+  // with the app went unseen (2026-10-08).
   cJSON *r = cJSON_ParseWithLength(req, n);
   // The whole exchange on the console too, for whoever is debugging the
   // app: the request as it came and the answer as it went, secrets masked.
@@ -146,7 +148,7 @@ void rxlog_rpc(const char *req, size_t n, const char *resp, const RpcSession *s)
   char text[TEXT];
   snprintf(text, sizeof(text), "%s%s%s > %s%s", name, params[0] ? " " : "", params, result,
            s && s->console ? " (usb)" : "");
-  add(name, text);
+  if (config().rx_show) add(name, text);
 }
 
 uint32_t rxlog_gen(void) { return g_gen; }
