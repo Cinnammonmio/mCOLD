@@ -38,6 +38,13 @@ To cut a release:
 
 P7, power: in progress.
 
+- **The WIFI event carries the whole network** (2026-10-08): mac, ssid,
+  dhcp, ip, gateway, subnet, dns and rssi when connected; mac alone with
+  `connected:false` otherwise. Sent when the app subscribes (joined or
+  not) and whenever connected, ssid or ip change. Checked from a PC over
+  BLE: on subscribe, on losing the network, on joining it again.
+  0.7.0-dev.45.
+
 - **The Wi-Fi state is an event for the app** (decided 2026-10-08):
   `{"ev":"WIFI","connected":true,"ssid":"..","ip":"..","rssi":-51}` /
   `{"ev":"WIFI","connected":false}` on the EVENT characteristic, sent

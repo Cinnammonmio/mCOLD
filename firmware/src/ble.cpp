@@ -354,8 +354,10 @@ void push_settings(void) {
 // listens for events, and again when the box joins or loses a network or
 // gets another address. `rssi` goes along but is not a reason to send --
 // it never stops moving; the app reads GET_SYNC_STATUS for it.
-//   {"ev":"WIFI","connected":true,"ssid":"Office","ip":"192.168.1.14","rssi":-51}
-//   {"ev":"WIFI","connected":false}
+//   {"ev":"WIFI","connected":true,"mac":"..","ssid":"Office","dhcp":true,
+//    "ip":"192.168.1.14","gateway":"192.168.1.1","subnet":"255.255.255.0",
+//    "dns":"192.168.1.1","rssi":-51}
+//   {"ev":"WIFI","connected":false,"mac":".."}
 void push_wifi(void) {
   static uint16_t conn = BLE_HS_CONN_HANDLE_NONE;
   static bool was_up = false;
@@ -373,9 +375,14 @@ void push_wifi(void) {
   cJSON *o = cJSON_CreateObject();
   cJSON_AddStringToObject(o, "ev", "WIFI");
   cJSON_AddBoolToObject(o, "connected", up);
+  cJSON_AddStringToObject(o, "mac", n.mac);
   if (up) {
     cJSON_AddStringToObject(o, "ssid", n.ssid);
+    cJSON_AddBoolToObject(o, "dhcp", n.dhcp);
     cJSON_AddStringToObject(o, "ip", n.ip);
+    cJSON_AddStringToObject(o, "gateway", n.gateway);
+    cJSON_AddStringToObject(o, "subnet", n.subnet);
+    cJSON_AddStringToObject(o, "dns", n.dns);
     cJSON_AddNumberToObject(o, "rssi", n.rssi);
   }
   char *j = cJSON_PrintUnformatted(o);

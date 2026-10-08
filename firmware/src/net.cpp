@@ -635,4 +635,21 @@ void net_status(NetStatus *out) {
   out->last_up_ms = g_fast.magic == FAST_MAGIC ? g_fast.last_up : 0;
   wifi_ap_record_t ap;
   if (g_connected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK) out->rssi = ap.rssi;
+  uint8_t mac[6];
+  if (esp_wifi_get_mac(WIFI_IF_STA, mac) == ESP_OK) {
+    snprintf(out->mac, sizeof(out->mac), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2],
+             mac[3], mac[4], mac[5]);
+  }
+  if (g_connected && g_sta) {
+    esp_netif_ip_info_t ii;
+    if (esp_netif_get_ip_info(g_sta, &ii) == ESP_OK) {
+      snprintf(out->gateway, sizeof(out->gateway), IPSTR, IP2STR(&ii.gw));
+      snprintf(out->subnet, sizeof(out->subnet), IPSTR, IP2STR(&ii.netmask));
+    }
+    esp_netif_dns_info_t dn;
+    if (esp_netif_get_dns_info(g_sta, ESP_NETIF_DNS_MAIN, &dn) == ESP_OK) {
+      snprintf(out->dns, sizeof(out->dns), IPSTR, IP2STR(&dn.ip.u_addr.ip4));
+    }
+    out->dhcp = g_join.ip == 0;
+  }
 }

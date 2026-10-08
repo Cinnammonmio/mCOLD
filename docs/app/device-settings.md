@@ -3,7 +3,7 @@ name: Device-Settings
 lang: th
 version: 1.1
 date: 2026-10-05
-firmware: 0.7.0-dev.42
+firmware: 0.7.0-dev.45
 ---
 
 # mCOLD — ค่าตั้งค่าของเครื่อง

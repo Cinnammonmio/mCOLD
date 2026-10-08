@@ -70,6 +70,9 @@ struct NetStatus {
   bool connected;          // associated and holding an IPv4 address
   char ssid[33];           // the network joined, when connected
   char ip[16];
+  char gateway[16], subnet[16], dns[16];   // the lease or the fixed address, when connected
+  char mac[18];                            // this box's Wi-Fi MAC, AA:BB:CC:DD:EE:FF
+  bool dhcp;                               // the network gives the address (not a fixed one)
   int8_t rssi;
   uint32_t reconnects;
   uint32_t up_since_ms;    // 0 while down
