@@ -3,7 +3,7 @@ name: Trip-Data-Flow
 lang: th
 version: 1.0
 date: 2026-10-05
-firmware: 0.7.0-dev.45
+firmware: 0.7.0-dev.46
 ---
 
 # mCOLD — ข้อมูล trip ไปไหนบ้าง
