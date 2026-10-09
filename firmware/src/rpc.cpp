@@ -19,6 +19,7 @@
 #include "board.h"
 #include "rxlog.h"
 #include "auth.h"
+#include <esp_attr.h>
 #include "config.h"
 #include "flashlog.h"
 #include "gnss.h"
@@ -344,6 +345,12 @@ cJSON *c_set_config(uint32_t id, const cJSON *req, RpcSession *ses) {
 // How far the box's clock may differ from the app's before START_TRIP sets
 // it: the app's seconds are whole, and the link takes a moment.
 constexpr double CLOCK_TOLERANCE_S = 5.0;
+// And how soon after it set the clock this way it may do so again; kept
+// through deep sleep, forgotten at power-on (when the RTC has to be checked
+// anyway).
+constexpr uint32_t CLOCK_MIN_GAP_S = 3600;
+RTC_DATA_ATTR uint32_t g_clock_set_ms = 0;
+RTC_DATA_ATTR bool g_clock_set_valid = false;
 
 cJSON *c_set_time(uint32_t id, const cJSON *req, RpcSession *) {
   double utc;
@@ -389,17 +396,15 @@ cJSON *c_start(uint32_t id, const cJSON *req, RpcSession *) {
     return o;
   }
 
-  double lo, hi, hyst = 0.5, dwell = 300;
+  double lo, hi;
   if (!get_num(req, "low", &lo) || !get_num(req, "high", &hi)) {
     return fail(id, "BAD_ARGS", "low and high, in C");
   }
-  get_num(req, "hyst", &hyst);
-  get_num(req, "dwell_s", &dwell);
-  if (hyst < 0 || hyst > 10 || dwell < 0 || dwell > 3600) {
-    return fail(id, "BAD_ARGS", "hyst 0..10 C, dwell_s 0..3600");
-  }
+  // The dwell time and the hysteresis are the box's config (alarm_dwell_s,
+  // alarm_hyst_c10), not the app's per trip; `hyst` and `dwell_s` sent by an
+  // older app are ignored.
   const TripParams p = {(int16_t)lround(lo * 10), (int16_t)lround(hi * 10),
-                        (uint16_t)lround(hyst * 10), (uint16_t)dwell, 0};
+                        (uint16_t)config().alarm_hyst_c10, (uint16_t)config().alarm_dwell_s, 0};
 
   // The app's clock (decided 2026-10-09): `utc`, Unix seconds, lets the box
   // check its RTC before the trip is stamped. A difference beyond a few
@@ -419,14 +424,30 @@ cJSON *c_start(uint32_t id, const cJSON *req, RpcSession *) {
     bool adjusted = false;
     if (had) cJSON_AddNumberToObject(clock, "diff_s", box_utc - floor(app_utc));
     else cJSON_AddNullToObject(clock, "diff_s");
+    // Not more often than CLOCK_MIN_GAP_S: a clock set from the app every
+    // trip would shift the log's time again and again, and a phone with a
+    // wrong clock would drag the box with it. A box with no time is set at
+    // once.
+    const bool too_soon = had && g_clock_set_valid &&
+                          (uint32_t)(mono_ms() - g_clock_set_ms) < CLOCK_MIN_GAP_S * 1000u;
+    bool limited = false;
     if (!had || fabs(box_utc - app_utc) > CLOCK_TOLERANCE_S) {
-      const time_t sec = (time_t)app_utc;
-      struct tm tm;
-      gmtime_r(&sec, &tm);
-      adjusted = time_set(&tm, TimeSource::Host, false);
-      if (adjusted) trip_note_time_set(TimeSource::Host, had ? (uint32_t)box_utc : 0);
+      if (too_soon) {
+        limited = true;
+      } else {
+        const time_t sec = (time_t)app_utc;
+        struct tm tm;
+        gmtime_r(&sec, &tm);
+        adjusted = time_set(&tm, TimeSource::Host, false);
+        if (adjusted) {
+          trip_note_time_set(TimeSource::Host, had ? (uint32_t)box_utc : 0);
+          g_clock_set_ms = mono_ms();
+          g_clock_set_valid = true;
+        }
+      }
     }
     cJSON_AddBoolToObject(clock, "adjusted", adjusted);
+    cJSON_AddBoolToObject(clock, "limited", limited);
     TimeStamp now;
     time_now(&now);
     cJSON_AddStringToObject(clock, "quality", quality_name(now.quality));

@@ -74,6 +74,8 @@ constexpr Field FIELDS[] = {
     F(usb_drive, 0, 1, 1, ""),
     F(tap_test, 0, 1, 0, ""),
     F(rx_show, 0, 1, 0, ""),
+    F(alarm_hyst_c10, 0, 100, 5, "0.1 C"),
+    F(alarm_dwell_s, 0, 3600, 300, "s"),
 };
 #undef F
 

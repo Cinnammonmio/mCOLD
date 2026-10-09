@@ -300,7 +300,9 @@ void handle_tap(const AccelEvent &ev) {
       what = e == TripErr::Ok ? "trip stopped" : trip_err_name(e);
       beeps = e == TripErr::Ok ? 2 : 0;
     } else {
-      TripParams p = {20, 80, 5, 300, 0};   // 2..8 C, as `trip start`
+      // 2..8 C, as `trip start`; the dwell and hysteresis are the box's
+      TripParams p = {20, 80, (uint16_t)config().alarm_hyst_c10,
+                      (uint16_t)config().alarm_dwell_s, 0};
       uint32_t id = 0;
       const TripErr e = trip_start(p, &id);
       what = e == TripErr::Ok ? "trip started" : trip_err_name(e);
@@ -1416,9 +1418,10 @@ void trip_command(const char *args) {
     print_trip();
   } else if (!strncmp(args, "start", 5)) {
     // trip start [LOW HIGH [HYST DWELL]], in C and seconds; 2..8 C by
-    // default. In the product these come from the app at START (P5).
-    float lo = 2, hi = 8, hyst = 0.5f;
-    int dwell = 300;
+    // default, the hysteresis and dwell from the config (alarm_*). In the
+    // product the app sends only low and high at START.
+    float lo = 2, hi = 8, hyst = config().alarm_hyst_c10 / 10.0f;
+    int dwell = (int)config().alarm_dwell_s;
     // sscanf gives EOF (-1) for no arguments at all: that means defaults.
     const int k = sscanf(args + 5, "%f %f %f %d", &lo, &hi, &hyst, &dwell);
     if (k == 1) {

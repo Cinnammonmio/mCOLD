@@ -38,6 +38,17 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Alarm dwell and hysteresis are the box's config; the app's clock is not
+  applied too often** (2026-10-09). `alarm_dwell_s` (0..3600, 300) and
+  `alarm_hyst_c10` (0..100, 5) are config keys, remote-settable and locked
+  during a trip; START_TRIP no longer reads `hyst`/`dwell_s` (an old app's
+  are ignored), the tap start and the console's `trip start` default to the
+  config. (Not the retired `temp_hyst_c10`/`temp_dwell_s`, which are erased
+  at boot.) START_TRIP's `utc` sets the clock at most once an hour (kept
+  through deep sleep, forgotten at power-on), else `clock.limited: true`.
+  Checked on box 002: first call adjusted, a second one 20 s later limited.
+  0.7.0-dev.50.
+
 - **START_TRIP carries the app's clock** (2026-10-09): optional `utc`
   (Unix s). If the box differs by more than 5 s, or has no time, it sets its
   clock from it before the trip starts (as `Host`, so GNSS/NTP set this boot

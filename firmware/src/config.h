@@ -13,9 +13,12 @@
 // number is stored too, so a future change that cannot be expressed
 // that way -- a unit changing, say -- has something to key off.
 //
-// Alarm thresholds are not here on purpose: they are set by the app
-// when a trip starts and belong to that trip (P3), because one box
-// carries 2-8 C vaccine one week and something else the next.
+// The alarm limits (low, high) are not here on purpose: they are set by the
+// app when a trip starts and belong to that trip (P3), because one box
+// carries 2-8 C vaccine one week and something else the next. How an alarm
+// behaves -- the dwell time and the hysteresis -- is the box's (decided
+// 2026-10-09): alarm_dwell_s and alarm_hyst_c10 below, copied into each
+// trip's header when it starts.
 //
 // Credentials (Wi-Fi, MQTT) are not here yet: they arrive with P6 and
 // belong in an encrypted NVS namespace, not beside the sample period.
@@ -56,6 +59,8 @@ struct Config {
   int32_t usb_drive;          // 1: with USB power the port is a drive + serial port (usbdrive.h)
   int32_t tap_test;           // bench aid, never in the product: double tap = command (main.cpp)
   int32_t rx_show;            // bench aid, never in the product: what a phone sent, on the glass (rxlog.h)
+  int32_t alarm_hyst_c10;     // a temperature alarm clears this far inside the limit, 0.1 C
+  int32_t alarm_dwell_s;      // outside the limit this long before the alarm is raised
 
   // Field names are the NVS keys, 15 characters at most; config.cpp
   // refuses to compile a longer one.
