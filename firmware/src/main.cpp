@@ -1685,6 +1685,23 @@ void run_command(char *line) {
     printf("  switching off as if the battery were empty\n");
     battery_off(g_power.cell_valid ? g_power.cell_volts : 0.0f);
   }
+  else if (!strncmp(line, "time skew", 9)) {
+    // Bench: put the clock N seconds off (forced, over satellite or network
+    // time too), to see START_TRIP's clock check set it right. The next
+    // network sync undoes it.
+    const long n = atol(line + 9);
+    TimeStamp t;
+    time_now(&t);
+    if (t.quality == TimeSource::None) {
+      printf("  no time to skew\n");
+    } else {
+      const time_t s = (time_t)(t.utc_ms / 1000) + n;
+      struct tm tm;
+      gmtime_r(&s, &tm);
+      time_set(&tm, TimeSource::Host, true);
+      printf("  clock moved %ld s\n", n);
+    }
+  }
   else if (!strncmp(line, "tap ths", 7)) {
     // Bench (tap_test): the double-tap threshold, live, for finding one
     // that a knock on the case reaches. Not kept across a reboot.

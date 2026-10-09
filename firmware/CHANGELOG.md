@@ -38,6 +38,9 @@ To cut a release:
 
 P7, power: in progress.
 
+- Console: `time skew N` puts the clock N s off, forced, for checking
+  START_TRIP's clock check. Bench only. 0.7.0-dev.51.
+
 - **Alarm dwell and hysteresis are the box's config; the app's clock is not
   applied too often** (2026-10-09). `alarm_dwell_s` (0..3600, 300) and
   `alarm_hyst_c10` (0..100, 5) are config keys, remote-settable and locked
