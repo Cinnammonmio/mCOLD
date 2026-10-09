@@ -3,7 +3,7 @@ name: MQTT-Topics
 lang: th
 version: 1.1
 date: 2026-10-05
-firmware: 0.7.0-dev.46
+firmware: 0.7.0-dev.47
 ---
 
 # mCOLD — MQTT topics

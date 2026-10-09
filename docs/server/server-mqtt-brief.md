@@ -4,7 +4,7 @@ lang: th
 version: 0.13
 status: draft
 date: 2026-10-07
-firmware: 0.7.0-dev.46
+firmware: 0.7.0-dev.47
 ---
 
 # mCOLD — สิ่งที่ฝั่ง Server ต้องทำ (MQTT)
