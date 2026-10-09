@@ -356,8 +356,10 @@ void push_settings(void) {
 // it never stops moving; the app reads GET_SYNC_STATUS for it.
 //   {"ev":"WIFI","connected":true,"mac":"..","ssid":"Office","dhcp":true,
 //    "ip":"192.168.1.14","gateway":"192.168.1.1","subnet":"255.255.255.0",
-//    "dns":"192.168.1.1","rssi":-51}
-//   {"ev":"WIFI","connected":false,"mac":".."}
+//    "dns":"192.168.1.1","rssi":-51,"temp_c":4.25}
+//   {"ev":"WIFI","connected":false,"mac":"..","temp_c":4.25}
+// `temp_c` is the box's temperature now (null while there is no reading), so
+// the app shows it with the network without a GET_STATUS.
 void push_wifi(void) {
   static uint16_t conn = BLE_HS_CONN_HANDLE_NONE;
   static bool was_up = false;
@@ -380,6 +382,12 @@ void push_wifi(void) {
   cJSON_AddStringToObject(o, "ev", "WIFI");
   cJSON_AddBoolToObject(o, "connected", up);
   cJSON_AddStringToObject(o, "mac", n.mac);
+  {
+    TripStatus ts;
+    trip_status(&ts);
+    if (ts.temp_ok) cJSON_AddNumberToObject(o, "temp_c", (int)(ts.temp_c * 100 + (ts.temp_c < 0 ? -0.5 : 0.5)) / 100.0);
+    else cJSON_AddNullToObject(o, "temp_c");
+  }
   if (!up && n.fail_count) {
     // Not joined, and the last attempt failed: say so, and why. A wrong
     // password (15, 204, 202) and a network out of range (201) are the

@@ -38,6 +38,19 @@ To cut a release:
 
 P7, power: in progress.
 
+- **The WIFI event carries the temperature** (2026-10-09): `temp_c` (two
+  decimals, null without a reading) in every WIFI event, joined or not, so
+  the app shows it with the network. Read when the event is built; it does
+  not trigger one. 0.7.0-dev.48.
+
+- **Editing the network in use rejoins it at once** (2026-10-09): when the
+  slot being joined is edited (name, password, address, or a new network
+  put over it) the box hangs up and joins the edited network straight
+  away: no backoff, and that one first if it is in range, not whichever is
+  strongest (once; after that the strongest again). The remembered
+  fast-join channel is dropped. Deleting the network in use still hangs up
+  and picks among the rest. 0.7.0-dev.48.
+
 - **Wi-Fi: ADD_WIFI, EDIT_WIFI, DEL_WIFI** (decided 2026-10-09). Three
   commands that mean one thing each, for the app's list: `ADD_WIFI`
   (`ssid`, `pass`, optional `slot`; EXISTS if the network or the slot is

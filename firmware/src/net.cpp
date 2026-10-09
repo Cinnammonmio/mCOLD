@@ -36,6 +36,10 @@ SemaphoreHandle_t g_mx = nullptr;
 
 char g_cur[33] = "";            // the network being joined, or joined
 char g_failed[33] = "";         // the last one that refused us
+// A network in use was edited (decided 2026-10-09): we hang up and join the
+// edited one at once, not after a backoff and not whichever is strongest.
+char g_prefer[33] = "";         // join this one first, if it is in range
+volatile bool g_rejoin = false; // the next disconnect is ours: retry at once
 // The last failed attempt, for the app (decided 2026-10-08): which network
 // (empty: none of the known ones was in range), the driver's reason, how
 // many in a row, and a counter that moves with each so a repeat is news.
@@ -280,8 +284,22 @@ void attempt(void) {
   }
   int pick = best;
   if (second >= 0 && !strcmp(list[best].ssid, g_failed)) pick = second;
-  printf("[net] joining %s (%d dBm)\n", list[pick].ssid,
-         pick == best ? best_rssi : second_rssi);
+  int8_t pick_rssi = pick == best ? best_rssi : second_rssi;
+  if (g_prefer[0]) {                     // the edited network, if it is there
+    for (int i = 0; i < n; i++) {
+      if (strcmp(list[i].ssid, g_prefer)) continue;
+      for (int a = 0; a < found; a++) {
+        if (!strcmp((const char *)aps[a].ssid, g_prefer)) {
+          pick = i;
+          pick_rssi = aps[a].rssi;
+          break;
+        }
+      }
+      break;
+    }
+    g_prefer[0] = 0;                     // once; after that, the strongest again
+  }
+  printf("[net] joining %s (%d dBm)\n", list[pick].ssid, pick_rssi);
   join(list[pick], nullptr, 0);
 }
 
@@ -316,6 +334,11 @@ void on_event(void *, esp_event_base_t base, int32_t id, void *data) {
     // connection itself failed.
     const wifi_event_sta_disconnected_t *e = (const wifi_event_sta_disconnected_t *)data;
     if (!g_want) return;            // we hung up ourselves
+    if (g_rejoin) {                 // hung up to join the edited network
+      g_rejoin = false;
+      g_retry_at = 1;
+      return;
+    }
     if (was) {
       printf("[net] disconnected from %s, reason %u\n", g_cur, e->reason);
     } else {
@@ -481,6 +504,17 @@ void net_stop(void) {
 }
 
 namespace {
+// The network in use was changed (name, password or address): hang up and
+// join the edited one at once. Without the radio on, nothing to do.
+void rejoin(const char *ssid) {
+  snprintf(g_prefer, sizeof(g_prefer), "%s", ssid);
+  g_fast.magic = 0;                      // its channel and BSSID may be stale
+  g_failed[0] = 0;
+  g_backoff_ms = 2000;
+  g_rejoin = true;
+  esp_wifi_disconnect();
+}
+
 // The slot a network is in; -1 if it is not known. Under the lock.
 int slot_of(const char *ssid) {
   for (int i = 0; i < NET_MAX; i++) {
@@ -507,7 +541,7 @@ bool net_add(const char *ssid, const char *pass) {
     if (!save()) return false;
   }
   // A changed password for the network in use: rejoin with it.
-  if (g_connected && !strcmp(g_cur, ssid)) esp_wifi_disconnect();
+  if (g_connected && !strcmp(g_cur, ssid)) rejoin(ssid);
   if (!strcmp(g_failed, ssid)) g_failed[0] = 0;
   g_backoff_ms = 2000;
   g_retry_at = 1;
@@ -552,7 +586,7 @@ bool net_slot_put(int slot, const char *ssid, const char *pass) {
     if (pass) snprintf(g_nets[slot].pass, sizeof(g_nets[slot].pass), "%s", pass);
     if (!save()) return false;
   }
-  if (g_connected && (!strcmp(g_cur, ssid) || !strcmp(g_cur, was))) esp_wifi_disconnect();
+  if (g_connected && (!strcmp(g_cur, ssid) || !strcmp(g_cur, was))) rejoin(ssid);
   if (!strcmp(g_failed, ssid)) g_failed[0] = 0;
   g_backoff_ms = 2000;
   g_retry_at = 1;
@@ -603,7 +637,7 @@ bool net_set_ip(const char *ssid, const NetIp &ip) {
     if (!save()) return false;
   }
   // In use: join again with the new address.
-  if (g_connected && !strcmp(g_cur, ssid)) esp_wifi_disconnect();
+  if (g_connected && !strcmp(g_cur, ssid)) rejoin(ssid);
   g_fast.magic = 0;
   return true;
 }
