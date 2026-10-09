@@ -341,6 +341,10 @@ cJSON *c_set_config(uint32_t id, const cJSON *req, RpcSession *ses) {
   return ok(id);
 }
 
+// How far the box's clock may differ from the app's before START_TRIP sets
+// it: the app's seconds are whole, and the link takes a moment.
+constexpr double CLOCK_TOLERANCE_S = 5.0;
+
 cJSON *c_set_time(uint32_t id, const cJSON *req, RpcSession *) {
   double utc;
   // Not before 2024, not after 2100: a phone with a broken clock must not
@@ -396,8 +400,44 @@ cJSON *c_start(uint32_t id, const cJSON *req, RpcSession *) {
   }
   const TripParams p = {(int16_t)lround(lo * 10), (int16_t)lround(hi * 10),
                         (uint16_t)lround(hyst * 10), (uint16_t)dwell, 0};
+
+  // The app's clock (decided 2026-10-09): `utc`, Unix seconds, lets the box
+  // check its RTC before the trip is stamped. A difference beyond a few
+  // seconds sets the clock from the app, unless satellite or network time
+  // already set it this boot (the app's does not overrule those).
+  cJSON *clock = nullptr;
+  double app_utc;
+  if (!s.active && get_num(req, "utc", &app_utc)) {
+    if (app_utc < 1704067200.0 || app_utc > 4102444800.0) {
+      return fail(id, "BAD_ARGS", "utc: Unix seconds");
+    }
+    clock = cJSON_CreateObject();
+    TimeStamp before;
+    time_now(&before);
+    const bool had = before.quality != TimeSource::None;
+    const double box_utc = (double)(before.utc_ms / 1000);
+    bool adjusted = false;
+    if (had) cJSON_AddNumberToObject(clock, "diff_s", box_utc - floor(app_utc));
+    else cJSON_AddNullToObject(clock, "diff_s");
+    if (!had || fabs(box_utc - app_utc) > CLOCK_TOLERANCE_S) {
+      const time_t sec = (time_t)app_utc;
+      struct tm tm;
+      gmtime_r(&sec, &tm);
+      adjusted = time_set(&tm, TimeSource::Host, false);
+      if (adjusted) trip_note_time_set(TimeSource::Host, had ? (uint32_t)box_utc : 0);
+    }
+    cJSON_AddBoolToObject(clock, "adjusted", adjusted);
+    TimeStamp now;
+    time_now(&now);
+    cJSON_AddStringToObject(clock, "quality", quality_name(now.quality));
+  }
+
   uint32_t trip = 0;
   const TripErr e = trip_start(p, &trip);
+  if (e != TripErr::Ok) {
+    cJSON_Delete(clock);
+    return fail(id, trip_err_code(e), trip_err_name(e));
+  }
   if (e != TripErr::Ok) return fail(id, trip_err_code(e), trip_err_name(e));
   if (nvs_open("rpc", NVS_READWRITE, &h) == ESP_OK) {
     nvs_set_u32(h, "start_id", id);
@@ -409,6 +449,7 @@ cJSON *c_start(uint32_t id, const cJSON *req, RpcSession *) {
   TripStatus now;
   trip_status(&now);
   add_trip_ident(o, now.trip_id, now.trip_date, now.trip_number);
+  if (clock) cJSON_AddItemToObject(o, "clock", clock);
   return o;
 }
 

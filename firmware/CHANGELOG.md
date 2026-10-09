@@ -38,6 +38,14 @@ To cut a release:
 
 P7, power: in progress.
 
+- **START_TRIP carries the app's clock** (2026-10-09): optional `utc`
+  (Unix s). If the box differs by more than 5 s, or has no time, it sets its
+  clock from it before the trip starts (as `Host`, so GNSS/NTP set this boot
+  are not overruled); the answer has `clock` {diff_s, adjusted, quality}.
+  Not checked while a trip runs; `utc` outside 2024..2100 is BAD_ARGS.
+  Checked over `rpc` on box 002: a clock 60 s behind gave diff_s 59,
+  adjusted true (NTP set it right again afterwards). 0.7.0-dev.49.
+
 - **The WIFI event carries the temperature** (2026-10-09): `temp_c` (two
   decimals, null without a reading) in every WIFI event, joined or not, so
   the app shows it with the network. Read when the event is built; it does
