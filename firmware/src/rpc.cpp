@@ -2,6 +2,8 @@
 
 #include <cJSON.h>
 #include <esp_app_desc.h>
+#include <esp_mac.h>
+#include <esp_ota_ops.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -14,11 +16,15 @@
 #include <string.h>
 #include <time.h>
 
+#include "board.h"
+#include "rxlog.h"
 #include "auth.h"
 #include "config.h"
 #include "flashlog.h"
 #include "gnss.h"
 #include "health.h"
+#include "logrow.h"
+#include "settings.h"
 #include "record.h"
 #include "temp.h"
 #include "timekeep.h"
@@ -28,7 +34,7 @@
 
 namespace {
 
-char g_sn[16] = "";
+char g_sn[SN_LEN] = "";
 PowerStatus g_pwr = {};
 bool g_have_pwr = false;
 portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
@@ -45,7 +51,8 @@ const int CACHE = 8;
 Cached g_cache[CACHE];
 int g_cache_next = 0;
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// Runs through deep sleep (timekeep.h), so times kept across one compare.
+uint32_t now_ms(void) { return mono_ms(); }
 
 // ---- building responses ------------------------------------------------
 
@@ -108,6 +115,7 @@ const char *trip_err_code(TripErr e) {
     case TripErr::BadParams:     return "BAD_ARGS";
     case TripErr::NoLog:         return "NO_LOG";
     case TripErr::LogFull:       return "LOG_FULL";
+    case TripErr::BatteryLow:    return "BATTERY_LOW";
     default:                     return "FLASH";
   }
 }
@@ -164,6 +172,45 @@ cJSON *c_auth(uint32_t id, const cJSON *req, RpcSession *s) {
   return ok(id);
 }
 
+// A trip as the app and the server name it (decided 2026-10-07): trip_id,
+// a UUID the box made; trip_date, YYYYMMDD, local; trip_number, the day's
+// running number. The box's own counter does not leave it.
+void add_trip_ident(cJSON *o, const char *uuid, uint32_t date, uint16_t number) {
+  if (uuid && *uuid) {
+    char d[10];
+    snprintf(d, sizeof(d), "%08lu", (unsigned long)date);
+    cJSON_AddStringToObject(o, "trip_id", uuid);
+    cJSON_AddStringToObject(o, "trip_date", d);
+    cJSON_AddNumberToObject(o, "trip_number", number);
+  } else {
+    cJSON_AddNullToObject(o, "trip_id");
+    cJSON_AddNullToObject(o, "trip_date");
+    cJSON_AddNullToObject(o, "trip_number");
+  }
+}
+
+void add_trip_ident(cJSON *o, const RowHeader &h) {
+  char u[37] = "";
+  if (h.has_id) uuid_str(h.uuid, u);
+  add_trip_ident(o, u, h.date, h.number);
+}
+
+// The request's trip_id, as the box's own id and its header. False, with
+// the answer to send, if there is none or the box does not have it.
+bool req_trip(uint32_t id, const cJSON *req, uint32_t *internal, RowHeader *h, cJSON **err) {
+  const cJSON *j = req ? cJSON_GetObjectItemCaseSensitive(req, "trip_id") : nullptr;
+  if (!cJSON_IsString(j)) {
+    *err = fail(id, "BAD_ARGS", "trip_id (a UUID)");
+    return false;
+  }
+  *internal = trip_find(j->valuestring);
+  if (!*internal || !trip_info(*internal, h)) {
+    *err = fail(id, "BAD_ARGS", "no such trip in the log");
+    return false;
+  }
+  return true;
+}
+
 cJSON *c_status(uint32_t id, const cJSON *, RpcSession *) {
   cJSON *o = ok(id);
 
@@ -182,12 +229,22 @@ cJSON *c_status(uint32_t id, const cJSON *, RpcSession *) {
 
   cJSON *tr = cJSON_AddObjectToObject(o, "trip");
   cJSON_AddBoolToObject(tr, "active", s.active);
-  num_or_null(tr, "id", s.id != 0, s.id);
+  add_trip_ident(tr, s.trip_id, s.trip_date, s.trip_number);
   cJSON_AddNumberToObject(tr, "samples", s.samples);
   num_or_null(tr, "min", s.have_temp, s.min_c100 / 100.0);
   num_or_null(tr, "max", s.have_temp, s.max_c100 / 100.0);
   add_alarms(tr, "alarms", s.alarms_active);
   cJSON_AddBoolToObject(tr, "acked", s.acked);
+  // What happened while nobody could see: a server that was out of reach
+  // learns from these that an alarm came and went (decided 2026-10-05).
+  cJSON_AddNumberToObject(tr, "alarms_raised", s.alarms_raised);
+  if (s.last_alarm != 0xFF) {
+    cJSON *la = cJSON_AddObjectToObject(tr, "last_alarm");
+    cJSON_AddStringToObject(la, "type", row_alarm_name(s.last_alarm));
+    num_or_null(la, "utc", s.last_alarm_utc != 0, s.last_alarm_utc);
+  } else {
+    cJSON_AddNullToObject(tr, "last_alarm");
+  }
 
   PowerStatus p;
   bool have;
@@ -224,6 +281,28 @@ cJSON *c_status(uint32_t id, const cJSON *, RpcSession *) {
   cJSON *st = cJSON_AddObjectToObject(o, "storage");
   cJSON_AddNumberToObject(st, "used_pct",
                           ls.sectors ? (ls.used * 100 + ls.sectors - 1) / ls.sectors : 0);
+
+  // Which firmware, so the server knows who has taken an update.
+  cJSON *fw = cJSON_AddObjectToObject(o, "fw");
+  cJSON_AddStringToObject(fw, "ver", esp_app_get_description()->version);
+  const esp_partition_t *rp = esp_ota_get_running_partition();
+  cJSON_AddStringToObject(fw, "slot", rp ? rp->label : "?");
+
+  NetStatus n;
+  net_status(&n);
+  uint8_t mac[6] = {};
+  esp_read_mac(mac, ESP_MAC_WIFI_STA);
+  char ms[18];
+  snprintf(ms, sizeof(ms), "%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2], mac[3],
+           mac[4], mac[5]);
+  cJSON *ne = cJSON_AddObjectToObject(o, "net");
+  cJSON_AddBoolToObject(ne, "connected", n.connected);
+  if (n.connected) {
+    cJSON_AddStringToObject(ne, "ssid", n.ssid);
+    cJSON_AddNumberToObject(ne, "rssi", n.rssi);
+    cJSON_AddStringToObject(ne, "ip", n.ip);
+  }
+  cJSON_AddStringToObject(ne, "mac", ms);
   return o;
 }
 
@@ -239,15 +318,26 @@ cJSON *c_get_config(uint32_t id, const cJSON *, RpcSession *) {
   return o;
 }
 
-cJSON *c_set_config(uint32_t id, const cJSON *req, RpcSession *) {
+cJSON *c_set_config(uint32_t id, const cJSON *req, RpcSession *ses) {
   const cJSON *k = cJSON_GetObjectItemCaseSensitive(req, "key");
   double v;
   if (!cJSON_IsString(k) || !get_num(req, "value", &v) || v != floor(v)) {
     return fail(id, "BAD_ARGS", "key (string) and value (integer)");
   }
+  // The app gets the keys the server gets (settings.cpp); the rest are the
+  // console's.
+  if (!(ses && ses->console) && !settings_remote_key(k->valuestring)) {
+    return fail(id, "BAD_ARGS", "console only");
+  }
+  TripStatus ts;
+  trip_status(&ts);
+  if (ts.active && settings_trip_locked(k->valuestring)) {
+    return fail(id, "ALREADY_ACTIVE", "a trip is running: change it after the trip");
+  }
   if (!config_set(k->valuestring, (int32_t)v)) {
     return fail(id, "BAD_ARGS", "unknown key or out of range");
   }
+  settings_touch();
   return ok(id);
 }
 
@@ -291,7 +381,7 @@ cJSON *c_start(uint32_t id, const cJSON *req, RpcSession *) {
   trip_status(&s);
   if (id == last_id && s.active && s.id == last_trip) {
     cJSON *o = ok(id);
-    cJSON_AddNumberToObject(o, "trip", last_trip);
+    add_trip_ident(o, s.trip_id, s.trip_date, s.trip_number);
     return o;
   }
 
@@ -316,7 +406,9 @@ cJSON *c_start(uint32_t id, const cJSON *req, RpcSession *) {
     nvs_close(h);
   }
   cJSON *o = ok(id);
-  cJSON_AddNumberToObject(o, "trip", trip);
+  TripStatus now;
+  trip_status(&now);
+  add_trip_ident(o, now.trip_id, now.trip_date, now.trip_number);
   return o;
 }
 
@@ -326,7 +418,7 @@ cJSON *c_stop(uint32_t id, const cJSON *, RpcSession *) {
   const TripErr e = trip_stop(2);   // reason 2: the app
   if (e != TripErr::Ok) return fail(id, trip_err_code(e), trip_err_name(e));
   cJSON *o = ok(id);
-  cJSON_AddNumberToObject(o, "trip", s.id);
+  add_trip_ident(o, s.trip_id, s.trip_date, s.trip_number);
   return o;
 }
 
@@ -346,12 +438,57 @@ cJSON *c_list_trips(uint32_t id, const cJSON *, RpcSession *) {
   cJSON *a = cJSON_AddArrayToObject(o, "trips");
   for (int i = 0; i < n && i < 64; i++) {
     if (t[i] > TRIP_ID_REAL_MAX) continue;   // bench records are not trips
+    RowHeader h;
+    if (!trip_info(t[i], &h)) continue;      // from before trip_id: the app cannot name it
     cJSON *e = cJSON_CreateObject();
-    cJSON_AddNumberToObject(e, "trip", t[i]);
+    add_trip_ident(e, h);
     uint32_t last;
     num_or_null(e, "last_seq", flashlog_last_seq(t[i], &last), last);
+    // Delivered: the server has every row (ACKs, or the app said so).
+    cJSON_AddBoolToObject(e, "sent", uplink_fully_acked(t[i]));
     cJSON_AddItemToArray(a, e);
   }
+  return o;
+}
+
+// The settings document (settings.h), the same one the server sends over
+// MQTT: the request's own config / wifi / mqtt / ota_base.
+cJSON *c_apply_config(uint32_t id, const cJSON *req, RpcSession *) {
+  cJSON *o = ok(id);
+  settings_apply(req, o);
+  return o;
+}
+
+cJSON *c_get_network(uint32_t id, const cJSON *, RpcSession *) {
+  cJSON *o = ok(id);
+  settings_network(o);
+  return o;
+}
+
+// The SETTINGS event's content, asked for (the network part needs AUTH).
+cJSON *c_get_settings(uint32_t id, const cJSON *, RpcSession *ses) {
+  cJSON *o = ok(id);
+  settings_snapshot(o, ses && ses->authorized);
+  return o;
+}
+
+// The app has the whole trip and has handed it to the server itself
+// ("stop and send", decided 2026-10-05): the box need not upload it.
+cJSON *c_mark_delivered(uint32_t id, const cJSON *req, RpcSession *) {
+  uint32_t trip;
+  RowHeader h;
+  cJSON *err = nullptr;
+  if (!req_trip(id, req, &trip, &h, &err)) return err;
+  TripStatus s;
+  trip_status(&s);
+  if (s.active && s.id == trip) return fail(id, "ALREADY_ACTIVE", "the trip is still running: stop it first");
+  uint32_t last;
+  if (!uplink_mark_delivered(trip, &last)) {
+    return fail(id, "BAD_ARGS", "no such trip in the log");
+  }
+  cJSON *o = ok(id);
+  add_trip_ident(o, h);
+  cJSON_AddNumberToObject(o, "rows", last + 1);
   return o;
 }
 
@@ -365,50 +502,53 @@ struct Summary {
 
 bool summary_visit(const LogRecord &r, void *ctx) {
   Summary *m = (Summary *)ctx;
-  Reader rd(r.payload, r.len);
-  const uint32_t utc = rd.u32();
-  const uint8_t q = rd.u8();
-  rd.n = STAMP_LEN;
-  if (r.type == REC_TRIP_START) {
-    rd.u8();
-    rd.u32();
-    m->lo = rd.i16();
-    m->hi = rd.i16();
-    m->hyst = rd.u16();
-    m->dwell = rd.u16();
-    m->header = true;
-    m->start_utc = utc;
-    m->start_q = q;
-  } else if (r.type == REC_SAMPLE) {
-    m->samples++;
-    const uint8_t st = rd.u8();
-    rd.u16();
-    const int16_t c = rd.i16();
-    if (st == 0 && c != I16_NONE) {
-      if (!m->have_temp || c < m->min_c100) m->min_c100 = c;
-      if (!m->have_temp || c > m->max_c100) m->max_c100 = c;
-      m->have_temp = true;
-    }
-  } else if (r.type == REC_EVENT) {
-    if (rd.u8() == EV_ALARM_RAISE) m->alarms++;
-  } else if (r.type == REC_TRIP_STOP) {
-    m->stopped = true;
-    m->stop_utc = utc;
-    m->stop_q = q;
+  LogRow row;
+  RowHeader h;
+  if (!row_decode(r.type, r.payload, r.len, &row, &h, nullptr)) return true;
+  switch (row.event) {
+    case RE_TRIP_START:
+      if (!h.valid) break;
+      m->lo = h.tempmin_c10;
+      m->hi = h.tempmax_c10;
+      m->hyst = h.hyst_c10;
+      m->dwell = h.dwell_s;
+      m->header = true;
+      m->start_utc = row.utc;
+      m->start_q = row.time_q;
+      break;
+    case RE_SAMPLE:
+      m->samples++;
+      if (row.temp_c100 != I16_NONE) {
+        if (!m->have_temp || row.temp_c100 < m->min_c100) m->min_c100 = row.temp_c100;
+        if (!m->have_temp || row.temp_c100 > m->max_c100) m->max_c100 = row.temp_c100;
+        m->have_temp = true;
+      }
+      break;
+    case RE_ALARM_HIGH:
+    case RE_ALARM_LOW:
+    case RE_ALARM_PROBE:
+    case RE_BATTERY_LOW:
+      m->alarms++;
+      break;
+    case RE_TRIP_STOP:
+      m->stopped = true;
+      m->stop_utc = row.utc;
+      m->stop_q = row.time_q;
+      break;
   }
   return true;
 }
 
 cJSON *c_summary(uint32_t id, const cJSON *req, RpcSession *) {
-  double trip;
-  if (!get_num(req, "trip", &trip) || trip < 1 || trip > TRIP_ID_REAL_MAX) {
-    return fail(id, "BAD_ARGS", "trip");
-  }
+  uint32_t trip;
+  RowHeader h;
+  cJSON *err = nullptr;
+  if (!req_trip(id, req, &trip, &h, &err)) return err;
   Summary m = {};
-  flashlog_read((uint32_t)trip, 0, summary_visit, &m, nullptr);
+  flashlog_read(trip, 0, summary_visit, &m, nullptr);
   if (!m.header) return fail(id, "BAD_ARGS", "no such trip in the log");
   cJSON *o = ok(id);
-  cJSON_AddNumberToObject(o, "trip", trip);
+  add_trip_ident(o, h);
   cJSON_AddNumberToObject(o, "low", m.lo / 10.0);
   cJSON_AddNumberToObject(o, "high", m.hi / 10.0);
   cJSON_AddNumberToObject(o, "hyst", m.hyst / 10.0);
@@ -451,14 +591,17 @@ bool chunk_visit(const LogRecord &r, void *ctx) {
 }
 
 cJSON *c_read_log(uint32_t id, const cJSON *req, RpcSession *) {
-  double trip, from = 0, max = 8;
-  if (!get_num(req, "trip", &trip) || trip < 1) return fail(id, "BAD_ARGS", "trip");
+  uint32_t trip;
+  RowHeader h;
+  cJSON *err = nullptr;
+  if (!req_trip(id, req, &trip, &h, &err)) return err;
+  double from = 0, max = 8;
   get_num(req, "from", &from);
   get_num(req, "max", &max);
   if (from < 0 || max < 1 || max > 16) return fail(id, "BAD_ARGS", "from >= 0, max 1..16");
   cJSON *o = ok(id);
   Chunk c = {cJSON_AddArrayToObject(o, "records"), (int)max, 0, false, 0};
-  flashlog_read((uint32_t)trip, (uint32_t)from, chunk_visit, &c, nullptr);
+  flashlog_read(trip, (uint32_t)from, chunk_visit, &c, nullptr);
   num_or_null(o, "next", c.more, c.next);
   return o;
 }
@@ -535,23 +678,101 @@ cJSON *c_sync_now(uint32_t id, const cJSON *, RpcSession *) {
 }
 
 cJSON *c_set_wifi(uint32_t id, const cJSON *req, RpcSession *) {
-  const cJSON *s = cJSON_GetObjectItemCaseSensitive(req, "ssid");
-  const cJSON *p = cJSON_GetObjectItemCaseSensitive(req, "pass");
-  if (!cJSON_IsString(s) || (p && !cJSON_IsString(p)) ||
-      !net_add(s->valuestring, p ? p->valuestring : "")) {
-    return fail(id, "BAD_ARGS", "ssid 1-32 bytes, pass empty or 8-63, at most 5 networks");
-  }
+  // The same entry as the settings document's: ssid, pass, and dhcp or
+  // ip/gateway/subnet/dns.
+  const char *why = nullptr;
+  if (!settings_wifi_entry(req, &why)) return fail(id, "BAD_ARGS", why);
+  settings_touch();
   cJSON *o = ok(id);
   cJSON_AddNumberToObject(o, "known", net_count());
   return o;
 }
 
+// The three Wi-Fi commands of the app's list (decided 2026-10-09), each
+// answering with the whole list of five slots so the page can redraw:
+//   ADD_WIFI   ssid, pass[, dhcp | ip, gateway, subnet, dns][, slot]
+//              a new network, in `slot` or the first free one
+//   EDIT_WIFI  slot[, ssid][, pass][, dhcp | ip, gateway, subnet, dns]
+//              what is in a slot; what is left out stays
+//   DEL_WIFI   slot (or ssid)
+// Errors: EXISTS (the network, or the slot, is taken), NOT_FOUND (the slot
+// is empty / no such network), FULL (no free slot), BAD_ARGS.
+cJSON *wifi_answer(uint32_t id, int slot) {
+  cJSON *o = ok(id);
+  if (slot) cJSON_AddNumberToObject(o, "slot", slot);
+  settings_network(o);
+  return o;
+}
+
+int slot_by_ssid(const char *ssid) {
+  for (int i = 0; i < NET_MAX; i++) {
+    char n[33];
+    if (net_slot_ssid(i, n, sizeof(n)) && !strcmp(n, ssid)) return i + 1;
+  }
+  return 0;
+}
+
+cJSON *c_add_wifi(uint32_t id, const cJSON *req, RpcSession *) {
+  const cJSON *s = cJSON_GetObjectItemCaseSensitive(req, "ssid");
+  const cJSON *p = cJSON_GetObjectItemCaseSensitive(req, "pass");
+  const cJSON *sl = cJSON_GetObjectItemCaseSensitive(req, "slot");
+  if (!cJSON_IsString(s) || !cJSON_IsString(p)) {
+    return fail(id, "BAD_ARGS", "ssid and pass (\"\" for an open network)");
+  }
+  if (slot_by_ssid(s->valuestring)) return fail(id, "EXISTS", "already in the list: EDIT_WIFI it");
+  int slot = 0;
+  char taken[33];
+  if (cJSON_IsNumber(sl)) {
+    slot = (int)sl->valuedouble;
+    if (slot < 1 || slot > NET_MAX) return fail(id, "BAD_ARGS", "slot 1..5");
+    if (net_slot_ssid(slot - 1, taken, sizeof(taken))) return fail(id, "EXISTS", "that slot is in use: EDIT_WIFI or DEL_WIFI it");
+  } else {
+    for (int i = 0; i < NET_MAX && !slot; i++) {
+      if (!net_slot_ssid(i, taken, sizeof(taken))) slot = i + 1;
+    }
+    if (!slot) return fail(id, "FULL", "all five slots are in use: DEL_WIFI one");
+  }
+  cJSON *e = cJSON_Duplicate(req, true);
+  cJSON_DeleteItemFromObjectCaseSensitive(e, "slot");
+  cJSON_AddNumberToObject(e, "slot", slot);
+  const char *why = nullptr;
+  const bool done = settings_wifi_entry(e, &why);
+  cJSON_Delete(e);
+  if (!done) return fail(id, "BAD_ARGS", why);
+  settings_touch();
+  return wifi_answer(id, slot);
+}
+
+cJSON *c_edit_wifi(uint32_t id, const cJSON *req, RpcSession *) {
+  const cJSON *sl = cJSON_GetObjectItemCaseSensitive(req, "slot");
+  if (!cJSON_IsNumber(sl) || sl->valuedouble < 1 || sl->valuedouble > NET_MAX) {
+    return fail(id, "BAD_ARGS", "slot 1..5");
+  }
+  const int slot = (int)sl->valuedouble;
+  char cur[33];
+  if (!net_slot_ssid(slot - 1, cur, sizeof(cur))) return fail(id, "NOT_FOUND", "that slot is empty: ADD_WIFI");
+  const char *why = nullptr;
+  if (!settings_wifi_entry(req, &why)) return fail(id, "BAD_ARGS", why);
+  settings_touch();
+  return wifi_answer(id, slot);
+}
+
 cJSON *c_del_wifi(uint32_t id, const cJSON *req, RpcSession *) {
   const cJSON *s = cJSON_GetObjectItemCaseSensitive(req, "ssid");
-  if (!cJSON_IsString(s) || !net_remove(s->valuestring)) {
-    return fail(id, "BAD_ARGS", "ssid: a known network");
+  const cJSON *sl = cJSON_GetObjectItemCaseSensitive(req, "slot");
+  int slot = 0;
+  if (cJSON_IsNumber(sl)) {
+    slot = (int)sl->valuedouble;
+    if (slot < 1 || slot > NET_MAX) return fail(id, "BAD_ARGS", "slot 1..5");
+    if (!net_slot_clear(slot - 1)) return fail(id, "NOT_FOUND", "that slot is empty");
+  } else if (cJSON_IsString(s)) {
+    slot = slot_by_ssid(s->valuestring);
+    if (!slot || !net_remove(s->valuestring)) return fail(id, "NOT_FOUND", "not in the list");
+  } else {
+    return fail(id, "BAD_ARGS", "slot (1..5) or ssid");
   }
-  return ok(id);
+  settings_touch();
+  return wifi_answer(id, slot);
 }
 
 cJSON *c_later(uint32_t id, const cJSON *, RpcSession *) {
@@ -570,11 +791,15 @@ const Cmd CMDS[] = {
     {"GET_STATUS", false, c_status},
     {"GET_CONFIG", false, c_get_config},
     {"SET_CONFIG", true, c_set_config},
+    {"APPLY_CONFIG", true, c_apply_config},
+    {"GET_NETWORK", true, c_get_network},
+    {"GET_SETTINGS", false, c_get_settings},
     {"SET_TIME", true, c_set_time},
     {"START_TRIP", true, c_start},
     {"STOP_TRIP", true, c_stop},
     {"ACK_ALARM", true, c_ack},
     {"LIST_TRIPS", false, c_list_trips},
+    {"MARK_DELIVERED", true, c_mark_delivered},
     {"GET_TRIP_SUMMARY", false, c_summary},
     {"READ_LOG_CHUNK", false, c_read_log},
     {"GET_STORAGE_STATUS", false, c_storage},
@@ -583,6 +808,8 @@ const Cmd CMDS[] = {
     {"GET_SYNC_STATUS", false, c_sync_status},
     {"SYNC_NOW", true, c_sync_now},
     {"SET_WIFI", true, c_set_wifi},
+    {"ADD_WIFI", true, c_add_wifi},
+    {"EDIT_WIFI", true, c_edit_wifi},
     {"DEL_WIFI", true, c_del_wifi},
     {"GET_USB_SNAPSHOT_STATUS", false, c_later},
 };
@@ -608,7 +835,7 @@ void rpc_note_power(const PowerStatus &ps) {
   portEXIT_CRITICAL(&g_mux);
 }
 
-char *rpc_handle(const char *req, size_t n, RpcSession *s) {
+static char *handle_one(const char *req, size_t n, RpcSession *s) {
   const bool authorized = s && s->authorized;
   cJSON *r = cJSON_ParseWithLength(req, n);
   const cJSON *jid = r ? cJSON_GetObjectItemCaseSensitive(r, "id") : nullptr;
@@ -661,5 +888,11 @@ char *rpc_handle(const char *req, size_t n, RpcSession *s) {
   }
   xSemaphoreGive(g_mx);
   cJSON_Delete(r);
+  return resp;
+}
+
+char *rpc_handle(const char *req, size_t n, RpcSession *s) {
+  char *resp = handle_one(req, n, s);
+  rxlog_rpc(req, n, resp, s);    // rx_show: what came in, on the glass
   return resp;
 }

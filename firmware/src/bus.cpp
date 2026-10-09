@@ -143,6 +143,15 @@ BusErr i2c_write(Dev dev, uint8_t addr, const uint8_t *data, size_t n) {
   return done(dev, e);
 }
 
+BusErr i2c_read(Dev dev, uint8_t addr, uint8_t *buf, size_t n) {
+  if (!i2c_take()) return done(dev, BusErr::Timeout);
+  i2c_master_dev_handle_t h = slot_for(addr);
+  BusErr e = BusErr::Nak;
+  if (h) e = (i2c_master_receive(h, buf, n, XFER_MS) == ESP_OK) ? BusErr::Ok : BusErr::Nak;
+  i2c_give();
+  return done(dev, e);
+}
+
 BusErr i2c_probe(Dev dev, uint8_t addr) {
   if (!i2c_take()) return done(dev, BusErr::Timeout);
   const BusErr e = (i2c_master_probe(g_i2c_bus, addr, XFER_MS) == ESP_OK)
@@ -150,6 +159,20 @@ BusErr i2c_probe(Dev dev, uint8_t addr) {
                        : BusErr::Nak;
   i2c_give();
   return done(dev, e);
+}
+
+int i2c_scan(uint8_t *found, int max, int *sda, int *scl) {
+  if (!i2c_take()) return -1;
+  // The lines idle high; one read low with no transfer running is held
+  // there -- a short, or a part pulling it -- and nothing will answer.
+  *sda = gpio_get_level((gpio_num_t)PIN_SDA);
+  *scl = gpio_get_level((gpio_num_t)PIN_SCL);
+  int n = 0;
+  for (uint8_t a = 0x08; a < 0x78; a++) {
+    if (i2c_master_probe(g_i2c_bus, a, 20) == ESP_OK && n < max) found[n++] = a;
+  }
+  i2c_give();
+  return n;
 }
 
 BusErr i2c_read_reg(Dev dev, uint8_t addr, uint8_t reg, uint8_t *buf, size_t n) {

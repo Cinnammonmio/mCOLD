@@ -11,5 +11,11 @@ build/
 # Credentials and anything else that is per deployment, never per
 # commit. See secrets.example.ini for the shape.
 secrets.ini
+src/secrets_gen.h
 *.pem
+# The OTA signing key (tools/sign_app.py) and anything beside it.
+keys/
 *.key
+
+# Fetched from the ESP Component Registry at build time (src/idf_component.yml).
+managed_components/

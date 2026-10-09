@@ -20,8 +20,11 @@
 #include "screens.h"
 #include "timekeep.h"
 #include "net.h"
+#include "pm.h"
 #include "trip.h"
 #include "uplink.h"
+#include "rxlog.h"
+#include "ble.h"
 
 namespace {
 
@@ -40,45 +43,66 @@ const uint16_t CARGO_ALARMS =
 // In PSRAM: 7.6 KB that only the CPU touches, and internal RAM is short.
 EXT_RAM_BSS_ATTR Canvas g_draw;
 SemaphoreHandle_t g_epd = nullptr;   // one refresh at a time
-char g_sn[16] = "MCOLD";
+char g_sn[SN_LEN] = "MCOLD";
 // Checked by eye on 2026-10-02: 3 is upright on this board (bring-up
 // used 1, which shows the frame upside down; the bench also used 3).
 volatile int g_rot = 3;
 volatile bool g_force = false;
+// rx_show: the page of what a phone sent (rxlog.h).
+const uint32_t RX_GAP_MS = 3000;
+uint32_t g_rx_gen = 0, g_rx_drawn_at = 0;
+uint8_t g_rx_link = 0xFF;
+bool g_rx_on = false;
 volatile bool g_hold = false;
 
 PowerStatus g_pwr = {};
 bool g_have_pwr = false;
 portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 
-// What is on the glass now, and the state that put it there.
-uint32_t g_shown_hash = 0;
-uint32_t g_shown_at = 0;              // 0: nothing drawn since boot
-bool g_shown_active = false;
-uint16_t g_shown_alarms = 0;
-bool g_shown_acked = false;
-uint8_t g_shown_icons = 0xFF;      // footer-left icons + USB power, as bits
-uint32_t g_icons_drawn_at = 0;
+// What is on the glass now, and the state that put it there. Kept
+// through deep sleep -- the panel keeps its picture with no power, and
+// a box that forgot what it showed would redraw on every wake, seconds
+// of panel current every five minutes for nothing.
+RTC_DATA_ATTR uint32_t g_shown_hash = 0;
+RTC_DATA_ATTR uint32_t g_shown_at = 0;        // 0: nothing drawn since boot
+RTC_DATA_ATTR bool g_shown_active = false;
+RTC_DATA_ATTR uint16_t g_shown_alarms = 0;
+RTC_DATA_ATTR bool g_shown_acked = false;
+RTC_DATA_ATTR uint8_t g_shown_icons = 0xFF;   // footer-left icons + USB power, as bits
+RTC_DATA_ATTR uint32_t g_icons_drawn_at = 0;
+
+// The READY page's battery reading: it is redrawn only once the battery
+// has moved READY_BATT_STEP from what the glass shows (decided
+// 2026-10-05) -- a frame that changed with every percent would refresh
+// every hour or so for nothing.
+const int READY_BATT_STEP = 5;
+RTC_DATA_ATTR int g_ready_batt = -1;    // % on the glass; -1 none
+int g_draw_batt = -1;                   // what build() just used
+bool g_draw_ready = false;              // build() drew the READY page
 
 // The trip that just ended, for its summary page.
-TripStatus g_closed = {};
-uint32_t g_closed_at = 0;
+RTC_DATA_ATTR TripStatus g_closed = {};
+RTC_DATA_ATTR uint32_t g_closed_at = 0;
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// Runs through deep sleep (timekeep.h), so times kept across one compare.
+uint32_t now_ms(void) { return mono_ms(); }
 
 void clock_str(char *out, size_t n) {
   TimeStamp t;
   time_now(&t);
   if (t.quality == TimeSource::None) {
-    // No time is "--:--", never 00:00: a frame claiming a time it cannot
+    // No time is dashes, never 00:00: a frame claiming a time it cannot
     // know is worse than one that admits it.
-    snprintf(out, n, "--:--");
+    snprintf(out, n, "--:-- --/--/--");
     return;
   }
   const time_t local = (time_t)(t.utc_ms / 1000) + config().tz_offset_min * 60;
   struct tm tm;
   gmtime_r(&local, &tm);
-  snprintf(out, n, "%02d:%02d", tm.tm_hour, tm.tm_min);
+  // Time, then the date (hh:mm DD/MM/YY, decided 2026-10-04): a box
+  // looked at after a long trip should say which day its picture is from.
+  snprintf(out, n, "%02d:%02d %02d/%02d/%02d", tm.tm_hour, tm.tm_min, tm.tm_mday,
+           tm.tm_mon + 1, tm.tm_year % 100);
 }
 
 Foot footer_state(const TripStatus &s, const PowerStatus &p, bool have_p) {
@@ -86,14 +110,22 @@ Foot footer_state(const TripStatus &s, const PowerStatus &p, bool have_p) {
   f.trip = s.active;
   NetStatus ns;
   net_status(&ns);
-  f.wifi = ns.connected;
+  // On battery Wi-Fi is up only for a moment each upload period, and the
+  // picture is drawn after that moment: there the icon means "the last
+  // session got through", or it would never show.
+  const uint32_t recent_ms = 2 * (uint32_t)config().upload_period_s * 1000 + 60000;
+  const bool wifi_recent = !pm_external_power() && ns.last_up_ms &&
+                           now_ms() - ns.last_up_ms < recent_ms;
+  f.wifi = ns.connected || wifi_recent;
   // The cloud means the SERVER has the data, not that the broker is up
   // (§9.1: online means a server that confirms receipt). So: broker
-  // connected, and either nothing waiting or an ACK in the last 10 min.
+  // reached, and either nothing waiting or an ACK in the last 10 min.
   UplinkStatus us;
   uplink_status(&us);
-  f.cloud = us.connected && (us.records_pending == 0 ||
-                             (us.last_ack_ms && now_ms() - us.last_ack_ms < CLOUD_FRESH_MS));
+  const uint32_t fresh_ms = wifi_recent ? recent_ms : CLOUD_FRESH_MS;
+  f.cloud = (us.connected || (wifi_recent && us.last_session_ok)) &&
+            (us.records_pending == 0 ||
+             (us.last_ack_ms && now_ms() - us.last_ack_ms < fresh_ms));
   GnssFix fix;
   f.gnss = gnss_last_fix(&fix) && fix.valid && now_ms() - fix.at_ms < GNSS_FRESH_MS;
   f.shock = false;     // no shock alarm until a threshold is set
@@ -126,15 +158,6 @@ uint8_t icons_now(const TripStatus &s) {
                    (f.shock ? ICON_SHOCK : 0) | (usb ? ICON_USB : 0));
 }
 
-const char *charge_word(ChargeState c) {
-  switch (c) {
-    case ChargeState::PreCharge:  return "PRE-CHARGE";
-    case ChargeState::FastCharge: return "FAST CHARGE";
-    case ChargeState::Done:       return "CHARGED";
-    default:                      return "NOT CHARGING";
-  }
-}
-
 // Picks the screen and draws it into g_draw with the given clock text.
 void build(const TripStatus &s, const char *clock) {
   PowerStatus p;
@@ -144,7 +167,7 @@ void build(const TripStatus &s, const char *clock) {
   have_p = g_have_pwr;
   portEXIT_CRITICAL(&g_mux);
   const Foot f = footer_state(s, p, have_p);
-
+  g_draw_ready = false;
 
   char temp[12];
   if (s.temp_ok) snprintf(temp, sizeof(temp), "%.1f", s.temp_c);
@@ -186,32 +209,25 @@ void build(const TripStatus &s, const char *clock) {
     else snprintf(alarms, sizeof(alarms), "none");
     snprintf(samples, sizeof(samples), "%lu", (unsigned long)g_closed.samples);
     const Row rows[] = {{"Samples", samples}, {"Temperature", range}, {"Alarms", alarms}};
-    scr_detail(g_draw, g_sn, clock, f, title, "CLOSED", rows, 3);
+    // Whether the server has it yet: sent over Wi-Fi, or by the app.
+    scr_detail(g_draw, g_sn, clock, f, title,
+               uplink_fully_acked(g_closed.id) ? "SENT" : "NOT SENT", rows, 3);
     return;
   }
 
-  if (have_p && p.charger_valid && p.power_good && p.cell_valid) {
-    // A6: on the charger with no trip, the charge is the news.
-    char cur[16], cell[16];
-    if (p.current_valid) snprintf(cur, sizeof(cur), "%.2f A", p.battery_ma / 1000.0);
-    else snprintf(cur, sizeof(cur), "--");
-    snprintf(cell, sizeof(cell), "%.2f V", p.cell_volts);
-    // The power module names sources in lower case; this font has
-    // capitals only.
-    char src[16];
-    snprintf(src, sizeof(src), "%s", vbus_type_name(p.vbus));
-    for (char *q = src; *q; q++) {
-      if (*q >= 'a' && *q <= 'z') *q = (char)(*q - 32);
-    }
-    const Row rows[] = {{"SOURCE", src}, {"CURRENT", cur}, {"CELL", cell}};
-    scr_charge(g_draw, g_sn, clock, f, (int)lroundf(p.soc_percent),
-               charge_word(p.charge), rows, 3);
-    return;
+  // A1: no trip -- READY, "scan to start". Nothing on it goes stale, so
+  // it stays until a trip starts, the power is plugged or pulled, or the
+  // battery moves READY_BATT_STEP. On the charger too: the side light
+  // says how the charge is going.
+  Foot ff = f;
+  if (g_ready_batt >= 0 && ff.batt >= 0 && abs(ff.batt - g_ready_batt) < READY_BATT_STEP) {
+    ff.batt = g_ready_batt;
   }
-
-  // A1: no trip. The temperature is still shown -- it is still measured.
-  scr_monitor(g_draw, g_sn, clock, f, temp, nullptr, nullptr, "NO ACTIVE TRIP",
-              !s.temp_ok, false);
+  g_draw_batt = ff.batt;
+  g_draw_ready = true;
+  const bool low = have_p && p.cell_valid && !(p.charger_valid && p.power_good) &&
+                   p.cell_volts * 1000.0f < (float)config().batt_trip_mv;
+  scr_ready(g_draw, g_sn, ff, low);
 }
 
 bool show(const Canvas &c) {
@@ -222,7 +238,15 @@ bool show(const Canvas &c) {
 }
 
 void task(void *) {
-  vTaskDelay(pdMS_TO_TICKS(FIRST_DRAW_MS));
+  if (!pm_warm()) {
+    vTaskDelay(pdMS_TO_TICKS(FIRST_DRAW_MS));
+  } else {
+    // After a wake: once this wake's sample and upload are done, so the
+    // picture shows them -- and no later, the chip is waiting to sleep.
+    for (int i = 0; i < 300 && !(pm_is_done(Duty::Trip) && pm_is_done(Duty::Uplink)); i++) {
+      vTaskDelay(pdMS_TO_TICKS(100));
+    }
+  }
   TripStatus prev;
   trip_status(&prev);
 
@@ -236,7 +260,42 @@ void task(void *) {
     if (s.active) g_closed_at = 0;
     prev = s;
 
-    if (!g_hold) {
+    // rx_show (bench): the screen is the BLE link's state and what a phone
+    // sent, for as long as rx_show is on (decided 2026-10-07: the tester
+    // watches the box, not a console). Redrawn when either changes, at
+    // most every few seconds -- a refresh takes two.
+    if (config().rx_show && !g_hold) {
+      BleStatus b;
+      ble_status(&b);
+      const uint8_t link = !b.enabled ? 0 : b.connected ? (b.authorized ? 3 : 2) : (b.advertising ? 1 : 4);
+      const uint32_t gen = rxlog_gen();
+      if ((!g_rx_on || gen != g_rx_gen || link != g_rx_link) &&
+          (!g_rx_drawn_at || now_ms() - g_rx_drawn_at >= RX_GAP_MS)) {
+        static const char *const TITLE[] = {"BLE OFF", "BLE WAITING", "BLE CONNECTED",
+                                            "BLE AUTHORIZED", "BLE IDLE"};
+        static char lines[RXLOG_LINES][RXLOG_W + 1];
+        const char *ptr[RXLOG_LINES];
+        const int n = rxlog_render(lines, RXLOG_LINES);
+        for (int i = 0; i < n; i++) ptr[i] = lines[i];
+        char clock[16];
+        clock_str(clock, sizeof(clock));
+        scr_rxlog(g_draw, TITLE[link], clock, ptr, n);
+        pm_hold(Hold::Display, true);
+        pm_no_light_sleep(true);
+        show(g_draw);
+        pm_hold(Hold::Display, false);
+        pm_no_light_sleep(false);
+        g_rx_gen = gen;
+        g_rx_link = link;
+        g_rx_drawn_at = now_ms();
+        g_rx_on = true;
+      }
+    } else if (g_rx_on) {
+      g_rx_on = false;
+      g_force = true;      // rx_show off: back to the live picture
+    }
+
+    if (!g_hold && !g_rx_on) {
       // The picture without its clock decides whether anything changed:
       // the minute ticking over is not news.
       build(s, "     ");
@@ -246,8 +305,13 @@ void task(void *) {
       // cable plugged in redraws even if nothing visible changed -- the
       // person who plugged it is looking for an answer.
       const uint8_t icons = icons_now(s);
+      // The gap is for a link flapping at the edge of range, which only
+      // happens while Wi-Fi stays up -- on USB power. On battery each wake
+      // decides once and then sleeps; a change held back here would wait
+      // a whole sample period.
       const bool icons_due = icons != g_shown_icons &&
-                             (!g_icons_drawn_at || now_ms() - g_icons_drawn_at >= ICON_REDRAW_GAP_MS);
+                             (!g_icons_drawn_at || !pm_external_power() ||
+                              now_ms() - g_icons_drawn_at >= ICON_REDRAW_GAP_MS);
       const bool usb_changed = icons_due && ((icons ^ g_shown_icons) & ICON_USB) &&
                                g_shown_icons != 0xFF;
       const bool urgent = s.active != g_shown_active ||
@@ -256,10 +320,16 @@ void task(void *) {
       const bool due = !g_shown_at ||
                        now_ms() - g_shown_at >= DISPLAY_MIN_S * 1000;
       if (g_force || usb_changed || (content != g_shown_hash && (urgent || due))) {
-        char clock[8];
+        char clock[16];
         clock_str(clock, sizeof(clock));
         build(s, clock);
-        if (show(g_draw)) {
+        pm_hold(Hold::Display, true);
+        pm_no_light_sleep(true);    // a refresh is seconds of SPI and BUSY polling
+        const bool shown = show(g_draw);
+        pm_hold(Hold::Display, false);
+        pm_no_light_sleep(false);
+        if (shown) {
+          if (g_draw_ready) g_ready_batt = g_draw_batt;
           g_shown_hash = content;
           g_shown_at = now_ms();
           g_shown_active = s.active;
@@ -279,16 +349,23 @@ void task(void *) {
         g_force = false;
       }
     }
+    pm_done(Duty::Display);
     vTaskDelay(pdMS_TO_TICKS(PASS_MS));
   }
 }
 
 }  // namespace
 
+void display_apply_insets(void) {
+  const Config &k = config();
+  scr_set_insets(k.epd_inset_t, k.epd_inset_b, k.epd_inset_l, k.epd_inset_r);
+}
+
 void display_start(const char *sn) {
   snprintf(g_sn, sizeof(g_sn), "%s", sn ? sn : "MCOLD");
+  display_apply_insets();
   g_epd = xSemaphoreCreateMutex();
-  xTaskCreatePinnedToCore(task, "display", 4096, nullptr, 1, nullptr, 1);
+  xTaskCreatePinnedToCore(task, "display", 6144, nullptr, 1, nullptr, 1);
 }
 
 void display_note_power(const PowerStatus &ps) {
@@ -312,4 +389,30 @@ void display_set_rotation(int r) {
 int display_rotation(void) { return g_rot; }
 
 bool display_show(const Canvas &c) { return g_epd ? show(c) : false; }
+
+void display_battery_off(float cell_volts) {
+  if (!g_epd) return;
+  g_hold = true;                // nothing else draws after this
+  TripStatus s;
+  trip_status(&s);
+  PowerStatus p;
+  bool have;
+  portENTER_CRITICAL(&g_mux);
+  p = g_pwr;
+  have = g_have_pwr;
+  portEXIT_CRITICAL(&g_mux);
+  char clock[16], data[40];
+  clock_str(clock, sizeof(clock));
+  snprintf(data, sizeof(data), "CELL %.2f V", cell_volts);
+  // Capitals: the title font is cut to ' '..'Z' (fonts_mcold.h), and a
+  // lower-case letter there is simply not drawn -- "Battery empty" came
+  // out as "B" on the panel (2026-10-03).
+  scr_takeover(g_draw, g_sn, clock, footer_state(s, p, have), "BATTERY EMPTY",
+               "Switched off. Charge to restart.", data, false, true);
+  pm_hold(Hold::Display, true);
+  pm_no_light_sleep(true);
+  show(g_draw);
+  pm_hold(Hold::Display, false);
+  pm_no_light_sleep(false);
+}
 

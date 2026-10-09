@@ -5,23 +5,50 @@
 #include <string.h>
 
 #include "fonts_mcold.h"
+#include "fonts_head.h"
+#include "fonts_title20.h"
 
 namespace {
 
 // ---- the grid, straight from render.py --------------------------------
 
-const int W = CANVAS_W;
-const int H = CANVAS_H;
+// The case's bezel covers a few pixels on every side (2026-10-04), so
+// the layout is drawn into the area it leaves visible: the insets are
+// config epd_inset_t/b/l/r, measured with `screen cal`. Everything below
+// is relative to that area; with no insets it is render.py's grid.
+int INS_T = 0, INS_B = 0, INS_L = 0, INS_R = 0;
+int W = CANVAS_W;
+int H = CANVAS_H;
 const int BAR = 17;          // header bar height
-const int RULE = 100;        // footer divider
+int RULE = 100;              // footer divider
 const int M = 8;             // side margin
-const int EDGE_R = W - M;
+int EDGE_R = W - M;
 const int GAP = 7;           // between footer icons
 const int BASE_BAR = 12;     // header baseline
-const int BASE_HERO = 80;    // temperature, fixed on every monitor screen
-const int BASE_BOTTOM = 96;  // min/max, or a caps note when there is no trip
-const int BASE_FOOT = 118;   // footer percentages
-const int ICON_BOTTOM = 120; // footer icons stop one row above this
+int BASE_HERO = 80;          // temperature, fixed on every monitor screen
+int BASE_BOTTOM = 96;        // min/max, or a caps note when there is no trip
+int BASE_FOOT = 118;         // footer percentages
+int ICON_BOTTOM = 120;       // footer icons stop one row above this
+
+void layout(void) {
+  W = CANVAS_W - INS_L - INS_R;
+  H = CANVAS_H - INS_T - INS_B;
+  EDGE_R = W - M;
+  RULE = H - 22;
+  BASE_FOOT = H - 4;
+  ICON_BOTTOM = H - 2;
+  BASE_BOTTOM = RULE - 4;
+  BASE_HERO = RULE - 20;
+}
+
+// Every template starts here: blank panel, origin at the safe area.
+void begin(Canvas &c) {
+  c.ox = 0;
+  c.oy = 0;
+  c.clear();
+  c.ox = INS_L;
+  c.oy = INS_T;
+}
 const int HERO_CAP = 57;     // cap height of the 80 px hero
 const float TRACK = 1;       // whole pixels: fractional advances smear
 const int BATT_LOW = 20;     // % at or below -> battery in accent
@@ -29,11 +56,17 @@ const int MEM_HIGH = 90;     // % used at or above -> storage in accent
 const int BATT_W = 11;
 const int BATT_H = 16;
 
-const GFXfont *CAPS = &mColdCaps11;     // header, footer %, labels
+const GFXfont *CAPS = &mColdCaps11;     // footer %, labels
+// The header: regular weight, and with lower case, because the SN has it
+// (mCDV1-...). Bold 12 left the SN within 22 px of the date (2026-10-04);
+// medium 11 hinted the 1 to a 2 px stem beside 1 px digits; regular 11
+// has every stem at 1 px, and leaves 32 px.
+const GFXfont *HEAD = &mColdHead11;
 const GFXfont *BODY = &mColdBody13;     // sentences on takeover screens
 const GFXfont *READING = &mColdRead15;  // min/max and charge-row values
 const GFXfont *STATUS = &mColdStat13;   // charge state word
 const GFXfont *TITLE = &mColdTitle26;   // takeover headline
+const GFXfont *TITLE_S = &mColdTitle20; // READY headline, under the arrow
 const GFXfont *BIG = &mColdBig44;       // state of charge
 const GFXfont *HERO = &mColdHero80;
 const GFXfont *HERO_UNIT = &mColdUnit20;
@@ -195,6 +228,65 @@ const Icon ICON_TRIP = {9, 16, {"#........",
                                 "##.......",
                                 "#........"}};
 
+// Pictures larger than a footer mark (display-mock/icons.py, tap()).
+struct Pict {
+  uint8_t w, h;
+  const char *rows[48];
+};
+
+static const Pict PICT_TAP = {42, 44, {"..........................................",
+                                       "....##################....................",
+                                       "...####################...................",
+                                       "..####.............####...................",
+                                       "..###...............###..............#....",
+                                       "..##.....#######.....##.............###...",
+                                       "..##.................##.............###...",
+                                       "..##.................##..............###..",
+                                       "..##.................##..........##...##..",
+                                       "..##.................##..........###..###.",
+                                       "..##.................##...........##...##.",
+                                       "..##.................##......###..###..##.",
+                                       "..##.................##.......##..###..###",
+                                       "..##.................##.......###..##..###",
+                                       "..##.................##.......###..##..###",
+                                       "..##.................##.......###..##..###",
+                                       "..##.................##.......###..##..###",
+                                       "..##.................##.......##..###..###",
+                                       "..##.................##......###..###..##.",
+                                       "..##.................##...........##...##.",
+                                       "..##.................##..........###..###.",
+                                       "..##.................##..........##...##..",
+                                       "..##.................##..............###..",
+                                       "..##.................##.............###...",
+                                       "..##.................##.............###...",
+                                       "..##.................##..............#....",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.................##...................",
+                                       "..##.......###.......##...................",
+                                       "..##.......###.......##...................",
+                                       "..##.......###.......##...................",
+                                       "..###...............###...................",
+                                       "..#####################...................",
+                                       "...###################....................",
+                                       "....#################....................."}};
+
+void pict(Canvas &c, const Pict &p, int x, int top, Ink ink) {
+  for (int r = 0; r < p.h && p.rows[r]; r++) {
+    for (int k = 0; k < p.w && p.rows[r][k]; k++) {
+      if (p.rows[r][k] == '#') c.pixel(x + k, top + r, ink);
+    }
+  }
+}
+
 // `off` strikes the icon through instead of hiding it: a frame persists
 // on the glass after power is gone, and "not connected" must not look
 // like "not refreshed".
@@ -206,7 +298,13 @@ int icon(Canvas &c, const Icon &ic, int x, int bottom, Ink ink, bool off = false
       if (row[k] == '#') c.pixel(x + k, top + r, ink);
     }
   }
-  if (off) c.line(x - 1, top + ic.h, x + ic.w, top - 1, ink);
+  if (off) {
+    // One strike for every icon, the same length and angle whatever the
+    // icon's width (2026-10-04): drawn corner to corner it came out steep
+    // across the narrow GNSS pin and shallow across Wi-Fi and the cloud.
+    const int cx = x + ic.w / 2;
+    c.line(cx - 8, top + ic.h, cx + 8, top - 1, ink);
+  }
   return ic.w;
 }
 
@@ -216,8 +314,8 @@ void header(Canvas &c, const char *device, const char *clock) {
   // Inverted. Ink spread thins reversed text, which is why the header is
   // the one small text set in SemiBold.
   c.fill_rect(0, 0, W, BAR, Ink::Black);
-  text(c, M, BASE_BAR, device, CAPS, Ink::White, TRACK);
-  text(c, EDGE_R, BASE_BAR, clock, CAPS, Ink::White, TRACK, true);
+  text(c, M, BASE_BAR, device, HEAD, Ink::White);
+  text(c, EDGE_R, BASE_BAR, clock, HEAD, Ink::White, 0, true);
 }
 
 // The battery: a cell on end, four blocks. Blocks are counted at a
@@ -239,9 +337,14 @@ void footer(Canvas &c, const Foot &f) {
   c.hline(0, RULE, W, Ink::Black);
 
   int x = M;
-  x += icon(c, ICON_WIFI, x, ICON_BOTTOM, Ink::Black, !f.wifi) + GAP;
-  x += icon(c, ICON_CLOUD, x, ICON_BOTTOM, Ink::Black, !f.cloud) + GAP;
-  x += icon(c, ICON_GNSS, x, ICON_BOTTOM, Ink::Black, !f.gnss) + GAP;
+  if (f.note) {
+    text(c, M, BASE_FOOT, f.note, CAPS, Ink::Black, TRACK);
+    x += (int)lroundf(width(f.note, CAPS, TRACK)) + GAP;
+  } else {
+    x += icon(c, ICON_WIFI, x, ICON_BOTTOM, Ink::Black, !f.wifi) + GAP;
+    x += icon(c, ICON_CLOUD, x, ICON_BOTTOM, Ink::Black, !f.cloud) + GAP;
+    x += icon(c, ICON_GNSS, x, ICON_BOTTOM, Ink::Black, !f.gnss) + GAP;
+  }
   if (f.trip) x += icon(c, ICON_TRIP, x, ICON_BOTTOM, Ink::Black) + GAP;
   if (f.shock) x += icon(c, ICON_SHOCK, x, ICON_BOTTOM, Ink::Accent) + GAP;
   const int left_end = x - GAP;
@@ -347,12 +450,16 @@ float rich(Canvas *c, float x, int y, const char *s, const GFXfont *f, Ink ink,
 void scr_monitor(Canvas &c, const char *device, const char *clock,
                  const Foot &f, const char *temp, const char *lo,
                  const char *hi, const char *note, bool red, bool alarm) {
-  c.clear();
+  begin(c);
   header(c, device, clock);
   const Ink hero = (red || alarm) ? Ink::Accent : Ink::Black;
   const float unit_w = 13 + width("C", HERO_UNIT);
   const float w_num = width(temp, HERO);
-  const float x = (W - (w_num + 5 + unit_w)) / 2;
+  // The number is centred on its own; the unit hangs off its right side
+  // (2026-10-04), so the reading sits in the middle of the panel whatever
+  // its width -- unless the unit would then run off the edge.
+  float x = (W - w_num) / 2;
+  if (x + w_num + 5 + unit_w > EDGE_R) x = EDGE_R - (w_num + 5 + unit_w);
   text(c, x, BASE_HERO, temp, HERO, hero);
   unit(c, (int)lroundf(x + w_num + 5), BASE_HERO - HERO_CAP, hero);
   if (lo && hi) {
@@ -365,14 +472,37 @@ void scr_monitor(Canvas &c, const char *device, const char *clock,
   if (alarm) alarm_frame(c);
 }
 
+void scr_ready(Canvas &c, const char *device, const Foot &f, bool low) {
+  begin(c);
+  header(c, device, "");
+  // The arrow, centred, points at the tag: the NFC antenna sits above the
+  // middle of the panel (decided 2026-10-05).
+  const int cx = W / 2, tip = BAR + 3;
+  for (int i = 0; i <= 9; i++) c.fill_rect(cx - i, tip + i, 2 * i + 1, 1, Ink::Black);
+  c.fill_rect(cx - 2, tip + 9, 5, 8, Ink::Black);
+  pict(c, PICT_TAP, M, RULE - 6 - PICT_TAP.h, Ink::Black);
+  const float x = M + PICT_TAP.w + 10;
+  text(c, x, 56, "SCAN TO", TITLE_S, Ink::Black);
+  text(c, x, 77, "START TRIP", TITLE_S, Ink::Black);
+  if (low) text(c, x, 94, "Battery low. Charge first.", BODY, Ink::Accent);
+  else text(c, x, 94, "Hold your phone to the box.", BODY, Ink::Black);
+  Foot ff = f;
+  ff.note = "NO ACTIVE TRIP";
+  ff.trip = ff.shock = false;
+  footer(c, ff);
+}
+
 void scr_charge(Canvas &c, const char *device, const char *clock,
                 const Foot &f, int soc, const char *state, const Row *rows,
                 int nrows) {
-  c.clear();
+  begin(c);
   header(c, device, clock);
+  // The number big, the sign small: "100%" in the big face is 121 px and
+  // ran into the rows beside it (2026-10-05).
   char s[8];
-  snprintf(s, sizeof(s), "%d%%", soc);
+  snprintf(s, sizeof(s), "%d", soc);
   text(c, M, 66, s, BIG, Ink::Black);
+  text(c, M + width(s, BIG) + 2, 66, "%", STATUS, Ink::Black);
   text(c, M, 90, state, STATUS, Ink::Black, 0.4f);
   const int col = 104;
   for (int i = 0; i < nrows && i < 3; i++) {
@@ -386,7 +516,7 @@ void scr_charge(Canvas &c, const char *device, const char *clock,
 void scr_takeover(Canvas &c, const char *device, const char *clock,
                   const Foot &f, const char *title, const char *sub,
                   const char *data, bool alarm, bool red_title) {
-  c.clear();
+  begin(c);
   header(c, device, clock);
   text(c, M, 54, title, TITLE, red_title ? Ink::Accent : Ink::Black);
   text(c, M, 76, sub, BODY, Ink::Black);
@@ -398,7 +528,7 @@ void scr_takeover(Canvas &c, const char *device, const char *clock,
 void scr_detail(Canvas &c, const char *device, const char *clock,
                 const Foot &f, const char *title, const char *state,
                 const Row *rows, int nrows) {
-  c.clear();
+  begin(c);
   header(c, device, clock);
   text(c, M, 36, title, CAPS, Ink::Black, TRACK);
   if (state) text(c, EDGE_R, 36, state, CAPS, Ink::Black, TRACK, true);
@@ -426,12 +556,51 @@ const char *scr_demo_name(int p) {
   return (p >= 0 && p < SCR_DEMO_PAGES) ? DEMO_NAMES[p] : "?";
 }
 
+void scr_set_insets(int top, int bottom, int left, int right) {
+  INS_T = top;
+  INS_B = bottom;
+  INS_L = left;
+  INS_R = right;
+  layout();
+}
+
+void scr_rxlog(Canvas &c, const char *title, const char *clock, const char *const *lines,
+               int n) {
+  begin(c);
+  header(c, title, clock);
+  // 14 px a line in the 11 px face: seven lines under the bar.
+  const int step = 14;
+  int y = BAR + 13;
+  for (int i = 0; i < n && y <= H - 2; i++, y += step) {
+    // Cut to the width, should a line of wide letters overrun it.
+    char s[64];
+    snprintf(s, sizeof(s), "%s", lines[i]);
+    for (size_t k = strlen(s); k && width(s, HEAD) > EDGE_R - M + 4; k--) s[k - 1] = 0;
+    text(c, M - 4, y, s, HEAD, Ink::Black);
+  }
+}
+
+void scr_calibrate(Canvas &c) {
+  c.ox = c.oy = 0;
+  c.clear();
+  // Six nested frames, 3 px apart, on the physical panel: count, on each
+  // side, the frames that can be seen; the hidden ones say how much the
+  // bezel covers there.
+  for (int k = 0; k < 6; k++) {
+    const int d = k * 3;
+    c.rect(d, d, CANVAS_W - 2 * d, CANVAS_H - 2 * d, Ink::Black);
+  }
+  text(c, 26, 46, "COUNT THE FRAMES", CAPS, Ink::Black, TRACK);
+  text(c, 26, 62, "YOU CAN SEE ON EACH SIDE", CAPS, Ink::Black, TRACK);
+  text(c, 26, 82, "6 = NOTHING HIDDEN", CAPS, Ink::Black, TRACK);
+  text(c, 26, 98, "EACH MISSING = 3 PX", CAPS, Ink::Black, TRACK);
+}
+
 void scr_demo(Canvas &c, int p) {
   const char *dev = "MCOLD-0117";
   // trip, wifi, cloud, gnss, shock, charging, batt, mem
   switch (p) {
-    case 0: scr_monitor(c, dev, "14:32", {false, true, true, true, false, false, 78, 6},
-                        "4.2", nullptr, nullptr, "NO ACTIVE TRIP", false, false); break;
+    case 0: scr_ready(c, dev, {false, false, false, false, false, false, 78, 2}, false); break;
     case 1: scr_monitor(c, dev, "14:32", {true, true, true, true, false, false, 78, 6},
                         "4.2", "2.8", "6.1", nullptr, false, false); break;
     case 2: scr_monitor(c, dev, "14:32", {true, true, true, true, false, false, 78, 6},

@@ -34,9 +34,11 @@ enum class VbusType : uint8_t {
 
 struct PowerStatus {
   // Fuel gauge
-  bool cell_valid;
+  bool cell_valid;          // false too when there is no battery (cell_absent)
+  bool cell_absent;         // the charger is holding the cell node up by itself
   float cell_volts;
-  float soc_percent;
+  float soc_percent;        // 0..100: counted (soc.h) once soc_update() has run
+  float gauge_percent;      // the MAX17048's own estimate, from the voltage
   float rate_percent_hr;    // signed: negative while discharging
 
   // Current monitor, across the 10 mOhm shunt in the battery branch
@@ -54,6 +56,28 @@ struct PowerStatus {
 };
 
 void power_init(void);
+// Before deep sleep: parts that would otherwise draw current for nothing.
+// `measure` leaves the current monitor averaging through the sleep
+// instead (it then draws 330 uA itself), for power_sleep_mean().
+void power_sleep(bool measure);
+// After a measured sleep: the mean battery current, mA out of the cell,
+// over the last 8.4 s before waking. False if this wake has none.
+bool power_sleep_mean(float *ma);
+
+// The battery current now, + into the cell. One register read.
+bool power_battery_ma(float *ma);
+
+// Switches the box off for good: the charger opens its battery switch
+// (BATFET_DIS, "ship mode") ten seconds after this returns, and the
+// cell then feeds nothing but the fuel gauge. It comes back on when USB
+// power is plugged in. For a cell too flat to run on (config
+// batt_off_mv): deep-discharging a LiPo is what swells it.
+bool power_ship_mode(void);
+
+// Bench: the charger's input switched off (HIZ), so the box runs from
+// its battery with the USB cable -- and the console -- still in. The
+// only way to measure what the box draws while still watching it.
+bool power_set_hiz(bool on);
 
 // Reads all three. Fields whose device did not answer are left invalid
 // rather than zeroed, so a failure cannot be mistaken for a reading.

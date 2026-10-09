@@ -2,6 +2,7 @@
 
 #include <driver/gpio.h>
 #include <driver/uart.h>
+#include <esp_attr.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -10,6 +11,7 @@
 
 #include "board.h"
 #include "health.h"
+#include "timekeep.h"
 #include "rails.h"
 
 namespace {
@@ -22,15 +24,19 @@ char g_line[100];
 int g_len = 0;
 bool g_overlong = false;
 
-GnssFix g_fix = {};
-bool g_have_fix = false;
+// The last fix is kept through deep sleep: every sample carries it with
+// its age, and a session is minutes of current that a wake must not
+// throw away.
+RTC_DATA_ATTR GnssFix g_fix = {};
+RTC_DATA_ATTR bool g_have_fix = false;
 uint32_t g_last_sentence = 0;
 uint32_t g_on_at = 0;
 GnssStats g_stats = {};
 volatile uint32_t g_echo_until = 0;   // 0: no raw echo
 portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// Runs through deep sleep (timekeep.h), so times kept across one compare.
+uint32_t now_ms(void) { return mono_ms(); }
 
 int hexval(char c) {
   if (c >= '0' && c <= '9') return c - '0';

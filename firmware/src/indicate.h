@@ -40,6 +40,10 @@ void indicate_cue(Cue c);
 // Motion or a tap: open an attention window, if the hourly budget allows.
 void indicate_attention(void);
 
-// Attention window length and how many may open in an hour.
+// Attention window length and how many may open in an hour. On battery
+// the window is just long enough for one status frame: holding the chip
+// awake 30 s to blink once a second cost ~5 mA on average the night of
+// 2026-10-02 -- more than all the sampling.
 static const uint32_t INDICATE_WINDOW_MS = 30000;
+static const uint32_t INDICATE_BATTERY_WINDOW_MS = 2000;
 static const int INDICATE_WINDOWS_PER_HOUR = 4;

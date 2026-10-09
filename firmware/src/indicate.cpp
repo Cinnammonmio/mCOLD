@@ -1,16 +1,18 @@
 #include "indicate.h"
 
 #include <driver/gpio.h>
-#include <esp_timer.h>
+#include <esp_attr.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <string.h>
 
+#include "ble.h"
 #include "board.h"
 #include "buzzer.h"
 #include "config.h"
 #include "health.h"
 #include "leds.h"
+#include "pm.h"
 #include "record.h"
 #include "timekeep.h"
 #include "trip.h"
@@ -41,10 +43,16 @@ const PatDef PATS[] = {
 struct Rgb {
   uint8_t r, g, b;
 };
+// Two families (decided 2026-10-04). Warnings keep their place and their
+// colour: red on the left is the cargo, amber on the right is the box.
+// Everything else -- the box saying it is fine, or that it heard you --
+// is blue, violet or cyan: colours that do not read as danger.
 const Rgb RED = {255, 0, 0};
-const Rgb GREEN = {0, 255, 0};
-const Rgb BLUE = {0, 0, 255};
-const Rgb WHITE = {255, 255, 255};
+const Rgb BLUE = {0, 40, 255};
+// Little red in it: at the 2 % front cap a violet of 150/255 red comes
+// out 3:5 red to blue and reads pink, close to the alarm red (2026-10-04).
+const Rgb VIOLET = {60, 0, 255};
+const Rgb CYAN = {0, 200, 255};
 // Amber is red plus green; the mix depends on the diffuser, to be tuned
 // once the case exists.
 const Rgb AMBER = {255, 150, 0};
@@ -68,11 +76,22 @@ const uint32_t STEP_MS = 10;
 const uint32_t BOOT_DELAY_MS = 3000;   // let every device be tried once first
 
 volatile int g_cue = -1;               // pending cue; a newer one replaces it
-uint32_t g_window_until = 0;
-uint32_t g_windows[INDICATE_WINDOWS_PER_HOUR];
+// The BLE link as this task last saw it: a phone connected, and whether
+// it passed AUTH (docs/led-design.md, "BLE / USB session").
+BleStatus g_ble = {};
+// The hourly budget is kept through deep sleep: forgetting it at every
+// wake would hand a box shaking in a truck a fresh budget every time.
+RTC_DATA_ATTR uint32_t g_window_until = 0;
+RTC_DATA_ATTR uint32_t g_windows[INDICATE_WINDOWS_PER_HOUR];
+RTC_DATA_ATTR uint32_t g_windows_magic = 0;
+// When the steady status last showed, through deep sleep: on battery it
+// is shown every config led_status_s, not at every wake (2026-10-03).
+RTC_DATA_ATTR uint32_t g_status_at = 0;
+const uint32_t WINDOWS_MAGIC = 0x494E4431;   // "IND1"
 portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// Runs through deep sleep (timekeep.h), so times kept across one compare.
+uint32_t now_ms(void) { return mono_ms(); }
 
 uint32_t length(const Track &t) {
   uint32_t d = t.delay_ms;
@@ -93,8 +112,11 @@ bool lit(const Track &t, uint32_t at) {
 }
 
 // Plays tracks together, each on its own pixel, and leaves them dark.
+bool in_window(void);
+
 void play(const Track *tr, int n) {
   if (n <= 0) return;
+  pm_hold(Hold::Indicate, true);     // a pattern cut off by sleep stays lit
   uint32_t total = 0;
   for (int i = 0; i < n; i++) {
     const uint32_t d = length(tr[i]);
@@ -111,6 +133,7 @@ void play(const Track *tr, int n) {
   }
   for (int i = 0; i < n; i++) leds_set(tr[i].pixel, 0, 0, 0);
   leds_show();
+  pm_hold(Hold::Indicate, in_window());
 }
 
 void play_one(int pixel, Pat p, Rgb c) {
@@ -127,24 +150,26 @@ void play_row(Pat p, Rgb c) {
 // SWEEP: left to right across the front, by position. (The design names
 // it LED1->2->3, written when LED1 was thought to be on the left; it is on
 // the right.)
-void sweep(Rgb c) {
+void sweep(void) {
+  // Blue, violet, cyan from left to right.
+  static const Rgb COL[3] = {BLUE, VIOLET, CYAN};
   Track t[3];
-  for (int i = 0; i < 3; i++) t[i] = {ROW[i], Pat::Step, c, (uint16_t)(i * 80)};
+  for (int i = 0; i < 3; i++) t[i] = {ROW[i], Pat::Step, COL[i], (uint16_t)(i * 80)};
   play(t, 3);
 }
 
 // Three beeps for an alarm. The lights are dark while it sounds.
 void alarm_sound(void) {
   if (!config().buzzer_enabled) return;
+  pm_hold(Hold::Indicate, true);
   for (int i = 0; i < 3; i++) {
     buzzer_beep(150);
     vTaskDelay(pdMS_TO_TICKS(300));
   }
+  pm_hold(Hold::Indicate, in_window());
 }
 
-bool external_power(void) {
-  return gpio_get_level((gpio_num_t)PIN_PG_N) == 0;   // PG# low = power good
-}
+bool external_power(void) { return pm_external_power(); }
 
 bool device_fault(const TripStatus &s) {
   if (s.active && (s.alarms_active & DEVICE_ALARMS)) return true;
@@ -164,18 +189,24 @@ void play_status(const TripStatus &s) {
   if (s.active && (s.alarms_active & CARGO_ALARMS)) {
     t[n++] = {LED_CARGO, Pat::Double, RED, 0};
   }
-  if (s.active) t[n++] = {LED_ALIVE, Pat::Tick, GREEN, 0};
-  if (device_fault(s)) t[n++] = {LED_DEVICE, Pat::Triple, AMBER, 0};
+  if (s.active) t[n++] = {LED_ALIVE, Pat::Tick, CYAN, 0};
+  if (device_fault(s)) {
+    t[n++] = {LED_DEVICE, Pat::Triple, AMBER, 0};
+  } else if (g_ble.connected) {
+    // A phone is connected: one blue tick a second on the right, two once
+    // it has passed AUTH. A fault on the box keeps that light amber.
+    t[n++] = {LED_DEVICE, g_ble.authorized ? Pat::Double : Pat::Tick, BLUE, 0};
+  }
   play(t, n);
 }
 
 void boot_cue(void) {
-  sweep(WHITE);
+  sweep();
   vTaskDelay(pdMS_TO_TICKS(150));
   TripStatus s;
   trip_status(&s);
   if (device_fault(s)) play_one(LED_DEVICE, Pat::Triple, AMBER);
-  else play_row(Pat::Blink, GREEN);
+  else play_row(Pat::Blink, CYAN);
 }
 
 void open_window(bool counted) {
@@ -193,19 +224,41 @@ void open_window(bool counted) {
       }
     }
   }
-  if (allowed) g_window_until = t + INDICATE_WINDOW_MS;
+  if (allowed) {
+    g_window_until = t + (external_power() ? INDICATE_WINDOW_MS : INDICATE_BATTERY_WINDOW_MS);
+  }
   portEXIT_CRITICAL(&g_mux);
+  // Someone is looking: the box stays up to show them.
+  if (allowed) pm_hold(Hold::Indicate, true);
 }
 
 bool in_window(void) { return (int32_t)(g_window_until - now_ms()) > 0; }
 
 void task(void *) {
-  vTaskDelay(pdMS_TO_TICKS(BOOT_DELAY_MS));
-  boot_cue();
-
   TripStatus prev;
-  trip_status(&prev);
+  if (!pm_warm()) {
+    vTaskDelay(pdMS_TO_TICKS(BOOT_DELAY_MS));
+    boot_cue();
+    trip_status(&prev);
+  } else {
+    // A wake from sleep is not a boot and gets no boot sweep. It is the
+    // moment the steady status is due (on battery that is once a sample
+    // period, and the box sleeps the rest), shown once the sample that
+    // woke it has been taken -- an alarm it raises shows in this frame.
+    for (int i = 0; i < 50 && !pm_is_done(Duty::Trip); i++) vTaskDelay(pdMS_TO_TICKS(100));
+    trip_status(&prev);
+    // A cargo alarm shows at every wake; the "alive" tick only every
+    // led_status_s -- each one costs the LED rail and a third of a second
+    // of the chip awake.
+    const bool cargo = prev.active && (prev.alarms_active & CARGO_ALARMS);
+    if (cargo || external_power() || !g_status_at ||
+        now_ms() - g_status_at >= (uint32_t)config().led_status_s * 1000) {
+      play_status(prev);
+      g_status_at = now_ms() ? now_ms() : 1;
+    }
+  }
   uint32_t last_status = now_ms();
+  pm_done(Duty::Indicate);
 
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(50));
@@ -216,17 +269,30 @@ void task(void *) {
       if (cue == (int)Cue::Boot) boot_cue();
       if (cue == (int)Cue::NfcTap) {
         open_window(false);          // a person is holding the box
-        play_row(Pat::Blink, WHITE);
+        play_row(Pat::Blink, VIOLET);
       }
     }
+
+    // The BLE link: the whole row blinks blue when a phone connects or
+    // goes, twice when it passes AUTH (the tap's key was right).
+    BleStatus b;
+    ble_status(&b);
+    if (b.connected != g_ble.connected) {
+      g_ble = b;
+      play_row(Pat::Blink, BLUE);
+    } else if (b.connected && b.authorized && !g_ble.authorized) {
+      g_ble = b;
+      play_row(Pat::Double, BLUE);
+    }
+    g_ble = b;
 
     // Changes in the trip, seen from outside it.
     TripStatus s;
     trip_status(&s);
     if (s.active && !prev.active) {
-      play_one(LED_ALIVE, Pat::Triple, GREEN);         // START_TRIP
+      play_one(LED_ALIVE, Pat::Triple, CYAN);          // START_TRIP
     } else if (!s.active && prev.active) {
-      play_one(LED_ALIVE, Pat::Blink, GREEN);          // STOP_TRIP
+      play_one(LED_ALIVE, Pat::Blink, BLUE);           // STOP_TRIP
     }
     const uint16_t raised = s.alarms_active & (uint16_t)~prev.alarms_active;
     if (s.active && (raised & CARGO_ALARMS)) {
@@ -240,15 +306,17 @@ void task(void *) {
       play_one(LED_CARGO, Pat::Blink, BLUE);           // acknowledged
     }
     prev = s;
+    if (!in_window()) pm_hold(Hold::Indicate, false);
 
     // The steady status, as often as it can be afforded.
     const uint32_t t = now_ms();
-    const uint32_t period = (external_power() || in_window())
+    const uint32_t period = (external_power() || in_window() || g_ble.connected)
                                 ? 1000
                                 : (uint32_t)config().sample_period_s * 1000;
     if (t - last_status >= period) {
       play_status(s);
       last_status = now_ms();
+      g_status_at = last_status ? last_status : 1;
     }
   }
 }
@@ -257,7 +325,12 @@ void task(void *) {
 
 void indicate_start(void) {
   leds_set_brightness(config().led_bright_pct);
-  memset(g_windows, 0, sizeof(g_windows));
+  leds_set_front_brightness(config().led_front_pct);
+  if (!pm_warm() || g_windows_magic != WINDOWS_MAGIC) {
+    memset(g_windows, 0, sizeof(g_windows));
+    g_window_until = 0;
+    g_windows_magic = WINDOWS_MAGIC;
+  }
   xTaskCreatePinnedToCore(task, "indicate", 3072, nullptr, 2, nullptr, 0);
 }
 

@@ -10,7 +10,7 @@
 // The rules this module exists to keep (§8):
 //
 //   A reset in the middle of a trip resumes that trip and says so in the
-//   log (EV_RESUMED). It never quietly starts a new one, and never drops
+//   log (a POWER_ON row). It never quietly starts a new one, and never drops
 //   the old one.
 //
 //   An alarm is raised, cleared and acknowledged as events. Acknowledging
@@ -32,6 +32,7 @@
 
 #include "accel.h"
 #include "door.h"
+#include "logrow.h"
 #include "power.h"
 #include "rtcclock.h"
 #include "temp.h"
@@ -53,6 +54,7 @@ enum class TripErr : uint8_t {
   NoLog,          // the trip log is not available: nothing can be recorded
   LogFull,        // full, and nothing that may be deleted to make room
   Flash,
+  BatteryLow,     // below config batt_trip_mv, on battery: charge first
 };
 
 struct TripStatus {
@@ -66,12 +68,22 @@ struct TripStatus {
   uint16_t door_opens;
   uint32_t motion_events;
   bool have_temp;
-  bool temp_read_since_boot;   // any attempt has completed since power-up
+  bool temp_read_since_boot;   // an attempt has completed since this boot or wake
   bool temp_ok;                // the latest reading is a reading, and fresh
   float temp_c;                // calibrated; meaningless unless temp_ok
   bool out_of_band;            // outside the thresholds now, alarm or not
   int16_t min_c100, max_c100;
   uint32_t lost_trips;      // deleted to make room, since the device was new
+  // The latest alarm raised in this trip (0xFF: none) and when, UTC s
+  // (0: unknown): with alarms_raised, what a server that was out of reach
+  // learns from the status when the box gets through again.
+  uint8_t last_alarm;
+  uint32_t last_alarm_utc;
+  // Who the trip is (empty when it has no identity: a trip from before
+  // header format 5, or none yet).
+  char trip_id[37];       // UUID
+  uint32_t trip_date;     // YYYYMMDD, local
+  uint16_t trip_number;   // the day's running number
 };
 
 // After the log, config and time are up. Resumes a trip that a reset
@@ -89,13 +101,35 @@ void trip_note_motion(const AccelEvent &ev);
 void trip_note_power(const PowerStatus &ps);
 void trip_note_door(DoorState now, uint32_t previous_lasted_ms);
 void trip_note_time_set(TimeSource src, uint32_t utc_before);
+// The result of the last upload attempt (record.h Link): the internet
+// column of every row from now on.
+void trip_note_link(uint8_t link);
 
 // Time-based alarms (door held open, probe gone). Call about once a
 // second.
 void trip_tick(void);
 
+// The battery is about to be cut off (batt_off_mv): one last event, so
+// the gap that follows in the trip has its reason.
+void trip_note_power_off(uint16_t cell_mv);
+
+// Before deep sleep: keeps what the log does not hold (dwell timers,
+// motion since the last sample) for the wake that follows.
+void trip_before_sleep(void);
+
+// mono_ms() at which an alarm waiting out its dwell time comes due; 0 if
+// none is waiting. The box must be awake then to raise it on time.
+uint32_t trip_next_check(void);
+
 // Writes a sample if a trip is running. The caller decides when.
 void trip_sample(void);
+
+// A trip's identity from its header, by the log's own id (false: not
+// found, or from before format 5), and the other way round from the
+// UUID's text (0: none). The ids are the box's own: only the UUID, the
+// date and the number leave it.
+bool trip_info(uint32_t id, RowHeader *out);
+uint32_t trip_find(const char *uuid);
 
 // Last trip id used, for the console's record dump.
 uint32_t trip_last_id(void);
@@ -123,7 +157,3 @@ static const uint32_t TRIP_PROBE_ALARM_MS = 60000;
 static const float TRIP_BATT_LOW_PCT = 15.0f;
 static const float TRIP_BATT_OK_PCT = 20.0f;
 
-// Motion is recorded as one event per burst, at most this often; the
-// count in between goes into the samples. A box being carried fires the
-// detector many times a second, and the log is not for that.
-static const uint32_t TRIP_MOTION_EVENT_MS = 60000;

@@ -1,0 +1,5 @@
+## Components from the ESP Component Registry, fetched at build time.
+## tinyusb: the USB stack under components/esp_tinyusb (vendored, see its
+## VENDORED.md) -- the USB port as a serial port and a drive at once (F2).
+dependencies:
+  espressif/tinyusb: ">=0.14.2"

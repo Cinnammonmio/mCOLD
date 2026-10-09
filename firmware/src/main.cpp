@@ -13,15 +13,19 @@
 // The supervisor watches heartbeats and reports what is wrong. It does
 // not restart anything: a box that reboots loses its state and its
 // time, and a reboot loop costs far more than a sensor that limps.
+#include <driver/gpio.h>
 #include <driver/usb_serial_jtag.h>
 #include <esp_app_desc.h>
+#include <soc/rtc_cntl_reg.h>
 #include <esp_mac.h>
 #include <esp_attr.h>
 #include <esp_heap_caps.h>
+#include <esp_pm.h>
 #include <esp_system.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <nvs.h>
 #include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
@@ -49,15 +53,22 @@
 #include "auth.h"
 #include "net.h"
 #include "uplink.h"
+#include "usbdrive.h"
 #include "gnss.h"
 #include "health.h"
+#include "logrow.h"
+#include "settings.h"
 #include "leds.h"
 #include "nfc.h"
+#include "ota.h"
+#include "pm.h"
 #include "power.h"
 #include "rails.h"
 #include "rtcclock.h"
+#include "soc.h"
 #include "temp.h"
 #include "timekeep.h"
+#include "rxlog.h"
 
 namespace {
 
@@ -68,7 +79,7 @@ namespace {
 // different fault from a device that will not answer, and the two want
 // different responses -- so they are counted separately rather than
 // collapsed into one "something is wrong".
-enum class Job : uint8_t { Sensors = 0, Power, Gnss, Nfc, Trip, Console, Count };
+enum class Job : uint8_t { Sensors = 0, Power, Gnss, Nfc, Trip, Console, Uplink, Count };
 
 struct Beat {
   volatile uint32_t count;
@@ -84,11 +95,24 @@ Beat g_beats[(int)Job::Count] = {
     {0, 0, 5000, "nfc"},
     {0, 0, 5000, "trip"},
     {0, 0, 5000, "console"},
+    {0, 0, 10000, "uplink"},      // counted by uplink.cpp (uplink_passes)
 };
+
+// A job stuck this long is not slow, it is hung: the box restarts
+// (decided 2026-10-05). A box in its case has SW1 out of reach and no
+// BOOT button, and only running firmware can take an OTA -- so a hang
+// must end in a restart, never in a wait for someone to press reset. A
+// running trip carries on after it (a POWER_ON row says so). Long
+// enough that no honest pass (a GNSS session, an OTA download, a panel
+// refresh) comes near it.
+const uint32_t HANG_RESTART_MS = 5 * 60000;
 
 inline void beat(Job j) { g_beats[(int)j].count = g_beats[(int)j].count + 1; }
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// Runs through deep sleep (timekeep.h), so times kept across one compare.
+uint32_t now_ms(void) { return mono_ms(); }
+// Since this boot or wake: esp_timer starts again at every wake.
+uint32_t uptime_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
 // The latest reading, and whether it is one. These are separate on
 // purpose: a stale value with a flag beside it is honest, a stale
@@ -101,6 +125,10 @@ bool g_accel_up = false;
 AccelSample g_accel = {};
 bool g_accel_valid = false;
 uint32_t g_motion_blanked = 0;
+// Bench: charger input off for a while, so the box runs from its cell
+// with the cable in. Switched back on by itself: a box left in HIZ by a
+// forgotten command would never charge again.
+volatile uint32_t g_hiz_until = 0;   // uptime_ms(); 0: not in HIZ
 
 // How long after a beep motion events are still the beep's own.
 const uint32_t BUZZER_BLANK_MS = 250;
@@ -133,21 +161,167 @@ struct GnssMemo {
 const uint32_t GNSS_MEMO_MAGIC = 0x474E5353;   // "GNSS"
 RTC_NOINIT_ATTR GnssMemo g_gnss_memo;
 GnssMemo g_gnss_before = {};   // the memo as found at boot: before the reset
+// On battery a GNSS session keeps the whole box awake, not just the
+// module, so sessions are planned: only during a trip (or while the clock
+// has no time and satellites are the way to get it), once every
+// gnss_period_s, and stretched while they keep failing -- indoors there
+// is nothing to find, and looking every half hour would cost more than
+// all the sampling. Kept through deep sleep.
+struct GnssPlan {
+  uint32_t magic;
+  uint32_t next_at;         // mono_ms(); 0: due now
+  uint8_t misses;           // sessions in a row without a fix
+};
+const uint32_t GNSS_PLAN_MAGIC = 0x47504C31;   // "GPL1"
+RTC_DATA_ATTR GnssPlan g_gnss_plan;
+// On battery: a module that had a fix in the last four hours keeps its
+// ephemeris in the backup domain (GNSS VBAT is on 3V3_MAIN) and fixes in
+// seconds; a minute and a half is plenty. Without one, three minutes.
+const uint32_t GNSS_HOT_MS = 4 * 3600000;
+const uint32_t GNSS_BATT_SESSION_MS = 90000;
+const uint32_t GNSS_BATT_COLD_SESSION_MS = 180000;
+// Not one satellite heard in this long: the box is indoors (or in a
+// container), and the rest of the session would only cost current. The
+// night of 2026-10-02 spent ~3 mA on full-length sessions in a room.
+const uint32_t GNSS_NOTHING_HEARD_MS = 60000;
+
+// The next trip sample, through deep sleep.
+struct SamplePlan {
+  uint32_t magic;
+  uint32_t trip;
+  uint32_t next;            // mono_ms()
+};
+const uint32_t SAMPLE_PLAN_MAGIC = 0x53504C31;   // "SPL1"
+RTC_DATA_ATTR SamplePlan g_sample_plan;
+
 const uint32_t NFC_POLL_MS = 300;
 const uint32_t FIRST_SAMPLE_WAIT_MS = 10000;   // uptime limit, see task_trip
+const uint32_t CONSOLE_HOLD_MS = 120000;       // awake after a typed line
+const uint32_t NFC_TAP_GAP_MS = 3000;            // field edges closer than this: one tap
 
 // ---- sensors ---------------------------------------------------------
 
 void report_motion(const AccelEvent &ev, const char *when) {
-  printf("[accel] %lu ms%s%s%s%s%s  (src 0x%02X, event %lu)\n",
+  printf("[accel] %lu ms%s%s%s%s%s  (src 0x%02X, tap 0x%02X, event %lu)\n",
          (unsigned long)now_ms(), when,
          ev.free_fall ? " free-fall" : " motion", ev.x ? " X" : "",
-         ev.y ? " Y" : "", ev.z ? " Z" : "", ev.raw_src,
+         ev.y ? " Y" : "", ev.z ? " Z" : "", ev.raw_src, ev.tap_src,
          (unsigned long)accel_event_count());
   fflush(stdout);
   // Someone is handling the box: worth showing them its status for a
   // little while, within the hourly budget.
   indicate_attention();
+}
+
+// ---- tap commands (tap_test: a bench aid, never in the product) ------
+//
+// The box has no button. With tap_test 1, a double tap is a command, and
+// which one is told by how the box lies when tapped -- the part sees the
+// double tap by itself, asleep or not, and the orientation reads cleanly
+// with the box at rest:
+//
+//   lying as normal    start a trip, or stop the one running  1 / 2 beeps
+//   on its left side   redraw the screen                       3 beeps
+//   on its right side  a GNSS session, held 10 minutes         4 beeps
+//   anything else      nothing                                 one long beep
+
+enum class Face : uint8_t { Unknown, XPos, XNeg, YPos, YNeg, ZPos, ZNeg };
+
+const char *face_name(Face f) {
+  static const char *const N[] = {"unclear", "+X", "-X", "+Y", "-Y", "+Z", "-Z"};
+  return N[(int)f];
+}
+
+// The axis gravity is on: one well over 0.7 g, the other two under 0.5 g.
+Face face_of(const AccelSample &a) {
+  const float v[3] = {a.x_mg, a.y_mg, a.z_mg};
+  int k = 0;
+  for (int i = 1; i < 3; i++) {
+    if (fabsf(v[i]) > fabsf(v[k])) k = i;
+  }
+  if (fabsf(v[k]) < 700) return Face::Unknown;
+  for (int i = 0; i < 3; i++) {
+    if (i != k && fabsf(v[i]) > 500) return Face::Unknown;
+  }
+  return (Face)(1 + k * 2 + (v[k] < 0 ? 1 : 0));
+}
+
+// The axis gravity is on in each position, measured on box 002 with
+// `accel` (2026-10-06): normal z -968 mg, left side y -993, right y +1025.
+const Face TAP_FACE_NORMAL = Face::ZNeg;
+const Face TAP_FACE_LEFT = Face::YNeg;
+const Face TAP_FACE_RIGHT = Face::YPos;
+const uint32_t TAP_GNSS_HOLD_MS = 10 * 60000;
+// Taps within this long of a command are not one: four quick knocks made
+// two double taps 1.7 s apart, and a trip started and stopped (2026-10-06).
+const uint32_t TAP_COOLDOWN_MS = 3000;
+uint32_t g_tap_last_cmd = 0;
+
+void tap_beeps(int n, uint32_t ms) {
+  for (int i = 0; i < n; i++) {
+    buzzer_beep(ms);
+    vTaskDelay(pdMS_TO_TICKS(ms + 200));
+  }
+}
+
+void handle_tap(const AccelEvent &ev) {
+  if (!ev.double_tap || !config().tap_test) return;
+  if (g_tap_last_cmd && now_ms() - g_tap_last_cmd < TAP_COOLDOWN_MS) {
+    printf("[tap] double tap ignored: within %lu s of the last command\n",
+           (unsigned long)(TAP_COOLDOWN_MS / 1000));
+    return;
+  }
+  // A few readings after the knock has died away.
+  vTaskDelay(pdMS_TO_TICKS(60));
+  AccelSample a = {}, s;
+  int n = 0;
+  for (int i = 0; i < 5; i++) {
+    if (accel_read(&s)) {
+      a.x_mg += s.x_mg;
+      a.y_mg += s.y_mg;
+      a.z_mg += s.z_mg;
+      n++;
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+  if (n) {
+    a.x_mg /= n;
+    a.y_mg /= n;
+    a.z_mg /= n;
+  }
+  const Face f = n ? face_of(a) : Face::Unknown;
+  const char *what = "nothing (orientation not a command)";
+  int beeps = 0;
+  if (f == TAP_FACE_NORMAL) {
+    TripStatus ts;
+    trip_status(&ts);
+    if (ts.active) {
+      const TripErr e = trip_stop(1);
+      what = e == TripErr::Ok ? "trip stopped" : trip_err_name(e);
+      beeps = e == TripErr::Ok ? 2 : 0;
+    } else {
+      TripParams p = {20, 80, 5, 300, 0};   // 2..8 C, as `trip start`
+      uint32_t id = 0;
+      const TripErr e = trip_start(p, &id);
+      what = e == TripErr::Ok ? "trip started" : trip_err_name(e);
+      beeps = e == TripErr::Ok ? 1 : 0;
+    }
+  } else if (f == TAP_FACE_LEFT) {
+    display_refresh();
+    what = "screen redraw";
+    beeps = 3;
+  } else if (f == TAP_FACE_RIGHT) {
+    g_gnss_hold_until = now_ms() + TAP_GNSS_HOLD_MS;
+    pm_hold(Hold::Gnss, true);   // awake until the session takes it over
+    what = "GNSS held 10 min";
+    beeps = 4;
+  }
+  printf("[tap] double tap, %s up (x %+.0f y %+.0f z %+.0f mg): %s\n", face_name(f), a.x_mg,
+         a.y_mg, a.z_mg, what);
+  fflush(stdout);
+  if (beeps) tap_beeps(beeps, 120);
+  else tap_beeps(1, 600);
+  g_tap_last_cmd = now_ms();   // after the beeps: they shake the box too
 }
 
 void task_sensors(void *) {
@@ -159,7 +333,9 @@ void task_sensors(void *) {
     // Wakes on the accelerometer's INT1 edge or after the pass period,
     // whichever is first. A motion event is handled within
     // milliseconds instead of waiting out the rest of a sleep.
-    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SENSOR_PASS_MS));
+    // Not before the first pass: on a wake from sleep this reading is
+    // what the whole wake is waiting for.
+    ulTaskNotifyTake(pdTRUE, first ? 0 : pdMS_TO_TICKS(SENSOR_PASS_MS));
     beat(Job::Sensors);
     const uint32_t t = now_ms();
 
@@ -177,6 +353,7 @@ void task_sensors(void *) {
         } else {
           report_motion(ev, "");
           trip_note_motion(ev);
+          handle_tap(ev);
         }
       }
     }
@@ -192,7 +369,7 @@ void task_sensors(void *) {
     if (health_should_try(Dev::Accel, t)) {
       if (!g_accel_up) {
         AccelEvent pending;
-        g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending);
+        g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending, config().tap_test);
       }
       AccelSample a;
       if (g_accel_up && accel_read(&a)) {
@@ -217,6 +394,7 @@ void task_sensors(void *) {
       g_temp_status = ts;
       trip_note_temp(ts, c);
     }
+    pm_done(Duty::Sensors);
   }
 }
 
@@ -228,20 +406,52 @@ void task_sensors(void *) {
 // trigger one, is trip policy (P3); these numbers only keep P1 honest
 // about power and give the driver something real to do.
 
+bool gnss_wanted(bool battery) {
+  if (!battery) return true;
+  TripStatus s;
+  trip_status(&s);
+  return s.active || !rtc_time_valid();
+}
+
 void task_gnss(void *) {
+  if (!pm_warm() || g_gnss_plan.magic != GNSS_PLAN_MAGIC) g_gnss_plan = {GNSS_PLAN_MAGIC, 0, 0};
   for (;;) {
     beat(Job::Gnss);
-    if (!health_should_try(Dev::Gnss, now_ms()) || !gnss_power_on()) {
+    const bool battery = !pm_external_power();
+    const bool wanted = gnss_wanted(battery);
+    const uint32_t t0 = now_ms();
+    const bool held = (int32_t)(g_gnss_hold_until - t0) > 0;
+    const uint32_t next = g_gnss_plan.next_at;
+    const bool due = held || (wanted && (!next || (int32_t)(t0 - next) >= 0));
+    pm_next(Duty::Gnss, battery && wanted ? (next ? next : t0) : 0);
+    if (!due || !health_should_try(Dev::Gnss, t0) || !gnss_power_on()) {
+      if (due && battery && !held) {
+        // Due, but the module cannot be had (failing, or its health is
+        // backing off): try again a period from now. Left at a time
+        // already past, the plan would keep the chip awake for it.
+        g_gnss_plan.next_at = t0 + (uint32_t)config().gnss_period_s * 1000;
+        if (!g_gnss_plan.next_at) g_gnss_plan.next_at = 1;
+        pm_next(Duty::Gnss, g_gnss_plan.next_at);
+      }
+      pm_done(Duty::Gnss);
       vTaskDelay(pdMS_TO_TICKS(5000));
       continue;
     }
-    printf("[gnss] %lu ms session start\n", (unsigned long)now_ms());
+    // The duty is the decision; the session that follows is a hold, and
+    // ends on its own clock.
+    pm_hold(Hold::Gnss, true);
+    pm_no_light_sleep(true);    // the UART takes sentences while the CPU waits
+    pm_done(Duty::Gnss);
+    printf("[gnss] %lu ms session start\n", (unsigned long)uptime_ms());
     fflush(stdout);
 
     const uint32_t start = now_ms();
     GnssStats gs;
     gnss_stats(&gs);
-    const uint32_t limit = gs.fixes ? GNSS_SESSION_MS : GNSS_COLD_SESSION_MS;
+    GnssFix prior;
+    const bool hot = gnss_last_fix(&prior) && prior.at_ms && start - prior.at_ms < GNSS_HOT_MS;
+    const uint32_t limit = battery ? (hot ? GNSS_BATT_SESSION_MS : GNSS_BATT_COLD_SESSION_MS)
+                                   : (gs.fixes ? GNSS_SESSION_MS : GNSS_COLD_SESSION_MS);
     int fixes = 0;
     while (now_ms() - start < limit ||
            (int32_t)(g_gnss_hold_until - now_ms()) > 0) {
@@ -271,6 +481,17 @@ void task_gnss(void *) {
         }
       }
 
+      if (battery && now_ms() - start >= GNSS_NOTHING_HEARD_MS &&
+          (int32_t)(g_gnss_hold_until - now_ms()) <= 0) {
+        GnssSky k;
+        gnss_sky(&k);
+        if (!k.in_view && !k.heard) {
+          printf("[gnss] nothing heard in %lu s: indoors, giving up\n",
+                 (unsigned long)(GNSS_NOTHING_HEARD_MS / 1000));
+          break;
+        }
+      }
+
       GnssFix f;
       if (!gnss_last_fix(&f) || !f.valid || now_ms() - f.at_ms > 2000) continue;
       fixes++;
@@ -296,10 +517,20 @@ void task_gnss(void *) {
       if (fixes >= GNSS_FIXES_WANTED && (int32_t)(g_gnss_hold_until - now_ms()) <= 0) break;
     }
     gnss_power_off();
+    pm_hold(Hold::Gnss, false);
+    pm_no_light_sleep(false);
 
     GnssFix f;
     const bool have = gnss_last_fix(&f);
-    if (have && f.valid && now_ms() - f.at_ms < 5000) {
+    const bool got = have && f.valid && now_ms() - f.at_ms < 5000;
+    g_gnss_plan.misses = got ? 0 : (uint8_t)(g_gnss_plan.misses < 4 ? g_gnss_plan.misses + 1 : 4);
+    // On battery the period stretches x2, x4, x8, x16 while sessions fail
+    // (with the default 30 min, up to 8 h between tries indoors).
+    const uint32_t period = battery ? ((uint32_t)config().gnss_period_s * 1000) << g_gnss_plan.misses
+                                    : GNSS_PERIOD_MS;
+    g_gnss_plan.next_at = now_ms() + period;
+    if (!g_gnss_plan.next_at) g_gnss_plan.next_at = 1;
+    if (got) {
       printf("[gnss] fix %.6f, %.6f  %u sats  hdop %.1f\n", f.lat_deg,
              f.lon_deg, f.sats, f.hdop);
     } else {
@@ -312,12 +543,8 @@ void task_gnss(void *) {
              k.in_view, k.heard, k.best_snr);
     }
     fflush(stdout);
-
-    for (uint32_t waited = 0; waited < GNSS_PERIOD_MS; waited += 5000) {
-      beat(Job::Gnss);
-      if ((int32_t)(g_gnss_hold_until - now_ms()) > 0) break;   // held: go now
-      vTaskDelay(pdMS_TO_TICKS(5000));
-    }
+    pm_next(Duty::Gnss, battery ? g_gnss_plan.next_at : 0);
+    pm_done(Duty::Gnss);
   }
 }
 
@@ -325,6 +552,7 @@ void task_gnss(void *) {
 
 void task_nfc(void *) {
   bool up = false;
+  uint32_t last_try = 0;
   for (;;) {
     beat(Job::Nfc);
     const uint32_t t = now_ms();
@@ -333,20 +561,29 @@ void task_nfc(void *) {
     if (up) {
       NfcPoll p;
       nfc_poll(&p);
+      // A phone on the antenna: it is reading, or about to talk BLE.
+      pm_hold(Hold::NfcField, p.field == NfcField::Present || p.field == NfcField::RfBusy);
       if (p.arrived) {
         printf("[nfc] phone on the tag (%s), tap %lu\n",
                p.field == NfcField::RfBusy ? "I2C refused" : "field",
                (unsigned long)nfc_tap_count());
         fflush(stdout);
-        // "This is the box you tapped."
-        indicate_cue(Cue::NfcTap);
+        // "This is the box you tapped." Once a tap: a phone resting on the
+        // tag turns its field on and off a dozen times while it reads
+        // (2-21 times in a few seconds, 2026-10-07), each one a new edge.
+        static uint32_t last_field = 0;
+        const uint32_t tf = now_ms();
+        if (!last_field || tf - last_field >= NFC_TAP_GAP_MS) {
+          indicate_cue(Cue::NfcTap);
+          rxlog_note("NFC tap");
+        }
+        last_field = tf ? tf : 1;
         // The tap is how a phone asks for the box: open BLE for it.
         ble_window(BLE_TAP_WINDOW_MS);
       }
       // The key goes on the tag when it is due and nothing is reading
       // it: a phone on the antenna holds the tag's RF side and the write
       // would only be refused. Not more than every few seconds either.
-      static uint32_t last_try = 0;
       if (p.field == NfcField::Absent && auth_needs_publish() &&
           (!last_try || t - last_try > 5000)) {
         last_try = t ? t : 1;
@@ -354,12 +591,62 @@ void task_nfc(void *) {
         fflush(stdout);
       }
     }
+    // Done once the tag has been asked and the key, if one was due,
+    // written -- a key rotated while the box sleeps would wait a whole
+    // sample period on the tag.
+    if (!up || !auth_needs_publish() || t - last_try < 5000) pm_done(Duty::Nfc);
     // Edges latch in the tag, so a slow poll still catches a quick tap.
     vTaskDelay(pdMS_TO_TICKS(NFC_POLL_MS));
   }
 }
 
 // ---- power -----------------------------------------------------------
+
+// Below config batt_off_mv, on battery, three readings in a row: the box
+// switches itself off (decided 2026-10-03). A LiPo run down past ~3.0 V
+// is damaged and swells, and even asleep the box keeps drawing; the
+// charger's ship mode cuts the cell off from everything but the fuel
+// gauge. Plugging USB in brings it back. Three readings, 0.7 s apart,
+// so one bad read cannot switch a box off in the middle of a trip.
+RTC_DATA_ATTR uint8_t g_low_reads = 0;
+[[noreturn]] void battery_off(float volts);
+
+void battery_guard(const PowerStatus &ps) {
+  if (pm_external_power() || ps.power_good || !ps.cell_valid ||
+      ps.cell_volts < 2.5f || ps.cell_volts > 4.5f) {
+    g_low_reads = 0;
+    return;
+  }
+  const uint16_t mv = (uint16_t)lroundf(ps.cell_volts * 1000.0f);
+  if (mv >= config().batt_off_mv) {
+    g_low_reads = 0;
+    return;
+  }
+  if (++g_low_reads < 3) return;
+  printf("[power] cell %u mV, below %ld: switching off; plug in USB to restart\n", mv,
+         (long)config().batt_off_mv);
+  battery_off(ps.cell_volts);
+}
+
+// Also the console's "poweroff", to check the whole path on the bench.
+void battery_off(float volts) {
+  // Nothing may put the chip to sleep half way through this: a sleep
+  // between the event and the picture would come back and do it again.
+  // Never released -- this ends in sleep either way.
+  pm_hold(Hold::Display, true);
+  const uint16_t mv = (uint16_t)lroundf(volts * 1000.0f);
+  fflush(stdout);
+  soc_before_sleep(true);    // learns the capacity, if this ran from full
+  trip_note_power_off(mv);
+  trip_before_sleep();
+  display_battery_off(volts);
+  if (!power_ship_mode()) printf("[power] charger did not answer: sleeping instead\n");
+  fflush(stdout);
+  // Asleep with nothing to wake it but USB power, for the ten seconds
+  // until the battery switch opens -- or for good, if the charger did not
+  // take the command.
+  pm_sleep_until_usb();
+}
 
 void task_power(void *) {
   uint32_t last_kick = 0;
@@ -369,7 +656,9 @@ void task_power(void *) {
 
     PowerStatus ps;
     power_read(&ps);
+    soc_update(ps);      // the counted percent, before anyone sees the reading
     g_power = ps;
+    if (ps.current_valid) pm_note_current(ps.battery_ma < 0 ? -ps.battery_ma : 0);
     chargeled_update(ps);
     trip_note_power(ps);
     display_note_power(ps);
@@ -388,7 +677,16 @@ void task_power(void *) {
       struct tm tmv;
       rtc_get(&tmv);
     }
-    vTaskDelay(pdMS_TO_TICKS(5000));
+    battery_guard(ps);
+    pm_done(Duty::Power);
+    if (g_hiz_until && (int32_t)(uptime_ms() - g_hiz_until) >= 0) {
+      g_hiz_until = 0;
+      power_set_hiz(false);
+      printf("[power] charger input back on (hiz time over)\n");
+    }
+    // Twice in the first seconds of a wake, so even a short wake records
+    // the current it costs; then every five seconds.
+    vTaskDelay(pdMS_TO_TICKS(uptime_ms() < 3000 ? 700 : 5000));
   }
 }
 
@@ -407,9 +705,21 @@ void task_trip(void *) {
 #endif
   bool was_active = false;
   uint32_t next_sample = 0;
+  {
+    TripStatus st;
+    trip_status(&st);
+    // Back from sleep in the same trip: the schedule carries on. Not a
+    // resume -- no sample is due just because the chip woke.
+    if (pm_warm() && st.active && g_sample_plan.magic == SAMPLE_PLAN_MAGIC &&
+        g_sample_plan.trip == st.id) {
+      next_sample = g_sample_plan.next;
+      was_active = true;
+    }
+  }
   for (;;) {
     beat(Job::Trip);
-    if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000))) {
+    // Every 100 ms until this wake's sample is in: the chip waits on it.
+    if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(pm_is_done(Duty::Trip) ? 1000 : 100))) {
 #if MCOLD_DOOR
       DoorState s;
       uint32_t lasted = 0;
@@ -433,14 +743,31 @@ void task_trip(void *) {
       // written before it would record "no data" for no reason. Ten
       // seconds is the limit: a probe that never answers must not stop
       // the sample that says so.
-      if (!st.temp_read_since_boot && t < FIRST_SAMPLE_WAIT_MS) continue;
+      if (!st.temp_read_since_boot && uptime_ms() < FIRST_SAMPLE_WAIT_MS) continue;
       next_sample = t;
     }
     was_active = st.active;
-    if (st.active && (int32_t)(t - next_sample) >= 0) {
+    const uint32_t period = (uint32_t)config().sample_period_s * 1000;
+    bool due = st.active && (int32_t)(t - next_sample) >= 0;
+    // A sample is this wake's reading: wait for it (ten seconds at most,
+    // the probe that never answers still gets its "no data" sample).
+    if (due && !st.temp_read_since_boot && uptime_ms() < FIRST_SAMPLE_WAIT_MS) continue;
+    if (due) {
       trip_sample();
-      next_sample = t + (uint32_t)config().sample_period_s * 1000;
+      // On the grid, not from now: the wake takes a second, and adding
+      // it to every period would walk the samples later all trip long.
+      next_sample += period;
+      if ((int32_t)(t - next_sample) >= 0 || (int32_t)(next_sample - t) > (int32_t)period) {
+        next_sample = t + period;      // fell behind (or the period changed)
+      }
+      due = false;
     }
+    if (st.active) g_sample_plan = {SAMPLE_PLAN_MAGIC, st.id, next_sample};
+    uint32_t wake = st.active ? next_sample : 0;
+    const uint32_t check = trip_next_check();
+    if (check && (!wake || (int32_t)(check - wake) < 0)) wake = check;
+    pm_next(Duty::Trip, wake);
+    pm_done(Duty::Trip);
   }
 }
 
@@ -461,10 +788,10 @@ void print_health(void) {
            (unsigned long)h->fail_count, age);
   }
   if (g_temp_valid) {
-    printf("\n  temperature  %.2f C\n", g_temp_c);
+    printf("\n  temperature  %.2f C  (%s)\n", g_temp_c, temp_sensor_name(temp_sensor()));
   } else {
-    printf("\n  temperature  -- (%s)\n",
-           temp_status_name(g_temp_status));
+    printf("\n  temperature  -- (%s; %s)\n", temp_status_name(g_temp_status),
+           temp_sensor_name(temp_sensor()));
   }
   struct tm tmv;
   if (rtc_get(&tmv)) {
@@ -486,8 +813,10 @@ void print_health(void) {
 
   const PowerStatus &p = g_power;
   if (p.cell_valid) {
-    printf("  cell         %.3f V  %.1f %%  %+.2f %%/hr\n", p.cell_volts,
-           p.soc_percent, p.rate_percent_hr);
+    printf("  cell         %.3f V  %.1f %% shown, %.1f %% gauge  %+.2f %%/hr\n",
+           p.cell_volts, p.soc_percent, p.gauge_percent, p.rate_percent_hr);
+  } else if (p.cell_absent) {
+    printf("  cell         no battery (%.3f V is the charger's output)\n", p.cell_volts);
   } else {
     printf("  cell         -- (fuel gauge did not answer)\n");
   }
@@ -535,7 +864,17 @@ void print_tasks(void) {
   printf("  free heap %u B, lowest ever %u B\n",
          (unsigned)esp_get_free_heap_size(),
          (unsigned)esp_get_minimum_free_heap_size());
-  printf("\n");
+  // The least stack each task has had left: the TinyUSB task overflowed
+  // its 4 KB once (0.7.0-dev.13), with no warning beforehand.
+  static const char *const STACKS[] = {"sensors", "power", "gnss", "nfc", "trip",
+                                       "console", "super", "uplink", "TinyUSB",
+                                       "display", "ble", "indicate"};
+  printf("  stack never used:");
+  for (const char *n : STACKS) {
+    TaskHandle_t h = xTaskGetHandle(n);
+    if (h) printf(" %s %u", n, (unsigned)uxTaskGetStackHighWaterMark(h));
+  }
+  printf(" B\n\n");
   fflush(stdout);
 }
 
@@ -554,6 +893,8 @@ void print_accel(void) {
     printf("\n  x %+8.1f  y %+8.1f  z %+8.1f mg   |a| %.0f mg\n", a.x_mg,
            a.y_mg, a.z_mg, a.magnitude_mg);
     printf("  (at rest |a| should be close to 1000 whatever the orientation)\n");
+    printf("  face up %s%s\n", face_name(face_of(a)),
+           config().tap_test ? "   (tap_test on: double tap = command)" : "");
   } else {
     printf("\n  accelerometer did not answer\n");
   }
@@ -606,12 +947,48 @@ void print_gnss(void) {
          (unsigned long)((now_ms() - f.at_ms) / 1000));
 }
 
+// The SN the factory gave the box (NVS "sys"/"sn"); until one is set,
+// bring-up's MCOLD-xxxx from the MAC. iOS cannot see a BLE MAC, so this
+// name is how the app finds the box after reading the tag.
+bool sn_valid(const char *s) {
+  const size_t n = strlen(s);
+  if (n < 4 || n >= SN_LEN) return false;
+  for (size_t i = 0; i < n; i++) {
+    const char c = s[i];
+    if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+          c == '-' || c == '_' || c == '.')) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void device_sn(char *out, size_t n) {
-  // Bring-up's format. iOS cannot see a BLE MAC, so this name is how the
-  // app finds the box after reading the tag; the MAC is only a tiebreak.
+  nvs_handle_t h;
+  if (nvs_open("sys", NVS_READONLY, &h) == ESP_OK) {
+    char s[SN_LEN] = "";
+    size_t len = sizeof(s);
+    const bool ok = nvs_get_str(h, "sn", s, &len) == ESP_OK && sn_valid(s);
+    nvs_close(h);
+    if (ok) {
+      snprintf(out, n, "%s", s);
+      return;
+    }
+  }
   uint8_t m[6] = {0};
   esp_read_mac(m, ESP_MAC_WIFI_STA);
   snprintf(out, n, "MCOLD-%02X%02X", m[4], m[5]);
+}
+
+bool sn_store(const char *s) {
+  // The label's pattern, exactly (logrow.h): a typo is refused here, not
+  // found later in a file name or on the server.
+  if (!sn_valid(s) || !sn_pattern_ok(s)) return false;
+  nvs_handle_t h;
+  if (nvs_open("sys", NVS_READWRITE, &h) != ESP_OK) return false;
+  const bool ok = nvs_set_str(h, "sn", s) == ESP_OK && nvs_commit(h) == ESP_OK;
+  nvs_close(h);
+  return ok;
 }
 
 void print_nfc(void) {
@@ -741,13 +1118,18 @@ void print_trip(void) {
   trip_status(&s);
   if (!s.active) {
     printf("\n  no trip running");
-    if (s.id) printf("; last was %08lX", (unsigned long)s.id);
+    if (s.id) {
+      printf("; last was %s (%08lu #%u)", s.trip_id[0] ? s.trip_id : "no trip_id",
+             (unsigned long)s.trip_date, (unsigned)s.trip_number);
+    }
     printf("\n  deleted to make room since new: %lu\n\n",
            (unsigned long)s.lost_trips);
     return;
   }
   const TripParams &p = s.params;
-  printf("\n  trip       %08lX, running\n", (unsigned long)s.id);
+  printf("\n  trip_id    %s, running\n  trip_date  %08lu, number %u\n",
+         s.trip_id[0] ? s.trip_id : "(none: from before trip_id)",
+         (unsigned long)s.trip_date, (unsigned)s.trip_number);
   printf("  alarms at  below %.1f C or above %.1f C, after %u s,"
          " clear %.1f C inside\n",
          p.low_c10 / 10.0, p.high_c10 / 10.0, p.dwell_s, p.hyst_c10 / 10.0);
@@ -775,74 +1157,47 @@ void print_trip(void) {
   printf("\n\n");
 }
 
-// One record per line, decoded per record.h.
+// One row per line, decoded per record.h.
 bool dump_visit(const LogRecord &r, void *) {
-  Reader rd(r.payload, r.len);
-  const uint32_t utc = rd.u32();
-  const uint8_t q = rd.u8();
-  const uint16_t boot = rd.u16();
-  const uint32_t tick = rd.u32();
-  char when[24] = "no time";
-  if (q) {
-    const time_t s = (time_t)utc;
-    struct tm tm;
-    gmtime_r(&s, &tm);
-    strftime(when, sizeof(when), "%m-%d %H:%M:%S", &tm);
+  LogRow row;
+  RowHeader h;
+  RowSummary sum;
+  if (!row_decode(r.type, r.payload, r.len, &row, &h, &sum)) {
+    printf("  %5lu  type %02X, %u bytes (old record format)\n", (unsigned long)r.seq, r.type,
+           r.len);
+    return true;
   }
-  printf("  %5lu  %-14s b%u+%lus  ", (unsigned long)r.seq, when, boot,
-         (unsigned long)(tick / 1000));
-  switch (r.type) {
-    case REC_TRIP_START: {
-      rd.u8();
-      rd.u32();
-      const int16_t lo = rd.i16(), hi = rd.i16();
-      printf("START   alarms %.1f..%.1f C", lo / 10.0, hi / 10.0);
-      break;
-    }
-    case REC_SAMPLE: {
-      const uint8_t st = rd.u8();
-      rd.u16();
-      const int16_t c = rd.i16();
-      rd.u8();       // door state: not fitted while MCOLD_DOOR is off
-      rd.u16();      // door openings
-      const uint16_t motion = rd.u16();
-      rd.n = 30;
-      const uint16_t age = rd.u16();
-      rd.n = 36;
-      const uint8_t soc = rd.u8();
-      rd.n = 40;
-      const uint16_t alarms = rd.u16();
-      if (st == 0 && c != I16_NONE) printf("SAMPLE  %6.2f C", c / 100.0);
-      else printf("SAMPLE  temp -- (%s)", temp_status_name((TempStatus)st));
-      printf("  motion %u  fix %s  soc %s%u  alarms %04X", motion,
-             age == U16_NONE ? "none" : "aged", soc == 0xFF ? "-" : "",
-             soc == 0xFF ? 0 : soc, alarms);
-      break;
-    }
-    case REC_EVENT: {
-      const uint8_t code = rd.u8();
-      static const char *const NAMES[] = {
-          "?", "RESUMED", "DOOR OPEN", "DOOR CLOSE", "MOTION", "PROBE FAULT",
-          "PROBE OK", "ALARM", "ALARM CLEAR", "ALARM ACK", "TIME SET", "LOSS"};
-      printf("EVENT   %s", code < sizeof(NAMES) / sizeof(NAMES[0]) ? NAMES[code] : "?");
-      if (code == EV_ALARM_RAISE || code == EV_ALARM_CLEAR) {
-        printf(" %s", alarm_name(rd.u8()));
-      } else if (code == EV_DOOR_CLOSE) {
-        printf(" after %lu ms", (unsigned long)rd.u32());
-      } else if (code == EV_RESUMED) {
-        printf(" (reset reason %u)", rd.u8());
-      }
-      break;
-    }
-    case REC_TRIP_STOP: {
-      rd.u8();
-      printf("STOP    %lu samples", (unsigned long)rd.u32());
-      break;
-    }
-    default:
-      printf("type %02X, %u bytes", r.type, r.len);
-  }
+  char when[24] = "no time", al[40], det[40];
+  if (row.time_q) row_time_str(row.utc, config().tz_offset_min, when, sizeof(when));
+  row_alarm_str(row.alarms, al, sizeof(al));
+  row_detail_str(row, det, sizeof(det));
+  printf("  %5lu  %-19s %-12s", (unsigned long)r.seq, when, row_event_name(row.event));
+  if (row.temp_c100 != I16_NONE) printf(" %6.2f C", row.temp_c100 / 100.0);
+  else printf("   --   ");
+  printf("  m%-3u b%s%u%%  %s  %s", row.motion, row.battery == 0xFF ? "-" : "",
+         row.battery == 0xFF ? 0 : row.battery, row_gnss_name(row.gnss), row_link_name(row.internet));
+  if (al[0]) printf("  [%s]", al);
+  if (det[0]) printf("  %s", det);
+  if (h.valid) printf("  tempmin %.1f tempmax %.1f", h.tempmin_c10 / 10.0, h.tempmax_c10 / 10.0);
+  if (sum.valid) printf("  %lu samples", (unsigned long)sum.samples);
   printf("\n");
+  return true;
+}
+
+// The trip as the CSV file it will be (logrow.h): header line, then rows.
+struct CsvCtx {
+  RowHeader h;
+  char sn[SN_LEN];
+};
+bool csv_visit(const LogRecord &r, void *ctx) {
+  CsvCtx *c = (CsvCtx *)ctx;
+  LogRow row;
+  RowHeader h;
+  if (!row_decode(r.type, r.payload, r.len, &row, &h, nullptr)) return true;
+  if (h.valid) c->h = h;
+  char line[400];
+  row_csv(row, r.seq, c->sn, c->h, config().tz_offset_min, line, sizeof(line));
+  printf("%s\n", line);
   return true;
 }
 
@@ -861,13 +1216,87 @@ void trip_dump(int n) {
   printf("\n");
 }
 
+// The whole trip (the last, or `id`) as CSV, with the file name it gets.
+struct FirstRow {
+  LogRow r;
+  RowHeader h;
+  bool have;
+};
+bool first_row(const LogRecord &r, void *ctx) {
+  FirstRow *f = (FirstRow *)ctx;
+  f->have = row_decode(r.type, r.payload, r.len, &f->r, &f->h, nullptr) && f->h.valid;
+  return false;
+}
+
+void trip_csv(uint32_t id) {
+  if (!id) id = trip_last_id();
+  CsvCtx c = {};
+  device_sn(c.sn, sizeof(c.sn));
+  FirstRow f = {};
+  flashlog_read(id, 0, first_row, &f, nullptr);
+  if (!f.have) {
+    printf("  trip %08lX: no rows in this format\n", (unsigned long)id);
+    return;
+  }
+  char name[48], head[200];
+  row_file_name(c.sn, f.r, id, config().tz_offset_min, name, sizeof(name));
+  row_csv_header(head, sizeof(head));
+  printf("# %s\n%s\n", name, head);
+  flashlog_read(id, 0, csv_visit, &c, nullptr);
+}
+
+// The same rows as the server gets them over MQTT (row_json), one per line.
+bool json_visit(const LogRecord &r, void *ctx) {
+  CsvCtx *c = (CsvCtx *)ctx;
+  LogRow row;
+  RowHeader h;
+  if (!row_decode(r.type, r.payload, r.len, &row, &h, nullptr)) return true;
+  if (h.valid) c->h = h;
+  cJSON *o = row_json(row, r.seq, c->sn, c->h, config().tz_offset_min);
+  char *s = cJSON_PrintUnformatted(o);
+  if (s) printf("%s\n", s);
+  free(s);
+  cJSON_Delete(o);
+  return true;
+}
+
+void trip_json(uint32_t id) {
+  if (!id) id = trip_last_id();
+  CsvCtx c = {};
+  device_sn(c.sn, sizeof(c.sn));
+  // The first batch's head as the server gets it (uplink.cpp send_batch),
+  // then every row of the trip, though the box sends 20 to a message.
+  RowHeader h;
+  uint32_t last;
+  if (trip_info(id, &h) && flashlog_last_seq(id, &last)) {
+    char u[37];
+    uuid_str(h.uuid, u);
+    printf("{\"sn\":\"%s\",\"trip_id\":\"%s\",\"trip_date\":\"%08lu\",\"trip_number\":%u,"
+           "\"part\":1,\"parts\":%lu,\"from\":0,\"to\":%lu,\"last\":%s,\"rows\":[...]}\n",
+           c.sn, u, (unsigned long)h.date, (unsigned)h.number, (unsigned long)(last / 20 + 1),
+           (unsigned long)(last < 19 ? last : 19), last < 20 ? "true" : "false");
+  }
+  flashlog_read(id, 0, json_visit, &c, nullptr);
+}
+
 // Settings that take effect the moment they are stored, from the console
 // or the app alike; the rest are read where they are used.
 void config_changed(const char *key, int32_t v) {
+  settings_touch();     // the app's settings page follows
   if (!strcmp(key, "accel_wake_ths") && g_accel_up) {
     accel_set_threshold((uint8_t)v);
+  } else if (!strcmp(key, "tap_test")) {
+    AccelEvent pending;
+    g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending, v != 0);
+    printf("  double tap = command: %s\n", v ? "on (lying normal: trip, left: screen, "
+                                               "right: GNSS)" : "off");
   } else if (!strcmp(key, "led_bright_pct")) {
     leds_set_brightness((int)v);
+  } else if (!strcmp(key, "led_front_pct")) {
+    leds_set_front_brightness((int)v);
+  } else if (!strncmp(key, "epd_inset_", 10)) {
+    display_apply_insets();
+    display_refresh();
   }
 }
 
@@ -934,6 +1363,7 @@ void print_ble(void) {
 void rpc_command(const char *json) {
   RpcSession console = {};
   console.authorized = true;
+  console.console = true;
   char *resp = rpc_handle(json, strlen(json), &console);
   printf("  %s\n", resp);
   free(resp);
@@ -947,6 +1377,17 @@ void screen_command(const char *args) {
   if (!*args || !strcmp(args, "live")) {
     display_refresh();
     printf("  live display, redrawing now\n");
+    return;
+  }
+  if (!strcmp(args, "cal")) {
+    // Measuring the bezel: count the frames visible on each side, then
+    // config set epd_inset_t/b/l/r to (6 - count) x 3 for that side.
+    display_hold(true);
+    scr_calibrate(g_canvas);
+    const bool ok = display_show(g_canvas);
+    printf("  %s: count the frames on each side; inset = (6 - frames) x 3 px\n"
+           "  config set epd_inset_t|b|l|r N, then 'screen' to go back\n",
+           ok ? "calibration frames shown" : "PANEL DID NOT ANSWER");
     return;
   }
   if (!strncmp(args, "rot ", 4)) {
@@ -1002,10 +1443,89 @@ void trip_command(const char *args) {
     printf("  alarms acknowledged (they stay in the log)\n");
   } else if (!strncmp(args, "dump", 4)) {
     trip_dump(atoi(args + 4));
+  } else if (!strncmp(args, "csv", 3)) {
+    trip_csv((uint32_t)strtoul(args + 3, nullptr, 0));
+  } else if (!strncmp(args, "json", 4)) {
+    trip_json((uint32_t)strtoul(args + 4, nullptr, 0));
+  } else if (!strncmp(args, "fill ", 5)) {
+    // Test only: N sample rows now, all with this moment's readings, so a
+    // long trip (the drive's 64-row checkpoints) takes seconds, not hours.
+    const int n = atoi(args + 5);
+    if (n < 1 || n > 500) {
+      printf("  trip fill N (1..500): N sample rows now, for testing\n");
+      return;
+    }
+    for (int i = 0; i < n; i++) {
+      trip_sample();
+      if (i % 50 == 49) beat(Job::Console);
+    }
+    TripStatus st;
+    trip_status(&st);
+    printf("  %d sample rows written; %lu samples in this trip\n", n,
+           (unsigned long)st.samples);
   } else {
-    printf("  trip | trip start LOW HIGH | trip stop | trip ack | trip dump [N]\n");
+    printf("  trip | trip start LOW HIGH | trip stop | trip ack | trip dump [N] | trip csv [ID]\n");
   }
 }
+
+// The very last word, after the rails are off and the pins held: the
+// accelerometer latches an "event" from that switching itself (seen as
+// motion wakes 0 s after going to sleep, 2026-10-03), so whatever is
+// latched now is ours and is dropped, not counted. INT1 is low after.
+void before_sleep_quiet(void) {
+  // With tap_test, INT1 carries double taps alone, and switching rails
+  // makes none: what is latched is a knock, left for the wake it causes
+  // (pm arms the pin even when it is already high, in that mode).
+  if (config().tap_test) return;
+  if (g_accel_up && accel_int_level()) {
+    AccelEvent ev;
+    accel_take_event(&ev);
+    g_motion_blanked++;
+  }
+}
+
+// The last word before deep sleep, from the pm task.
+void before_sleep(void) {
+  // Motion that came in while awake and was not yet read is real: count it.
+  if (g_accel_up && accel_int_level()) {
+    AccelEvent ev;
+    if (accel_take_event(&ev) && !buzzer_recent(BUZZER_BLANK_MS)) {
+      trip_note_motion(ev);
+      handle_tap(ev);    // a knock that came just before sleep (tap_test)
+    }
+  }
+  trip_before_sleep();
+  net_stop();
+  soc_before_sleep(false);
+  power_sleep(config().sleep_meas != 0);
+}
+
+// Bench: battery current, sampled for a while, with min/mean/max.
+void amps(int seconds) {
+  if (seconds < 1) seconds = 1;
+  if (seconds > 60) seconds = 60;
+  float lo = 1e9f, hi = -1e9f, sum = 0;
+  int n = 0;
+  for (uint32_t end = uptime_ms() + (uint32_t)seconds * 1000; (int32_t)(uptime_ms() - end) < 0;) {
+    float ma;
+    if (power_battery_ma(&ma)) {
+      ma = -ma;                  // out of the cell, as the box draws it
+      if (ma < lo) lo = ma;
+      if (ma > hi) hi = ma;
+      sum += ma;
+      n++;
+    }
+    vTaskDelay(pdMS_TO_TICKS(40));
+    beat(Job::Console);
+  }
+  if (n) {
+    printf("  drawn from the cell over %d s: mean %.1f mA, min %.1f, max %.1f (%d readings)\n",
+           seconds, sum / n, lo, hi, n);
+  } else {
+    printf("  current monitor did not answer\n");
+  }
+}
+
 
 void print_help(void) {
   printf("\n  health          every device, its state, and the readings\n");
@@ -1033,12 +1553,29 @@ void print_help(void) {
   printf("                  raise after DWELL s out of range\n");
   printf("  trip stop       end it, with a summary record\n");
   printf("  trip ack        acknowledge alarms (history is kept)\n");
-  printf("  trip dump [N]   the last N records, decoded\n");
+  printf("  trip dump [N]   the last N rows, decoded\n");
+  printf("  trip csv [ID]   a trip (the last) as its CSV file, with the file name\n");
   printf("  screen          redraw the e-paper now (live view)\n");
   printf("  screen N        design demo page N (0-13); 'screen' to go back\n");
   printf("  screen rot 1|3  the two landscape orientations\n");
+  printf("  screen cal      frames for measuring what the case hides (epd_inset_*)\n");
   printf("  rpc {json}      a protocol request (PROTOCOL.md), as authorized\n");
-  printf("  ble [on|off]    BLE state; 'on' advertises for 60 s\n\n");
+  printf("  ble [on|off]    BLE state; 'on' advertises for 60 s\n");
+  printf("  sleep           power manager: why awake, next wake, recent wakes\n");
+  printf("  sleep clear     start the wake record again\n");
+  printf("  sleep test S    deep-sleep S seconds now, timer wake only (even on USB)\n");
+  printf("  sn [set S]      the device serial number (factory: set, then reboot)\n");
+  printf("  flash           restart into download mode, for flashing over USB\n");
+  printf("  soc             counted state of charge, capacity, anchor\n");
+  printf("  soc set P       bench: set the count to P %%\n");
+  printf("  amps [S]        battery current for S seconds: mean, min, max\n");
+  printf("  hiz [S] | off   bench: charger input off S s (300), box runs on its cell\n");
+  printf("  poweroff        bench: the battery-empty switch-off; replug USB to restart\n");
+  printf("  ota             firmware slots, update state, base URL\n");
+  printf("  ota base URL    where file names from the server are fetched (http/https)\n");
+  printf("  ota FILE|URL [force]  install now; force skips the version and trip\n");
+  printf("                  checks, never the signature\n");
+  printf("  ota rollback-test  the next new image will not confirm: watch it roll back\n\n");
 }
 
 // Walks the pixels in physical order, so a person watching can check
@@ -1093,7 +1630,145 @@ void run_command(char *line) {
   else if (!strcmp(line, "log")) print_log();
   else if (!strncmp(line, "rpc ", 4)) rpc_command(line + 4);
   else if (!strcmp(line, "ble")) print_ble();
+  else if (!strcmp(line, "sleep")) pm_print();
+  else if (!strcmp(line, "sn")) {
+    char sn[SN_LEN], label[12];
+    device_sn(sn, sizeof(sn));
+    sn_usb_label(sn, label, sizeof(label));
+    printf("  %s   (USB drive %s%s)\n", sn, label,
+           sn_pattern_ok(sn) ? "" : "; not the factory pattern");
+  } else if (!strncmp(line, "sn set ", 7)) {
+    // Factory: the name on the label. Everything that carries the SN
+    // read it at boot, so it takes effect at the next one.
+    if (sn_store(line + 7)) {
+      printf("  SN %s stored; reboot to use it everywhere\n", line + 7);
+    } else {
+      printf("  refused: the label's pattern, e.g. mCDV1-L0169-1069-001\n"
+             "  (product+V+version, L+lot+year, month+year, unit 001-999)\n");
+    }
+  }
+  else if (!strcmp(line, "soc")) {
+    SocStatus s;
+    soc_status(&s);
+    if (!s.valid) {
+      printf("  not counting yet (no cell reading)\n");
+    } else {
+      printf("  counted  %.1f %%  %.0f of %.0f mAh (%s)  anchor: %s\n", s.percent,
+             s.remaining_mah, s.capacity_mah,
+             s.capacity_learned ? "learned" : "rated, config batt_mah", s.anchor);
+      if (s.voltage_percent >= 0) printf("  voltage  %.1f %% (OCV table)\n", s.voltage_percent);
+      printf("  shown    %s\n", config().soc_source ? "counted" : "voltage, counted on a charger");
+      if (s.ocv_percent >= 0) printf("  last rested voltage reads %.0f %%\n", s.ocv_percent);
+      if (s.ref_percent >= 0) {
+        printf("  capacity measured from the %.0f %% point on%s\n", s.ref_percent,
+               s.last_capacity_estimate > 0 ? "" : " (needs a second point 30 % away)");
+      }
+      if (s.last_capacity_estimate > 0) {
+        printf("  last capacity estimate %.0f mAh\n", s.last_capacity_estimate);
+      }
+      if (s.drawn_since_full_mah >= 0) {
+        printf("  drawn since the last full charge: %.0f mAh\n", s.drawn_since_full_mah);
+      } else {
+        printf("  no full charge seen yet (charge to full to anchor)\n");
+      }
+    }
+  } else if (!strncmp(line, "soc set ", 8)) {
+    soc_set((float)atof(line + 8));
+    printf("  counted charge set to %.0f %%\n", atof(line + 8));
+  }
+  else if (!strcmp(line, "poweroff")) {
+    // Bench: the battery-empty path, whatever the cell says. The box
+    // stays off until USB power is plugged in (unplug and plug back).
+    printf("  switching off as if the battery were empty\n");
+    battery_off(g_power.cell_valid ? g_power.cell_volts : 0.0f);
+  }
+  else if (!strncmp(line, "tap ths", 7)) {
+    // Bench (tap_test): the double-tap threshold, live, for finding one
+    // that a knock on the case reaches. Not kept across a reboot.
+    const int n = atoi(line + 7);
+    if (n && !accel_set_tap_threshold((uint8_t)n)) {
+      printf("  tap ths N   (1..31, x 62.5 mg)\n");
+    } else {
+      printf("  tap threshold %u (%u mg)%s\n", accel_tap_threshold(),
+             accel_tap_threshold() * 625 / 10, config().tap_test ? "" : "  (tap_test is off)");
+    }
+  }
+  else if (!strcmp(line, "i2c")) {
+    // Bench: what is on the bus. Expected: 18 36 40 42 53 57 68 6B.
+    uint8_t found[32];
+    int sda = 0, scl = 0;
+    const int n = i2c_scan(found, 32, &sda, &scl);
+    if (n < 0) {
+      printf("  bus busy\n");
+    } else {
+      printf("  SDA (GPIO%d) %s, SCL (GPIO%d) %s\n  answered:", PIN_SDA,
+             sda ? "high" : "LOW -- held down", PIN_SCL, scl ? "high" : "LOW -- held down");
+      for (int i = 0; i < n; i++) printf(" %02X", found[i]);
+      printf("%s\n  expected: 18 accel, 36 fuel, 40 current, 42 pd, 53/57 nfc, 68 rtc, 6B charger\n",
+             n ? "" : " nothing");
+    }
+  }
+  else if (!strncmp(line, "pin ", 4)) {
+    // Bench: one pin taken over as a plain GPIO, for finding what a pin
+    // left high feeds. Whatever driver owned it does not get it back until
+    // a reboot.
+    int n = -1;
+    char how[4] = "";
+    if (sscanf(line + 4, "%d %3s", &n, how) == 2 && n >= 0 && n <= 48 &&
+        GPIO_IS_VALID_GPIO((gpio_num_t)n)) {
+      gpio_config_t c = {};
+      c.pin_bit_mask = 1ULL << n;
+      c.mode = strcmp(how, "in") ? GPIO_MODE_OUTPUT : GPIO_MODE_INPUT;
+      gpio_config(&c);
+      if (c.mode == GPIO_MODE_OUTPUT) gpio_set_level((gpio_num_t)n, atoi(how) ? 1 : 0);
+      printf("  GPIO%d %s\n", n, c.mode == GPIO_MODE_INPUT ? "input, no pull" : atoi(how) ? "high" : "low");
+    } else {
+      printf("  pin N 0|1|in\n");
+    }
+  }
+  else if (!strncmp(line, "cpu ", 4)) {
+    // Bench: CPU clock and automatic light sleep while awake, to measure
+    // what each costs. Not kept: the next boot is back to the default.
+    int mx = 160, mn = 160, ls = 0;
+    sscanf(line + 4, "%d %d %d", &mx, &mn, &ls);
+    esp_pm_config_t c = {};
+    c.max_freq_mhz = mx;
+    c.min_freq_mhz = mn;
+    c.light_sleep_enable = ls != 0;
+    const esp_err_t e = esp_pm_configure(&c);
+    printf("  cpu max %d MHz, min %d MHz, light sleep %s: %s\n", mx, mn, ls ? "on" : "off",
+           esp_err_to_name(e));
+  }
+  else if (!strncmp(line, "amps", 4)) amps(atoi(line + 4) > 0 ? atoi(line + 4) : 5);
+  else if (!strcmp(line, "hiz off")) {
+    g_hiz_until = 0;
+    printf("  %s\n", power_set_hiz(false) ? "charger input back on" : "charger did not answer");
+  } else if (!strncmp(line, "hiz", 3)) {
+    const int s = atoi(line + 3);
+    const int secs = s > 0 && s <= 1800 ? s : 300;
+    if (power_set_hiz(true)) {
+      g_hiz_until = uptime_ms() + (uint32_t)secs * 1000;
+      printf("  charger input off for %d s: running on the cell (hiz off to end)\n", secs);
+    } else {
+      printf("  charger did not answer\n");
+    }
+  }
+  else if (!strcmp(line, "sleep clear")) {
+    pm_trace_clear();
+    printf("  wake record cleared\n");
+  } else if (!strncmp(line, "sleep test", 10)) {
+    const int s = atoi(line + 10);
+    printf("  sleeping %d s; the console drops and comes back after\n", s > 0 ? s : 10);
+    fflush(stdout);
+    before_sleep();
+    pm_sleep_test((uint32_t)(s > 0 ? s : 10));
+  }
   else if (!strcmp(line, "wifi") || !strcmp(line, "sync")) print_sync();
+  else if (!strncmp(line, "cfgdoc ", 7)) {
+    // Bench only: a settings document as though the server had sent it.
+    uplink_inject_config(line + 7);
+    printf("  handed to the uplink; the report follows\n");
+  }
   else if (!strncmp(line, "ack ", 4)) {
     // Bench only: what the server will send, before the server does.
     uplink_inject_ack(line + 4);
@@ -1104,20 +1779,59 @@ void run_command(char *line) {
     if (!wifi_args(line + 9, ssid, sizeof(ssid), pass, sizeof(pass))) {
       printf("  wifi add SSID PASS   (\"quotes\" around an SSID with spaces)\n");
     } else if (net_add(ssid, pass)) {
+      settings_touch();     // the app's Wi-Fi list follows
       printf("  %s stored (%d known); joins the strongest in range\n", ssid, net_count());
     } else {
       printf("  refused: SSID 1-32, password 8-63 or none, at most %d networks\n", NET_MAX);
     }
+  } else if (!strncmp(line, "wifi ip ", 8)) {
+    // wifi ip SSID dhcp | wifi ip SSID IP GATEWAY SUBNET [DNS]
+    char ssid[40] = "";
+    NetIp ip = {};
+    char a[4][24] = {};
+    const int n = sscanf(line + 8, "%39s %23s %23s %23s %23s", ssid, a[0], a[1], a[2], a[3]);
+    ip.dhcp = n == 2 && !strcmp(a[0], "dhcp");
+    snprintf(ip.ip, sizeof(ip.ip), "%s", a[0]);
+    snprintf(ip.gateway, sizeof(ip.gateway), "%s", a[1]);
+    snprintf(ip.subnet, sizeof(ip.subnet), "%s", a[2]);
+    snprintf(ip.dns, sizeof(ip.dns), "%s", a[3]);
+    if ((ip.dhcp || n >= 4) && net_set_ip(ssid, ip)) {
+      settings_touch();
+      printf("  %s: %s\n", ssid, ip.dhcp ? "DHCP" : "fixed address; used at the next join");
+    } else {
+      printf("  wifi ip SSID dhcp | wifi ip SSID IP GATEWAY SUBNET [DNS]  (a known SSID)\n");
+    }
   } else if (!strncmp(line, "wifi del ", 9)) {
     char ssid[40] = "", pass[2];
     wifi_args(line + 9, ssid, sizeof(ssid), pass, sizeof(pass));
-    printf("  %s\n", net_remove(ssid) ? "removed" : "not a known network");
+    const bool gone = net_remove(ssid);
+    if (gone) settings_touch();
+    printf("  %s\n", gone ? "removed" : "not a known network");
   } else if (!strncmp(line, "mqtt set ", 9)) {
     char host[64] = "", user[40] = "", pass[72] = "";
     int port = 0;
     sscanf(line + 9, "%63s %d %39s %71s", host, &port, user, pass);
     printf("  %s\n", port > 0 && port < 65536 && uplink_set_server(host, (uint16_t)port, user, pass)
                          ? "stored; connecting" : "mqtt set HOST PORT [USER PASS]");
+  }
+  else if (!strcmp(line, "ota")) ota_print();
+  else if (!strncmp(line, "ota base ", 9)) {
+    const bool saved = ota_set_base(line + 9);
+    if (saved) settings_touch();
+    printf("  %s\n", saved ? "stored" : "ota base http(s)://host/path (under 128)");
+  } else if (!strcmp(line, "ota rollback-test")) {
+    ota_test_rollback();
+    printf("  the next new image will not confirm itself; it rolls back after %lu s\n",
+           (unsigned long)(OTA_VERIFY_MS / 1000));
+  } else if (!strncmp(line, "ota ", 4)) {
+    char name[160];
+    char opt[8] = "";
+    if (sscanf(line + 4, "%159s %7s", name, opt) < 1) {
+      printf("  ota FILE|URL [force]\n");
+    } else {
+      ota_request(name, false, !strcmp(opt, "force"));
+      printf("  asked; 'ota' shows how it goes\n");
+    }
   }
   else if (!strcmp(line, "ble on")) {
     ble_enable(true);
@@ -1139,6 +1853,24 @@ void run_command(char *line) {
   else if (!strcmp(line, "log read")) log_bench_read();
   else if (!strcmp(line, "log erase")) {
     printf("  %s\n", log_err_name(flashlog_erase_trip(BENCH_TRIP)));
+  } else if (!strcmp(line, "hang")) {
+    // Bench: the console task stops answering, to watch the supervisor
+    // restart the box (HANG_RESTART_MS). Nothing else can be typed after.
+    printf("  hanging the console task; the supervisor restarts the box in %lu s\n",
+           (unsigned long)(HANG_RESTART_MS / 1000));
+    fflush(stdout);
+    for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
+  } else if (!strcmp(line, "flash")) {
+    // Into the ROM's download mode, for esptool: the way to flash once the
+    // USB port is a drive and a serial port of our own, and this board has
+    // no BOOT button (GPIO0 is not brought out). The flag lasts one reset;
+    // SW1 (EN) gets back to the firmware.
+    printf("  into download mode: flash now (pio run -t upload), or press reset to come back\n");
+    fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    usbdrive_stop();      // the port back to the USB-Serial-JTAG first
+    REG_WRITE(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
+    esp_restart();
   } else if (!strcmp(line, "reboot")) {
     printf("  restarting\n");
     fflush(stdout);
@@ -1183,9 +1915,30 @@ void task_console(void *) {
   int n = 0;
   char prev = 0;
   uint8_t c;
+  uint32_t usb_look = 0;
   for (;;) {
     beat(Job::Console);
-    while (usb_serial_jtag_read_bytes(&c, 1, pdMS_TO_TICKS(20)) == 1) {
+    // USB power: the port becomes the drive and this console's serial
+    // port (usbdrive.h) -- at boot, or when the cable goes in later.
+    if (now_ms() - usb_look > 1000) {
+      usb_look = now_ms();
+      if (usbdrive_active() && !config().usb_drive) {
+        // Turned off (the way back if the drive ever misbehaved): a clean
+        // restart, so the port comes up as the USB-Serial-JTAG again.
+        printf("[usb] usb_drive 0: restarting with the port as before\n");
+        fflush(stdout);
+        vTaskDelay(pdMS_TO_TICKS(2000));    // the settings report gets out first
+        usbdrive_stop();
+        esp_restart();
+      }
+      if (!usbdrive_active() && pm_external_power() && config().usb_drive) {
+        char sn[SN_LEN];
+        device_sn(sn, sizeof(sn));
+        usbdrive_start(sn);
+      }
+    }
+    while (usbdrive_console_read(&c, 20)) {
+      pm_hold_until(mono_ms() + CONSOLE_HOLD_MS);
       if (c == '\n' && prev == '\r') { prev = (char)c; continue; }
       prev = (char)c;
       if (c == '\r' || c == '\n') {
@@ -1209,12 +1962,27 @@ void task_console(void *) {
 // ---- supervisor -------------------------------------------------------
 
 void task_supervisor(void *) {
+  {
+    // The restart before this one, if a hang caused it.
+    nvs_handle_t h;
+    char name[16];
+    size_t n = sizeof(name);
+    if (nvs_open("sys", NVS_READWRITE, &h) == ESP_OK) {
+      if (nvs_get_str(h, "hang", name, &n) == ESP_OK) {
+        printf("[supervisor] the last restart was a hang: %s\n", name);
+        nvs_erase_key(h, "hang");
+        nvs_commit(h);
+      }
+      nvs_close(h);
+    }
+  }
   uint32_t last[(int)Job::Count] = {0};
   for (int i = 0; i < (int)Job::Count; i++) g_beats[i].last_seen = now_ms();
 
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(5000));
     const uint32_t t = now_ms();
+    g_beats[(int)Job::Uplink].count = uplink_passes();
     for (int i = 0; i < (int)Job::Count; i++) {
       const uint32_t c = g_beats[i].count;
       if (c != last[i]) {
@@ -1228,6 +1996,21 @@ void task_supervisor(void *) {
                (unsigned long)stuck);
         fflush(stdout);
       }
+      if (stuck > HANG_RESTART_MS) {
+        // Said at the next boot as well (NVS), since this console line is
+        // most likely read by nobody.
+        nvs_handle_t h;
+        if (nvs_open("sys", NVS_READWRITE, &h) == ESP_OK) {
+          nvs_set_str(h, "hang", g_beats[i].name);
+          nvs_commit(h);
+          nvs_close(h);
+        }
+        printf("[supervisor] %s hung for %lu s: restarting\n", g_beats[i].name,
+               (unsigned long)(stuck / 1000));
+        fflush(stdout);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        esp_restart();
+      }
     }
   }
 }
@@ -1235,9 +2018,16 @@ void task_supervisor(void *) {
 }  // namespace
 
 extern "C" void app_main(void) {
+  // The port is the USB-Serial-JTAG's until usbdrive takes it (usbdrive.h).
+  usbdrive_phy_to_usj();
   usb_serial_jtag_driver_config_t ucfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
   usb_serial_jtag_driver_install(&ucfg);
-  vTaskDelay(pdMS_TO_TICKS(300));
+  // Before any pin is touched: why the chip woke, and the pins held
+  // through the sleep let go of at the levels they were held at.
+  pm_init();
+  // Time for a host to open the console after a reset. A wake from sleep
+  // has none waiting (the box sleeps on battery only) and no reason to wait.
+  if (!pm_warm()) vTaskDelay(pdMS_TO_TICKS(300));
 
   // Before any session can overwrite it: what GNSS heard before the reset.
   if (g_gnss_memo.magic == GNSS_MEMO_MAGIC) g_gnss_before = g_gnss_memo;
@@ -1257,7 +2047,12 @@ extern "C" void app_main(void) {
   log_start();
   power_init();
   {
-    char sn[16];
+    float sm;     // the sleep just ended, if it was measured (config sleep_meas)
+    if (power_sleep_mean(&sm)) pm_note_sleep_current(sm);
+  }
+  soc_init();          // after config and power_init, before the first reading
+  {
+    char sn[SN_LEN];
     device_sn(sn, sizeof(sn));
     trip_init(sn);     // resumes a trip a reset interrupted
     display_start(sn); // like indicate: reads state, owns none
@@ -1265,6 +2060,7 @@ extern "C" void app_main(void) {
     auth_init(sn);     // a new key; the NFC task puts it on the tag
     ble_start(sn);     // after NVS (bonds) and rpc (what it carries)
     net_start();       // Wi-Fi, if credentials are set
+    ota_start();       // a new image on probation, or a rollback to report
     uplink_start(sn);  // MQTT once Wi-Fi is up
     // A full log gives up what the server already has first.
     trip_set_retention({uplink_fully_acked, uplink_forget});
@@ -1277,13 +2073,19 @@ extern "C" void app_main(void) {
   // gone before anyone can tap the box. Bring-up lost three motion
   // tests to that before it was understood.
   AccelEvent pending;
-  g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending);
+  g_accel_up = accel_begin((uint8_t)config().accel_wake_ths, &pending, config().tap_test);
 
   const esp_app_desc_t *app = esp_app_get_description();
-  printf("\n\nmCOLD Foam V.1   firmware %s   reset %d   heap %u B\n",
-         app->version, (int)esp_reset_reason(),
-         (unsigned)esp_get_free_heap_size());
-  if (pending.wake || pending.free_fall) report_motion(pending, " before boot:");
+  printf("\n\nmCOLD Foam V.1   firmware %s   reset %d   %s (wake %lu)   heap %u B\n",
+         app->version, (int)esp_reset_reason(), pm_wake_name(pm_wake()),
+         (unsigned long)pm_wakes(), (unsigned)esp_get_free_heap_size());
+  if (pending.wake || pending.free_fall) {
+    report_motion(pending, pm_wake() == Wake::Motion ? " woke the box:" : " before boot:");
+    // Latched while the chip slept (that is what woke it) or before a
+    // reset: motion all the same, and the trip counts it.
+    trip_note_motion(pending);
+  }
+  handle_tap(pending);   // a double tap that woke the box (tap_test)
   printf("type: help\n");
   fflush(stdout);
 
@@ -1296,8 +2098,8 @@ extern "C" void app_main(void) {
   struct Spawn { TaskFunction_t fn; const char *name; uint32_t stack; UBaseType_t prio; int core; };
   static const Spawn TASKS[] = {
       {task_sensors, "sensors", 4096, 5, 1}, {task_power, "power", 4096, 4, 1},
-      {task_gnss, "gnss", 4096, 3, 1},       {task_nfc, "nfc", 3072, 3, 0},
-      {task_trip, "trip", 4096, 4, 1},       {task_console, "console", 6144, 2, 0},
+      {task_gnss, "gnss", 4096, 3, 1},       {task_nfc, "nfc", 4096, 3, 0},
+      {task_trip, "trip", 4096, 4, 1},       {task_console, "console", 8192, 2, 0},
       {task_supervisor, "super", 3072, 6, 0},
   };
   for (const Spawn &t : TASKS) {
@@ -1310,6 +2112,12 @@ extern "C" void app_main(void) {
          (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
          (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
   fflush(stdout);
+
+  // Last: it may put the chip to sleep as soon as every task has done
+  // its first pass.
+  pm_on_sleep(before_sleep);
+  pm_on_quiet(before_sleep_quiet);
+  pm_start();
 
   // app_main returns and the tasks it created carry on. Nothing is left
   // here to become the place where work quietly accumulates.

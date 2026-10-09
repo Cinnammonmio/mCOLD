@@ -41,6 +41,37 @@ them, talks to a phone over BLE with tap-to-authorize, and uploads to
 the team's MQTT broker over Wi-Fi with application ACKs. **OTA and the
 USB drive are deferred.** Next: **P7**, power.
 
+**P7 in progress** (branch `firmware/p7-power`, `0.7.0-dev`): on battery
+the box now deep-sleeps between jobs (`pm.*`, section 6). Verified on
+the bench with `sleep_usb 1` (USB in, behaving as on battery): timer
+wakes on the sample grid, 0.13 s boot + 1.2 s awake per wake, 3.6 s
+with a panel refresh, motion wakes, upload sessions with backoff, the
+trip carrying on through sleep with no RESUMED events.
+
+First night on battery (2026-10-02/03): 99 % → 84 % in ~19 h, about
+**12 mA** average — over the 7.1 mA budget. Found and fixed on
+2026-10-03 (section 4 for the traps):
+
+| Cause | Was | Now |
+|---|---|---|
+| GPIO48 lost its hold in deep sleep (VDD_SPI off): LED rail on all night | 5.75 mA asleep | ≤ 0.25 mA asleep (the INA226's floor) |
+| Motion → 30 s attention window, 4 an hour, mostly false motion | ~5 mA | 2 s window on battery |
+| GNSS indoors: full 180 s sessions | ~3 mA | gives up after 60 s with nothing heard; backoff to ×16 |
+| Rail switching at sleep entry latched an accelerometer event | motion wake 0 s after sleeping | 40 ms settle, latch cleared before arming |
+
+Estimate after the fixes: ~1.5 mA average without uploads, 3–4 mA with
+an ACKing server — **to be confirmed by the second night (2026-10-03/04)**.
+
+Also new on 2026-10-03: low-battery switch-off (`batt_off_mv`, charger
+ship mode, verified: replug USB restarts it) and no new trip below
+`batt_trip_mv`; front lights 2 %, alive blink every 15 min on battery;
+fuel gauge without a battery reads "no battery" instead of 116 %.
+
+**Not yet done:** the awake current (~130 mA, floor ~40 mA, ~90 mA
+unexplained — see section 8); NFC tap wake checked with a phone;
+charger/PD policy and the fuel-gauge model (battery datasheet); a
+state of charge that counts current, not voltage alone.
+
 Bench state: Wi-Fi networks `mio` and `Mio_2.4G` and the broker login
 are in this board's NVS (set over USB, never in git). The server does
 not ACK yet, so nothing is reclaimed (`sync` shows what is pending). The door is switched off (`MCOLD_DOOR 0` in
@@ -95,6 +126,11 @@ and nowhere else.
 | `tools/ble_client.py` | reference client for the app team; runs from a PC with Bluetooth |
 | `net.*` | Wi-Fi: up to 5 networks, joins the strongest; SNTP sets the clock |
 | `uplink.*` | MQTT: record batches out, application ACKs in (PROTOCOL.md section 6) |
+| `logrow.*` | the row (record.h) as the table everyone sees: the server's JSON, the CSV, the trip's file name |
+| `settings.*` | the settings document from the app (APPLY_CONFIG) and the server (MQTT config topic): which keys, Wi-Fi with DHCP or a fixed address, OTA base; the broker is the console's |
+| `usbdrive.*` | USB power: TinyUSB serial console + read-only virtual FAT16 drive (DEVICE.TXT + trip CSVs, built on read); `flash` hands the port back |
+| `temp.*` | temperature: MAX6675 type K, or an SHT-31 at 0x44 if one answers at the cold boot (box 002) |
+| `ota.*` | firmware updates: file name from the server, download, checks, rollback (PROTOCOL.md section 6) |
 | `main.cpp` | 9 tasks + supervisor; console: `help` lists the commands |
 
 Checked on the board by a person, 2026-10-02: tap → motion event;
@@ -121,7 +157,7 @@ plus the authorization key) and rewrites only bytes that change.
 | Not written yet | |
 |---|---|
 | HUSB238A | answers at 0x42; PD policy is §5.5 |
-| USB MSC, OTA, SD | deferred from P6 |
+| USB MSC, SD | deferred from P6 |
 
 ---
 
@@ -151,6 +187,25 @@ three axes, NFC read **and write**, and charging at ~474 mA.
 Every interrupt pin — GPIO 1, 2, 4, 5, 7, 21 — is RTC-capable, so all of
 them can wake the chip from deep sleep. The board was laid out correctly
 for the low-power architecture §12 asks for.
+
+TPS63020 PS/SYNC is tied to GND (checked in the layout 2026-10-03): the
+3.3 V converter runs in power-save mode at light load.
+
+**Power, measured 2026-10-03** (INA226 on the cell, 0.25 mA per count;
+awake figures with the charger in HIZ so the box runs from its cell):
+
+| State | Battery current |
+|---|---|
+| Deep sleep, VDD_SPI kept on | ≤ 0.25 mA |
+| Awake, radios off, rails off | ~130 mA mean, ~40 mA floor |
+| Awake, BLE stack up | ~155 mA |
+| Awake, GNSS session | ~173 mA |
+| Awake, CPU at 80 MHz / 40 MHz | 158 / 93 mA |
+| Charging from a PC port | +330 to +400 mA into the cell |
+
+The CPU clock barely matters between 160 and 80 MHz, so the ~90 mA above
+the floor is not the CPU. Signal pins of the unpowered panel/MAX6675/GNSS
+pulled low account for 15–25 mA of it; the rest is not found yet.
 
 ### Unresolved
 
@@ -294,6 +349,58 @@ off by the script that set it up. Anything that must be live while a
 human does something physical has to be **armed in `setup()`**, not by a
 command.
 
+Scripts can avoid it: open the port with DTR and RTS held low
+(pyserial: set `dtr = rts = False` *before* `open()`) and the board is
+not reset. `platformio.ini` now does the same for `pio device monitor`
+(`monitor_dtr = 0`, `monitor_rts = 0`, 2026-10-03), so opening the
+monitor no longer resets the box. That is the only way to watch a box cycle through deep
+sleep: the USB port disappears every time the chip sleeps and the
+watcher has to reopen it without resetting what it is watching.
+
+### GPIO47 and GPIO48 cannot be held in deep sleep unless VDD_SPI stays on
+
+They are powered from VDD_SPI, which deep sleep switches off by default.
+`gpio_hold_en` on a pad with no power holds nothing: GPIO48 falls to 0 V,
+and 0 V is *LED rail on* through Q1 — the four pixels' idle current, all
+night. It was the 5.75 mA asleep of the first battery night. `pm.cpp`
+keeps `ESP_PD_DOMAIN_VDDSDIO` on through sleep (≤ 0.25 mA measured after).
+Any new pin to hold in sleep: check its power domain first.
+
+### The takeover title font has no lower case
+
+`mColdTitle26` is cut to ' '..'Z' (`fonts_mcold.h`). A lower-case letter
+is not drawn at all: "Battery empty" came out as "B". Titles in capitals.
+
+### With no battery the fuel gauge reads the charger
+
+MAX17048 is powered from CELL_PLUS, which the charger holds up with no
+cell connected; the gauge models that as a cell and read 116 %. Above
+4.28 V the firmware now reports "no battery", and quick-starts the gauge
+when a cell is connected again.
+
+### A box asleep cannot be flashed
+
+With `sleep_usb 1` (or on battery) the chip is awake about a second in
+every sample period and the USB port is gone the rest of the time;
+`pio run -t upload` fails. Catch a wake and send `config set sleep_usb
+0` first (it needs to arrive within that second -- the bench script
+writes the moment the port appears), or hold BOOT while plugging in. On
+real battery, plugging USB in wakes the box (PG#) and keeps it awake.
+
+### Motion events on the bench with nobody touching it
+
+During the sleep tests the accelerometer reported single Z (sometimes X
+or Y) events every few minutes, often near a Wi-Fi start or stop. Three
+panel refreshes in a row on USB produced none, so it is not the panel.
+Not yet known whether it is the radio's current step on 3V3_MAIN (as
+with the buzzer, see below) or the desk. Each one is a motion wake on
+battery (at most one a minute). Worth a controlled test before P8.
+
+One cause is known and fixed: switching the rails off at sleep entry
+latched an event that woke the box 0 s later. The latch is now cleared
+40 ms after the rails go off and the pins are held, before the motion
+wake is armed (`pm_on_quiet`).
+
 ### A zero result from a test that needs human timing is not data
 
 Related, and the more general lesson. Several results of "nothing
@@ -314,6 +421,57 @@ So `main.cpp` ignores motion events while the buzzer sounds and for
 250 ms after (`buzzer_recent()`), and counts them separately. Without
 that, every alarm beep would log itself as a shock. A real knock inside
 that window is lost too. P3 should know this when it sets shock alarms.
+
+### Nothing heavy in a TinyUSB callback
+
+`tud_mount_cb` and the MSC callbacks run on TinyUSB's own task
+(`CONFIG_TINYUSB_TASK_STACK_SIZE`, 8 KB since dev.14). In dev.13 the
+snapshot (the whole log walked, CSV sizes counted) ran in `tud_mount_cb`
+on 4 KB: the box hung at every mount, gone from USB, so nothing could be
+flashed over USB. Callbacks now set a flag; the console task does the
+work. The way back, without SW1: pull the cable (no USB power, no
+drive), cycle the power switch, and let the box take a retained OTA at
+its check-in.
+
+### TinyUSB moves the USB PHY with bits a reset keeps
+
+On the S3, starting the OTG controller (TinyUSB) sets
+`RTC_CNTL_USB_CONF.sw_hw_usb_phy_sel` and `sw_usb_phy_sel`, which route the
+internal PHY away from the USB-Serial-JTAG. They are RTC registers: a
+software reset keeps them. So `flash` brought the ROM's download mode up
+on USB-OTG (VID 303A PID 0009), where esptool's RTS "reset" does nothing
+and, once, left the port hung -- the box sat in download mode on battery
+until the cable was pulled (2026-10-05). `usbdrive_phy_to_usj()` clears
+both bits first thing at every boot and in `flash`; the ROM then uses the
+USB-Serial-JTAG (PID 1001, COM7) as always. `tools/usb_flash.py` still
+handles the OTG case (RTC watchdog reset) for older firmware.
+
+### The default broker comes from secrets.ini
+
+`secrets.ini` (gitignored, shape in `secrets.example.ini`) holds the broker
+login every box starts with; without it a build has no default broker and
+boxes need `mqtt set`. A fresh checkout must copy it in before building
+images for the field.
+
+### PlatformIO does not sign: tools/sign_app.py does
+
+`idf.py` pads (`--secure-pad-v2`) and signs the app when signed apps are
+on; PlatformIO runs `elf2image` itself and does neither. Without the
+padding the signature block is not where the checker looks; without the
+signature the running image has no key to check an update against, and
+every OTA fails with "No signatures were found for the running app".
+`tools/sign_app.py` (an `extra_scripts` post-script) adds both, and
+refuses to finish the build without the key. espsecure needs
+`cryptography` and `ecdsa` in `~/.platformio/penv` (installed
+2026-10-04; a fresh PlatformIO install needs them again).
+
+### A new image must not deep-sleep before it is confirmed
+
+With rollback on, a new image boots "pending verify"; any reset before
+`esp_ota_mark_app_valid_cancel_rollback()` -- and a deep-sleep wake is a
+reset -- makes the bootloader treat it as failed and go back. `ota.cpp`
+holds `Hold::Ota` until the broker answers (or 3 minutes pass), and the
+uplink opens a session at once for it, records or not.
 
 ### The USB isolator browns the board out
 
@@ -340,6 +498,18 @@ GxEPD2, or bring Arduino back as a separate component then.
 
 **The project lives at `C:\mCOLD`.** ESP-IDF refuses a project path
 containing a space and the repo is under `Foam V.1`. Not configurable.
+
+**Low battery, by voltage (decided 2026-10-03).** Below `batt_trip_mv`
+(3.55 V, ~10 %) on battery no new trip starts (`BATTERY_LOW`); below
+`batt_off_mv` (3.40 V, ~5 %), three readings in a row, the box logs
+`POWER_OFF`, draws BATTERY EMPTY and puts the BQ25601 in ship mode, so
+the cell feeds nothing but the fuel gauge until USB comes back. Voltage,
+not the gauge's percent: the gauge has no model of this cell yet.
+
+**Lights cost the chip being awake, not the LEDs (2026-10-03).** Front
+lights 2 %, the alive blink every `led_status_s` (15 min) on battery, a
+cargo alarm at every wake, the motion attention window 2 s on battery
+(30 s on USB). The 30 s window at four an hour was ~5 mA on its own.
 
 **60 s is the fastest sampling this partition layout supports.** At
 300 s the log holds 269 days, at 60 s it holds 54, at 30 s only 27 —
@@ -381,6 +551,22 @@ past the task that owns it.
   restart anything. A box that reboots loses its state and its time, and
   a reboot loop costs more than a sensor that limps.
 
+- **`pm`** (P7) — deep sleep on battery. A wake from deep sleep is a
+  reset to the CPU, so a wake runs as a short boot (`pm_warm()` tells a
+  module it is one). Three inputs, kept apart: **duties** (each module's
+  one pass for this wake, reported with `pm_done`), **holds** (something
+  sleep must not cut: BLE, a phone on the tag, a GNSS or Wi-Fi session,
+  a refresh, a light pattern, the console), and **next** (when each
+  module next needs the chip, `pm_next`). All duties done and no holds:
+  sleep until the earliest next. USB power never sleeps. A duty missing
+  after 60 s, or holds that are not a person's after 10 minutes, do not
+  keep the box up -- an awake box on battery is empty in a day and a
+  half. State that must cross a sleep is `RTC_DATA_ATTR` (reloaded on
+  any other reset, so it means exactly "this boot, through its
+  sleeps"); the wake record (`sleep` on the console) is `RTC_NOINIT`
+  so it survives the console reset too. Intervals that cross a sleep
+  use `mono_ms()`, never `esp_timer`, which restarts at every wake.
+
 **Values and their validity are always separate.** A stale reading with
 a flag beside it is honest; a stale reading on its own is a lie shaped
 like data. No device failure is ever rendered as 0.
@@ -409,7 +595,31 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
 
 ## 8. Still open
 
-- **T− grounding at the MAX6675** — blocks honest probe-fault detection
+- **When USB flashing fails, OTA is the way back** (decided 2026-10-05):
+  the board sits in its case, SW1 (reset) is hard to reach and there is
+  no BOOT button, so no recovery may need either. A box left in download
+  mode by `flash` comes back with `esptool.py --before no_reset --after
+  hard_reset chip_id` over USB (checked). OTA can only help a box whose
+  firmware is running: a crash reboots (panic -> reboot) and a bad image
+  rolls back, and a task that hangs for 5 minutes makes the supervisor
+  restart the box (0.7.0-dev.9, checked with `hang`). Test the OTA
+  rollback (`ota rollback-test`) before relying on it.
+- **USB drive: F1-F4 done (0.7.0-dev.17).** With USB power the port
+  is TinyUSB's: console on a new COM port (COM8 here), drive
+  `MC1L0169001` with `DEVICE.TXT` and one CSV per row-format trip. To
+  flash over USB use `python tools/usb_flash.py` (or type `flash`, then
+  `pio run -t upload --upload-port COM7`). Checked with Windows,
+  including a 524-row trip read at jumps (`trip fill N` makes one in
+  seconds). The USB_IN row lands just after the snapshot, so a running
+  trip's file ends one row before it.
+
+- **T− grounded at the MAX6675** (hand-soldered 2026-10-03). Probe-fault
+  detection not yet tested; the panel showed `--` that evening with the
+  probe plugged in -- check the trip for PROBE_FAULT events
+- **Awake current ~130 mA** with a ~40 mA floor: ~90 mA not yet found
+  (not the CPU clock, not the radios; idle signal pins only 15–25 mA)
+- **NFC tap wake** from deep sleep: armed (GPO, EXT1) but not yet tried
+  with a phone
 - The 4-colour panel is not in hand; busy polarity and 25 s refresh
   cannot be verified without it
 - **Server is MQTT** (decided by the team, 2026-10-02): broker
@@ -424,18 +634,20 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
     broker got the message, not that the server stored it (§9.5). The
     server must publish an ACK naming device, trip and sequence range,
     on a topic the device subscribes to, before the device may reclaim.
-- **OTA over MQTT** is possible, two ways, and either needs the
-  rollback that the `ota_0`/`ota_1` layout already allows:
-  1. *Recommended:* MQTT carries only the command (version, URL,
-     SHA-256, size); the image comes over HTTPS with `esp_https_ota`.
-     Needs a file server.
-  2. Image in chunks over MQTT itself, written with `esp_ota_write`,
-     each chunk sequenced and acknowledged. Works with only the
-     broker, but costs more code and is slower.
-  On a plaintext broker with a shared login, anyone who has that login
-  can push firmware to every box. So **signed images are not optional**:
-  the device must check the signature before it boots a new image
-  (Secure Boot v2 / signed app verification in ESP-IDF).
+- **OTA works** (2026-10-04, `ota.*`): the server publishes a file name
+  on `mcold/v1/<sn>/firmware` (retained), the box fetches it from the team's
+  file server (the base URL eTEMP uses, in NVS) and checks header,
+  SHA-256 and signature; rollback if the new image does not reach the
+  broker in 3 minutes. Tested on the bench through MQTTX: a wrongly
+  signed image refused ("signature bad"), 0.7.0-dev -> 0.7.0-dev.1 in
+  about 15 s of download, confirmed. Not yet tried: a real rollback
+  (`ota rollback-test`), and an update on battery.
+- **The OTA signing key** is `firmware/keys/ota_signing.pem`, gitignored.
+  A box accepts only images signed with the key its *running* image was
+  signed with, so losing the key means every box in the field has to be
+  reflashed over USB. **Keep a copy off this PC.** No eFuse is burned:
+  USB flashing always works, and hardware secure boot stays a P8
+  decision.
 - BLE UUIDs and the NDEF schema need the iOS app team. Note: **iOS
   cannot see a BLE MAC**, so the device must advertise its SN and the
   app must match on that. The app team has confirmed the MAC is only a
@@ -448,7 +660,10 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
 - Battery datasheet, so MAX17048 `RCOMP` and the charger limits can be
   set rather than left at defaults. SOC currently reads low after a deep
   discharge; ModelGauge needs a full charge cycle before it is worth
-  judging
+  judging. The user sees the percent fall fast near 90 % (surface
+  charge relaxing after a full charge, and the gauge reading voltage
+  under the 130 mA of a wake): a state of charge that counts current
+  is being added (P7)
 - `bringup/` and the `bench/epd29-s3` edits, recovered from the zip copy,
   are on branch `bringup/import` (pushed 2026-10-02), waiting for a pull
   request into `main`

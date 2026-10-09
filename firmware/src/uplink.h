@@ -17,12 +17,27 @@
 //
 // Topics, with <sn> the device SN (PROTOCOL.md section 6):
 //
-//   mcold/<sn>/rec      device -> server   record batches, QoS 1
-//   mcold/<sn>/ack      server -> device   {"trip":T,"upto":S}
-//   mcold/<sn>/status   device -> server   GET_STATUS, retained
-//   mcold/<sn>/online   device -> server   "1" / "0" (last will), retained
+//   mcold/<sn>/rec          device -> server   rows, QoS 1
+//   mcold/<sn>/status       device -> server   GET_STATUS, retained
+//   mcold/<sn>/online       device -> server   "1" / "0" (last will), retained
+//   mcold/<sn>/ota/state    device -> server   what came of an update, retained
+//   mcold/v1/<sn>/ack       server -> device   {"trip":T,"upto":S}
+//   mcold/v1/<sn>/firmware  server -> device   a file name to install (ota.h), retained
+//   mcold/v1/<sn>/config    server -> device   settings document (settings.h), retained
+//   mcold/<sn>/config/state device -> server   what came of it, retained
+//
+// Published without the version, subscribed with it, as eTEMP does.
 //
 // Broker and login are in NVS (namespace "mqtt"), never in the image.
+//
+// On USB power the connection stays up. On battery (P7) it is a session:
+// when records are waiting and upload_period_s has passed, Wi-Fi comes
+// up, the status and as many batches as the server ACKs within the
+// session go out, "0" is published on the online topic, and the radio
+// goes off again until the next one. A session that gets no ACK --
+// broker out of reach, or a server that does not answer -- doubles the
+// wait before the next, up to four hours, so the battery is not spent
+// on a conversation that is not happening.
 #pragma once
 
 #include <stdbool.h>
@@ -33,6 +48,7 @@ void uplink_start(const char *sn);
 bool uplink_set_server(const char *host, uint16_t port, const char *user,
                        const char *pass);
 bool uplink_configured(void);
+
 
 // Records of `trip` the server has confirmed: seq < this are stored.
 uint32_t uplink_acked(uint32_t trip);
@@ -54,15 +70,34 @@ struct UplinkStatus {
   uint32_t batches_sent;
   uint32_t acks;           // application ACKs accepted
   uint32_t acks_rejected;  // malformed, unknown trip, or beyond the log
-  uint32_t records_pending;
-  uint32_t last_ack_ms;    // 0: never
+  uint32_t records_pending;   // rows of finished trips not yet delivered
+  uint32_t last_ack_ms;    // mono_ms(); 0: never
+  // Battery sessions
+  uint32_t sessions;
+  bool last_session_ok;    // reached the broker
+  uint32_t next_session_ms;   // mono_ms() the next is due; 0: none planned
 };
 void uplink_status(UplinkStatus *out);
 
-static const int UPLINK_BATCH = 16;              // records per batch
+// Rows per message, on a grid: part k carries seq 20(k-1) .. 20k-1, so a
+// trip is the same parts whoever counts them (decided 2026-10-05).
+static const int UPLINK_BATCH = 20;
 static const uint32_t UPLINK_ACK_TIMEOUT_MS = 15000;     // first wait for an ACK
 static const uint32_t UPLINK_ACK_WAIT_MAX_MS = 300000;   // the longest, when silent
+// On battery with nothing to send, a session anyway this often: a status,
+// and a firmware message, for a box that is not on a trip.
+static const uint32_t UPLINK_CHECKIN_MS = 6 * 3600000;
+
+// The app delivered trip `trip` to the server itself (MARK_DELIVERED):
+// marked as sent, never uploaded. False if the log has no such trip.
+bool uplink_mark_delivered(uint32_t trip, uint32_t *last_seq);
 
 // Hand an ACK in as though the server had sent it: for the bench, before
 // the server side exists. It goes through every check a real one does.
 void uplink_inject_ack(const char *json);
+
+// Passes of the uplink task, for the supervisor: the task that takes an
+// OTA must never hang unnoticed.
+uint32_t uplink_passes(void);
+// The same for a settings document on mcold/v1/<sn>/config.
+void uplink_inject_config(const char *json);

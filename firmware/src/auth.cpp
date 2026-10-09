@@ -1,5 +1,6 @@
 #include "auth.h"
 
+#include <esp_attr.h>
 #include <esp_mac.h>
 #include <esp_random.h>
 #include <esp_timer.h>
@@ -8,19 +9,28 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "board.h"
 #include "nfc.h"
+#include "pm.h"
+#include "timekeep.h"
 
 namespace {
 
-char g_sn[16] = "";
-uint8_t g_key[16];            // the key in force: what auth_check() accepts
-uint8_t g_next[16];           // the key being written to the tag
-bool g_have_key = false;      // false until a key has reached the tag
-volatile bool g_publish = true;
-volatile uint32_t g_rotate_at = 0;   // 0: no rotation pending
+char g_sn[SN_LEN] = "";
+// Kept through deep sleep: "a new key at every boot" means every real
+// boot. Rotating at every wake would rewrite the tag every five minutes
+// and invalidate a key a phone read a minute ago for no reason.
+RTC_DATA_ATTR uint8_t g_key[16];       // the key in force: what auth_check() accepts
+RTC_DATA_ATTR uint8_t g_next[16];      // the key being written to the tag
+RTC_DATA_ATTR bool g_have_key = false; // false until a key has reached the tag
+RTC_DATA_ATTR volatile bool g_publish = true;
+RTC_DATA_ATTR volatile uint32_t g_rotate_at = 0;   // 0: no rotation pending
+RTC_DATA_ATTR uint32_t g_magic = 0;
+const uint32_t MAGIC = 0x41555431;   // "AUT1"
 portMUX_TYPE g_mux = portMUX_INITIALIZER_UNLOCKED;
 
-uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
+// Runs through deep sleep (timekeep.h), so times kept across one compare.
+uint32_t now_ms(void) { return mono_ms(); }
 
 void hex(const uint8_t *b, size_t n, char *out) {
   static const char H[] = "0123456789abcdef";
@@ -59,10 +69,13 @@ size_t ndef_json(const char *json, uint8_t *out, size_t cap) {
 
 void auth_init(const char *sn) {
   snprintf(g_sn, sizeof(g_sn), "%s", sn ? sn : "");
+  if (pm_warm() && g_magic == MAGIC) return;
   // A new key at every boot: a key read before the reset is spent.
   esp_fill_random(g_next, sizeof(g_next));
   g_have_key = false;
   g_publish = true;
+  g_rotate_at = 0;
+  g_magic = MAGIC;
 }
 
 bool auth_needs_publish(void) {

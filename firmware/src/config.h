@@ -31,9 +31,31 @@ struct Config {
   int32_t cal_version;        // 0 = never calibrated
   int32_t cal_date;           // unix seconds of the calibration, 0 = none
   int32_t accel_wake_ths;     // 1..63, FS/64 per step (31.25 mg at +-2 g)
-  int32_t led_bright_pct;     // brightness cap, % of full scale
+  int32_t led_bright_pct;     // side light brightness cap, % of full scale
+  int32_t led_front_pct;      // front three lights' brightness cap, %
+  int32_t led_status_s;       // on battery, the steady status blinks this often
+  int32_t batt_off_mv;        // below this the box switches itself off (ship mode)
+  int32_t batt_trip_mv;       // below this no new trip starts; the box stays up
+  int32_t batt_mah;           // rated cell capacity, until one is learned (soc.h)
+  int32_t sleep_ua;           // current asleep, for counting charge through a sleep
+  int32_t soc_source;         // the percent shown: 0 voltage (OCV table), 1 counted
   int32_t buzzer_enabled;     // 0 silences alarm sounds
   int32_t tz_offset_min;      // local time for the display only; records are UTC
+  int32_t epd_inset_t;        // panel pixels the case hides: top (screen cal)
+  int32_t epd_inset_b;        //   bottom
+  int32_t epd_inset_l;        //   left
+  int32_t epd_inset_r;        //   right
+  int32_t sleep_en;           // 0 keeps the box awake on battery (bench, measurement)
+  int32_t idle_wake_s;        // on battery, the longest sleep with nothing due
+  int32_t gnss_period_s;      // on battery, during a trip: one GNSS session this often
+  int32_t upload_period_s;    // on battery: the longest records wait for Wi-Fi
+  int32_t sleep_usb;          // bench: behave as on battery with USB in (pm.h)
+  int32_t sleep_meas;         // bench: measure each sleep's current (costs 0.33 mA)
+  int32_t light_sleep;        // on battery, light sleep between tasks while awake (trial)
+  int32_t temp_adj_c100;      // user adjustment added to the reading, 0.01 C (eTEMP's tempAdj)
+  int32_t usb_drive;          // 1: with USB power the port is a drive + serial port (usbdrive.h)
+  int32_t tap_test;           // bench aid, never in the product: double tap = command (main.cpp)
+  int32_t rx_show;            // bench aid, never in the product: what a phone sent, on the glass (rxlog.h)
 
   // Field names are the NVS keys, 15 characters at most; config.cpp
   // refuses to compile a longer one.

@@ -13,6 +13,8 @@ void Canvas::clear(Ink c) {
 }
 
 void Canvas::pixel(int x, int y, Ink c) {
+  x += ox;
+  y += oy;
   if (x < 0 || y < 0 || x >= CANVAS_W || y >= CANVAS_H) return;
   const int i = y * CANVAS_W + x;
   const int sh = (i & 3) * 2;

@@ -24,6 +24,9 @@
 
 void display_start(const char *sn);
 
+// The visible area from config epd_inset_*; after a change, redraw.
+void display_apply_insets(void);
+
 // Latest power reading, from the power task.
 void display_note_power(const PowerStatus &ps);
 
@@ -39,5 +42,9 @@ int display_rotation(void);
 
 // Draw a canvas to the panel the same way the live display does.
 bool display_show(const Canvas &c);
+
+// The picture the box is left with when the battery is cut off: the
+// panel keeps it with no power, so it says why the box is dark.
+void display_battery_off(float cell_volts);
 
 static const uint32_t DISPLAY_MIN_S = 300;   // one sample period

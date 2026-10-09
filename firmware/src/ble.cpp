@@ -22,9 +22,14 @@ void ble_store_config_init(void);
 
 #include "auth.h"
 #include "board.h"
+#include "pm.h"
 #include "record.h"
+#include "settings.h"
+#include <cJSON.h>
 #include "rpc.h"
 #include "trip.h"
+#include "net.h"
+#include "rxlog.h"
 
 namespace {
 
@@ -51,14 +56,18 @@ uint16_t h_status, h_rsp, h_evt;
 
 // ---- state -------------------------------------------------------------
 
-char g_sn[16] = "";
+char g_sn[SN_LEN] = "";
 uint8_t g_own_addr = 0;
 volatile bool g_synced = false;
+bool g_up = false;              // the NimBLE stack has been started
 volatile bool g_enabled = true;
 volatile bool g_adv = false;
 volatile uint16_t g_conn = BLE_HS_CONN_HANDLE_NONE;
 volatile uint16_t g_mtu = 23;
 volatile uint32_t g_window_until = 0;
+// A phone has connected and left since the last tap: external power alone
+// no longer keeps the box advertising.
+volatile bool g_dropped = false;
 volatile uint32_t g_requests = 0;
 volatile bool g_sub_status = false, g_sub_rsp = false, g_sub_evt = false;
 
@@ -88,7 +97,7 @@ const uint8_t F_FIRST = 0x80, F_LAST = 0x40, F_INDEX = 0x3F;
 
 uint32_t now_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
-bool external_power(void) { return gpio_get_level((gpio_num_t)PIN_PG_N) == 0; }
+bool external_power(void) { return pm_external_power(); }
 
 // ---- sending: every notification is a framed message --------------------
 
@@ -231,11 +240,13 @@ int on_gap(ble_gap_event *ev, void *) {
         auth_new_nonce(g_session.nonce);
         g_session.has_nonce = true;
         printf("[ble] connected\n");
+        rxlog_note("BLE connected");
       }
       break;
 
     case BLE_GAP_EVENT_DISCONNECT:
       printf("[ble] disconnected (reason 0x%X)\n", ev->disconnect.reason);
+      rxlog_note(g_session.authorized ? "BLE disconnected (was authorized)" : "BLE disconnected");
       g_conn = BLE_HS_CONN_HANDLE_NONE;
       g_sub_status = false;
       g_sub_rsp = false;
@@ -245,9 +256,14 @@ int on_gap(ble_gap_event *ev, void *) {
       // replaced shortly after it ends.
       if (g_session.authorized) auth_session_ended();
       g_session = {};
-      // A phone that drops off may come straight back: keep the door
-      // open a little longer.
-      if ((int32_t)(g_window_until - now_ms()) < 30000) g_window_until = now_ms() + 30000;
+      // BLE goes off BLE_AFTER_DROP_MS after a phone leaves (decided
+      // 2026-10-07): long enough for a link that dropped to come straight
+      // back, then no advertising -- on external power too -- until the
+      // next tap opens a window. The window is cut to that, not only
+      // extended.
+      g_window_until = now_ms() + BLE_AFTER_DROP_MS;
+      if (!g_window_until) g_window_until = 1;
+      g_dropped = true;
       break;
 
     case BLE_GAP_EVENT_ADV_COMPLETE:
@@ -304,12 +320,111 @@ void event(const char *ev, const char *alarm = nullptr) {
   send_json(h_evt, g_sub_evt, s);
 }
 
+bool stack_up(void);
+
+bool window_open(void) { return (int32_t)(g_window_until - now_ms()) > 0; }
+
+// The settings page, pushed (decided 2026-10-05): once the app listens for
+// events, and again whenever a setting changes or the session gets AUTH
+// (which adds the network part).
+void push_settings(void) {
+  static uint16_t conn = BLE_HS_CONN_HANDLE_NONE;
+  static uint32_t gen = 0;
+  static bool authorized = false;
+  if (g_conn == BLE_HS_CONN_HANDLE_NONE || !g_sub_evt) {
+    conn = BLE_HS_CONN_HANDLE_NONE;
+    return;
+  }
+  const bool auth = g_session.authorized;
+  if (conn == g_conn && gen == settings_gen() && authorized == auth) return;
+  cJSON *o = cJSON_CreateObject();
+  cJSON_AddStringToObject(o, "ev", "SETTINGS");
+  settings_snapshot(o, auth);
+  char *s = cJSON_PrintUnformatted(o);
+  cJSON_Delete(o);
+  if (!s) return;
+  send_json(h_evt, true, s);
+  free(s);
+  conn = g_conn;
+  gen = settings_gen();
+  authorized = auth;
+}
+
+// The Wi-Fi state, pushed as an event (decided 2026-10-08): once the app
+// listens for events, and again when the box joins or loses a network or
+// gets another address. `rssi` goes along but is not a reason to send --
+// it never stops moving; the app reads GET_SYNC_STATUS for it.
+//   {"ev":"WIFI","connected":true,"mac":"..","ssid":"Office","dhcp":true,
+//    "ip":"192.168.1.14","gateway":"192.168.1.1","subnet":"255.255.255.0",
+//    "dns":"192.168.1.1","rssi":-51}
+//   {"ev":"WIFI","connected":false,"mac":".."}
+void push_wifi(void) {
+  static uint16_t conn = BLE_HS_CONN_HANDLE_NONE;
+  static bool was_up = false;
+  static char was_ssid[33] = "", was_ip[16] = "";
+  static uint32_t was_fail = 0;
+  if (g_conn == BLE_HS_CONN_HANDLE_NONE || !g_sub_evt) {
+    conn = BLE_HS_CONN_HANDLE_NONE;
+    return;
+  }
+  NetStatus n;
+  net_status(&n);
+  const bool up = n.connected;
+  const char *ssid = up ? n.ssid : "";
+  const char *ip = up ? n.ip : "";
+  if (conn == g_conn && up == was_up && !strcmp(ssid, was_ssid) && !strcmp(ip, was_ip) &&
+      n.fail_seq == was_fail) {
+    return;
+  }
+  cJSON *o = cJSON_CreateObject();
+  cJSON_AddStringToObject(o, "ev", "WIFI");
+  cJSON_AddBoolToObject(o, "connected", up);
+  cJSON_AddStringToObject(o, "mac", n.mac);
+  if (!up && n.fail_count) {
+    // Not joined, and the last attempt failed: say so, and why. A wrong
+    // password (15, 204, 202) and a network out of range (201) are the
+    // ones an app can tell the person.
+    const unsigned r = n.fail_reason;
+    const char *why = (r == 15 || r == 204 || r == 202) ? "wrong_password"
+                      : r == 201                        ? "not_found"
+                                                        : "failed";
+    cJSON_AddStringToObject(o, "error", why);
+    cJSON_AddNumberToObject(o, "reason", r);
+    if (n.fail_ssid[0]) cJSON_AddStringToObject(o, "ssid", n.fail_ssid);
+    else cJSON_AddNullToObject(o, "ssid");
+    cJSON_AddNumberToObject(o, "attempts", n.fail_count);
+  }
+  if (up) {
+    cJSON_AddStringToObject(o, "ssid", n.ssid);
+    cJSON_AddBoolToObject(o, "dhcp", n.dhcp);
+    cJSON_AddStringToObject(o, "ip", n.ip);
+    cJSON_AddStringToObject(o, "gateway", n.gateway);
+    cJSON_AddStringToObject(o, "subnet", n.subnet);
+    cJSON_AddStringToObject(o, "dns", n.dns);
+    cJSON_AddNumberToObject(o, "rssi", n.rssi);
+  }
+  char *j = cJSON_PrintUnformatted(o);
+  cJSON_Delete(o);
+  if (!j) return;
+  send_json(h_evt, true, j);
+  free(j);
+  conn = g_conn;
+  was_up = up;
+  was_fail = n.fail_seq;
+  snprintf(was_ssid, sizeof(was_ssid), "%s", ssid);
+  snprintf(was_ip, sizeof(was_ip), "%s", ip);
+}
+
 void worker(void *) {
   TripStatus prev;
   trip_status(&prev);
   for (;;) {
+    // The stack starts the first time there is a reason to advertise.
+    // Most wakes from sleep have none, and skip its start-up and its RAM.
+    if (!g_up && g_enabled && (external_power() || window_open())) g_up = stack_up();
+
     Msg m;
-    if (xQueueReceive(g_q, &m, pdMS_TO_TICKS(1000)) == pdTRUE) {
+    if (xQueueReceive(g_q, &m, pdMS_TO_TICKS(250)) == pdTRUE) {
       if (m.n == 0) {     // a ready-made error
         send_framed(m.conn, h_rsp, m.data, strlen(m.data));
       } else {
@@ -343,12 +458,17 @@ void worker(void *) {
       }
     }
     prev = s;
+    push_settings();
+    push_wifi();
 
     // Advertise only with a reason: a tap's window, or external power.
-    const bool want = g_enabled && g_conn == BLE_HS_CONN_HANDLE_NONE &&
-                      (external_power() || (int32_t)(g_window_until - now_ms()) > 0);
+    const bool want = g_up && g_enabled && g_conn == BLE_HS_CONN_HANDLE_NONE &&
+                      ((external_power() && !g_dropped) || window_open());
     if (want) advertise();
     else if (g_adv) stop_advertising();
+    // Asleep, the radio is off and no phone can reach the box.
+    pm_hold(Hold::Ble, g_adv || g_conn != BLE_HS_CONN_HANDLE_NONE ||
+                           (g_enabled && window_open()));
   }
 }
 
@@ -357,10 +477,15 @@ void worker(void *) {
 void ble_start(const char *sn) {
   snprintf(g_sn, sizeof(g_sn), "%s", sn ? sn : "MCOLD");
   g_q = xQueueCreate(4, sizeof(Msg));
+  xTaskCreatePinnedToCore(worker, "ble", 6144, nullptr, 3, nullptr, 0);
+}
 
+namespace {
+
+bool stack_up(void) {
   if (nimble_port_init() != ESP_OK) {
     printf("[ble] controller did not start\n");
-    return;
+    return false;
   }
   ble_hs_cfg.sync_cb = on_sync;
   ble_hs_cfg.reset_cb = on_reset;
@@ -415,21 +540,29 @@ void ble_start(const char *sn) {
   ble_svc_gatt_init();
   if (ble_gatts_count_cfg(g_svcs) || ble_gatts_add_svcs(g_svcs)) {
     printf("[ble] GATT table rejected\n");
-    return;
+    return false;
   }
   ble_svc_gap_device_name_set(g_sn);
   ble_store_config_init();
   nimble_port_freertos_init(host_task);
-  xTaskCreatePinnedToCore(worker, "ble", 6144, nullptr, 3, nullptr, 0);
+  return true;
 }
 
+}  // namespace
+
 void ble_window(uint32_t ms) {
+  g_dropped = false;      // a tap: BLE is wanted again
   const uint32_t until = now_ms() + ms;
   if ((int32_t)(until - g_window_until) > 0) g_window_until = until;
+  // At once, not at the worker's next pass: the tap that opened the
+  // window may be the last duty of a wake, and the chip would be asleep
+  // before the worker looked.
+  if (g_enabled) pm_hold(Hold::Ble, true);
 }
 
 void ble_enable(bool on) {
   g_enabled = on;
+  if (on) g_dropped = false;     // `ble on` at the console: advertise as on external power
   if (!on) {
     stop_advertising();
     if (g_conn != BLE_HS_CONN_HANDLE_NONE) {

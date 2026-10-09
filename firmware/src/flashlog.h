@@ -52,6 +52,13 @@ struct FlashIf {
   bool (*write)(void *ctx, uint32_t off, const void *buf, uint32_t n);
   bool (*erase)(void *ctx, uint32_t off, uint32_t n);   // whole sectors
   void *ctx;
+  // Optional: the whole medium mapped into the address space, read-only,
+  // for the boot scan. One read call per sector header costs 168 ms on
+  // the real partition, which the box would pay on every wake from sleep;
+  // through the cache the same scan is a few milliseconds. Returns null
+  // if it cannot; `unmap` is then not called.
+  const uint8_t *(*map)(void *ctx, void **handle);
+  void (*unmap)(void *handle);
 };
 
 enum class LogErr : uint8_t {
