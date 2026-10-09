@@ -38,6 +38,17 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Wi-Fi: ADD_WIFI, EDIT_WIFI, DEL_WIFI** (decided 2026-10-09). Three
+  commands that mean one thing each, for the app's list: `ADD_WIFI`
+  (`ssid`, `pass`, optional `slot`; EXISTS if the network or the slot is
+  taken, FULL at five), `EDIT_WIFI` (`slot` and what changes; NOT_FOUND on
+  an empty slot), `DEL_WIFI` (`slot` or `ssid`; NOT_FOUND). Each answers
+  with the whole list of five slots. The app had been using
+  `APPLY_CONFIG` `wifi.add` for all three, which added, edited and
+  overwrote alike. `SET_WIFI` and `APPLY_CONFIG` stay. Checked over
+  `rpc`: add to the first free and to a chosen slot, every error, edit
+  of address / password / name, delete by slot and by name. 0.7.0-dev.47.
+
 - **A Wi-Fi that will not connect is an event too** (2026-10-08): each
   failed attempt sends `{"ev":"WIFI","connected":false,"error":
   "wrong_password"|"not_found"|"failed","reason":N,"ssid":..,"attempts":N}`

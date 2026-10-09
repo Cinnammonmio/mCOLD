@@ -688,16 +688,91 @@ cJSON *c_set_wifi(uint32_t id, const cJSON *req, RpcSession *) {
   return o;
 }
 
+// The three Wi-Fi commands of the app's list (decided 2026-10-09), each
+// answering with the whole list of five slots so the page can redraw:
+//   ADD_WIFI   ssid, pass[, dhcp | ip, gateway, subnet, dns][, slot]
+//              a new network, in `slot` or the first free one
+//   EDIT_WIFI  slot[, ssid][, pass][, dhcp | ip, gateway, subnet, dns]
+//              what is in a slot; what is left out stays
+//   DEL_WIFI   slot (or ssid)
+// Errors: EXISTS (the network, or the slot, is taken), NOT_FOUND (the slot
+// is empty / no such network), FULL (no free slot), BAD_ARGS.
+cJSON *wifi_answer(uint32_t id, int slot) {
+  cJSON *o = ok(id);
+  if (slot) cJSON_AddNumberToObject(o, "slot", slot);
+  settings_network(o);
+  return o;
+}
+
+int slot_by_ssid(const char *ssid) {
+  for (int i = 0; i < NET_MAX; i++) {
+    char n[33];
+    if (net_slot_ssid(i, n, sizeof(n)) && !strcmp(n, ssid)) return i + 1;
+  }
+  return 0;
+}
+
+cJSON *c_add_wifi(uint32_t id, const cJSON *req, RpcSession *) {
+  const cJSON *s = cJSON_GetObjectItemCaseSensitive(req, "ssid");
+  const cJSON *p = cJSON_GetObjectItemCaseSensitive(req, "pass");
+  const cJSON *sl = cJSON_GetObjectItemCaseSensitive(req, "slot");
+  if (!cJSON_IsString(s) || !cJSON_IsString(p)) {
+    return fail(id, "BAD_ARGS", "ssid and pass (\"\" for an open network)");
+  }
+  if (slot_by_ssid(s->valuestring)) return fail(id, "EXISTS", "already in the list: EDIT_WIFI it");
+  int slot = 0;
+  char taken[33];
+  if (cJSON_IsNumber(sl)) {
+    slot = (int)sl->valuedouble;
+    if (slot < 1 || slot > NET_MAX) return fail(id, "BAD_ARGS", "slot 1..5");
+    if (net_slot_ssid(slot - 1, taken, sizeof(taken))) return fail(id, "EXISTS", "that slot is in use: EDIT_WIFI or DEL_WIFI it");
+  } else {
+    for (int i = 0; i < NET_MAX && !slot; i++) {
+      if (!net_slot_ssid(i, taken, sizeof(taken))) slot = i + 1;
+    }
+    if (!slot) return fail(id, "FULL", "all five slots are in use: DEL_WIFI one");
+  }
+  cJSON *e = cJSON_Duplicate(req, true);
+  cJSON_DeleteItemFromObjectCaseSensitive(e, "slot");
+  cJSON_AddNumberToObject(e, "slot", slot);
+  const char *why = nullptr;
+  const bool done = settings_wifi_entry(e, &why);
+  cJSON_Delete(e);
+  if (!done) return fail(id, "BAD_ARGS", why);
+  settings_touch();
+  return wifi_answer(id, slot);
+}
+
+cJSON *c_edit_wifi(uint32_t id, const cJSON *req, RpcSession *) {
+  const cJSON *sl = cJSON_GetObjectItemCaseSensitive(req, "slot");
+  if (!cJSON_IsNumber(sl) || sl->valuedouble < 1 || sl->valuedouble > NET_MAX) {
+    return fail(id, "BAD_ARGS", "slot 1..5");
+  }
+  const int slot = (int)sl->valuedouble;
+  char cur[33];
+  if (!net_slot_ssid(slot - 1, cur, sizeof(cur))) return fail(id, "NOT_FOUND", "that slot is empty: ADD_WIFI");
+  const char *why = nullptr;
+  if (!settings_wifi_entry(req, &why)) return fail(id, "BAD_ARGS", why);
+  settings_touch();
+  return wifi_answer(id, slot);
+}
+
 cJSON *c_del_wifi(uint32_t id, const cJSON *req, RpcSession *) {
   const cJSON *s = cJSON_GetObjectItemCaseSensitive(req, "ssid");
   const cJSON *sl = cJSON_GetObjectItemCaseSensitive(req, "slot");
+  int slot = 0;
   if (cJSON_IsNumber(sl)) {
-    if (!net_slot_clear((int)sl->valuedouble - 1)) return fail(id, "BAD_ARGS", "slot 1..5, one in use");
-  } else if (!cJSON_IsString(s) || !net_remove(s->valuestring)) {
-    return fail(id, "BAD_ARGS", "slot (1..5) or ssid: a known network");
+    slot = (int)sl->valuedouble;
+    if (slot < 1 || slot > NET_MAX) return fail(id, "BAD_ARGS", "slot 1..5");
+    if (!net_slot_clear(slot - 1)) return fail(id, "NOT_FOUND", "that slot is empty");
+  } else if (cJSON_IsString(s)) {
+    slot = slot_by_ssid(s->valuestring);
+    if (!slot || !net_remove(s->valuestring)) return fail(id, "NOT_FOUND", "not in the list");
+  } else {
+    return fail(id, "BAD_ARGS", "slot (1..5) or ssid");
   }
   settings_touch();
-  return ok(id);
+  return wifi_answer(id, slot);
 }
 
 cJSON *c_later(uint32_t id, const cJSON *, RpcSession *) {
@@ -733,6 +808,8 @@ const Cmd CMDS[] = {
     {"GET_SYNC_STATUS", false, c_sync_status},
     {"SYNC_NOW", true, c_sync_now},
     {"SET_WIFI", true, c_set_wifi},
+    {"ADD_WIFI", true, c_add_wifi},
+    {"EDIT_WIFI", true, c_edit_wifi},
     {"DEL_WIFI", true, c_del_wifi},
     {"GET_USB_SNAPSHOT_STATUS", false, c_later},
 };
