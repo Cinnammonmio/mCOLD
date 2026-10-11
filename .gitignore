@@ -8,3 +8,6 @@ __pycache__/
 # Files made for people, not sources: trip CSVs pulled from a box (they
 # can carry positions) and copies of the PDFs packed for sending.
 exports/
+
+# app prototype (dist/index.html is kept so the prototype opens without a build)
+app-prototype/node_modules/

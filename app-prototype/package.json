@@ -1,0 +1,21 @@
+{
+  "name": "mcold-app-prototype",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Clickable prototype of the multi-product cold-chain app (mCOLD flows). Mock data only.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.7.0",
+    "vite": "5.4.21",
+    "vite-plugin-singlefile": "2.3.0"
+  }
+}
