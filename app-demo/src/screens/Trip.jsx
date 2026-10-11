@@ -359,7 +359,8 @@ export function TempChart({ trip, current, at, compact }) {
   const H = compact ? 120 : 180;
   const P = { l: 34, r: 10, t: 10, b: 24 };
   const pts = [...trip.points];
-  if (at > (pts[pts.length - 1]?.t ?? 0)) pts.push({ t: at, c: current, live: true });
+  // the live reading (undefined = a stored trip with no live point)
+  if (current !== undefined && at > (pts[pts.length - 1]?.t ?? 0)) pts.push({ t: at, c: current, live: true });
   const vals = pts.map((p) => p.c).filter((c) => c != null);
   const lo = Math.floor(Math.min(trip.low - 1, ...vals) - 0.5);
   const hi = Math.ceil(Math.max(trip.high + 1, ...vals) + 0.5);

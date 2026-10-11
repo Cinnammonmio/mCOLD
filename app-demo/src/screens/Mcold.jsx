@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { nav, useApp, simNow, wardDevices, wardOf, userName } from '../store.js';
 import { WardBar } from '../Users.jsx';
 import { deviceView, disconnect, findDevice, inRange, isLinked, pendingTrips } from '../sim.js';
-import { fmtAgo, fmtPct, fmtTemp, fmtTime } from '../format.js';
+import { fmtAgo, fmtDuration, fmtPct, fmtTemp, fmtTime } from '../format.js';
 import { DeviceReadout, requestConnect } from '../ConnectSheet.jsx';
 import { AppBar, Banner, BatteryIcon, Btn, Chip, Icon, Seg, useTick } from '../ui.jsx';
 import { TripTab } from './Trip.jsx';
@@ -76,7 +76,7 @@ export function cargoOf(s, dev) {
   return dev.activeTripId ? s.appTrips[dev.activeTripId]?.name || '' : '';
 }
 
-/** One compact line per box so a whole ward fits on one screen. */
+/** One box per row, sized so five fill the phone screen; the rest scroll. */
 function DeviceRow({ dev }) {
   const s = useApp();
   const v = deviceView(s, dev);
@@ -84,36 +84,48 @@ function DeviceRow({ dev }) {
   const cargo = cargoOf(s, dev);
   const linked = isLinked(s, dev.sn);
   const pending = pendingTrips(s, dev).length;
-  const status = !v.known
-    ? 'ยังไม่เคยเชื่อมต่อ'
-    : s.pendingCmd[dev.sn]
-      ? 'รอตรวจสอบสถานะทริป'
-      : v.trip
-        ? `กำลังบันทึก${cargo ? ` · ${cargo}` : ''}`
-        : 'ว่าง';
+  const meta = v.trip ? s.appTrips[v.trip.trip_id] : null;
   return (
-    <button className="li" onClick={() => (linked ? nav.toTab('device') : connectAndOpen(dev.sn))} style={{ minHeight: 54, padding: '8px 12px' }}>
-      <div className={`dev-icon ${v.known ? '' : 'off'}`} style={{ width: 34, height: 34, borderRadius: 10 }}>
-        <Icon name={linked ? 'bluetooth-connected' : 'snowflake'} size={18} />
+    <button className="li" onClick={() => (linked ? nav.toTab('device') : connectAndOpen(dev.sn))} style={{ alignItems: 'stretch', padding: '12px 12px', minHeight: 108 }}>
+      <div className={`dev-icon ${v.known ? '' : 'off'}`} style={{ width: 40, height: 40 }}>
+        <Icon name={linked ? 'bluetooth-connected' : 'snowflake'} size={21} />
       </div>
-      <div className="grow">
-        <span className="row" style={{ gap: 6 }}>
-          <span className="t" style={{ fontSize: 15 }}>{dev.name}</span>
-          {linked && <span className="chip ok" style={{ padding: '0 6px', lineHeight: '16px', fontSize: 11 }}>เชื่อมต่ออยู่</span>}
-          {v.trip?.alarms.active.length > 0 && <Icon name="bell-ringing" size={14} style={{ color: 'var(--bad)' }} />}
-        </span>
-        <span className="s" style={{ fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          <span style={{ color: v.trip ? 'var(--info)' : undefined }}>{status}</span>
-          {pending > 0 && <span style={{ color: 'var(--warn)', fontWeight: 600 }}> · รอส่ง {pending}</span>}
-        </span>
-      </div>
-      <div className="stack" style={{ alignItems: 'flex-end', gap: 0, flex: 'none' }}>
-        <span className="bold num" style={{ fontSize: 16, color: ok === false ? 'var(--bad)' : v.live ? undefined : 'var(--muted)' }}>
-          {v.known ? (v.temp == null ? 'ไม่พบหัววัด' : fmtTemp(v.temp)) : '—'}
-        </span>
-        <span className="tiny num" style={{ color: v.battery != null && v.battery < 15 ? 'var(--bad)' : 'var(--muted)' }}>
-          {fmtPct(v.battery)} · {v.live ? 'สด' : v.known ? fmtTime(v.at) : '—'}
-        </span>
+      <div className="grow" style={{ gap: 4 }}>
+        <div className="row between" style={{ alignItems: 'flex-start' }}>
+          <div style={{ minWidth: 0 }}>
+            <div className="bold" style={{ fontSize: 16 }}>{dev.name}</div>
+            <div className="tiny muted mono">{dev.sn}</div>
+          </div>
+          <span className="tempbig" style={{ fontSize: 22, color: ok === false ? 'var(--bad)' : v.live ? undefined : 'var(--muted)' }}>
+            {v.known ? (v.temp == null ? 'ไม่พบหัววัด' : fmtTemp(v.temp)) : '—'}
+          </span>
+        </div>
+        <div className="row between" style={{ gap: 6 }}>
+          <span className="row wrap" style={{ gap: 4 }}>
+            {linked && <Chip tone="ok" icon="bluetooth-connected">เชื่อมต่ออยู่</Chip>}
+            {!v.known ? (
+              <Chip tone="outline">ยังไม่เคยเชื่อมต่อ</Chip>
+            ) : s.pendingCmd[dev.sn] ? (
+              <Chip tone="warn">รอตรวจสอบทริป</Chip>
+            ) : v.trip ? (
+              <Chip tone="info" dot>กำลังบันทึก</Chip>
+            ) : (
+              <Chip tone="outline">ว่าง</Chip>
+            )}
+            {v.trip?.alarms.active.length > 0 && <Chip tone="bad" icon="bell-ringing">แจ้งเตือน</Chip>}
+            {pending > 0 && <Chip tone="warn">รอส่ง {pending}</Chip>}
+          </span>
+          <span className="tiny num" style={{ whiteSpace: 'nowrap', color: v.battery != null && v.battery < 15 ? 'var(--bad)' : 'var(--muted)' }}>
+            <BatteryIcon pct={v.battery} /> {fmtPct(v.battery)}
+          </span>
+        </div>
+        <div className="tiny muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {v.trip
+            ? `${cargo ? `ติดกับ ${cargo} · ` : ''}${meta?.startedBy ? `เริ่มโดย ${userName(s, meta.startedBy.by).split(' ')[0]} · ` : ''}${fmtDuration(v.at - v.trip.startUtc)}`
+            : ''}
+          {v.trip ? ' · ' : ''}
+          {v.live ? 'สด' : v.known ? `ข้อมูลเมื่อ ${fmtTime(v.at)}` : ''}
+        </div>
       </div>
     </button>
   );
@@ -261,6 +273,12 @@ export function DeviceHub() {
               <button className="action" style={{ minHeight: 54, padding: '8px 12px' }} onClick={() => open('settings')}>
                 <span className="ai slate"><Icon name="adjustments-horizontal" /></span>
                 <span className="grow t">ตั้งค่าอุปกรณ์</span>
+                <Icon name="chevron-right" className="muted" />
+              </button>
+              <button className="action" style={{ minHeight: 54, padding: '8px 12px' }} onClick={() => open('trips')}>
+                <span className="ai" style={{ background: '#2463a8' }}><Icon name="chart-line" /></span>
+                <span className="grow t">ข้อมูลทริป (กราฟ / ตาราง)</span>
+                <span className="tiny muted">{dev.trips.length} ทริป</span>
                 <Icon name="chevron-right" className="muted" />
               </button>
               <button className="action" style={{ minHeight: 54, padding: '8px 12px' }} onClick={() => open('send')}>

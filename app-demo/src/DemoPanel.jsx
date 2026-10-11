@@ -20,7 +20,8 @@ export function DemoPanel({ onOpenGuide }) {
     <div className="demo-panel">
       <div className="demo-head">
         <div className="row"><Icon name="flask-2" /> <span className="t">ควบคุมเดโม</span></div>
-        <p>โหมดจำลองทั้งหมด ไม่มีการเรียก Bluetooth, NFC, API หรือ Server จริง แผงนี้ไม่ใช่ส่วนหนึ่งของแอปผู้ใช้</p>
+        <p>โหมดจำลองทั้งหมด ไม่มีการเรียก Bluetooth, NFC, API หรือ Server จริง</p>
+        <p style={{ marginTop: 6 }}><b style={{ background: '#a78bfa', color: '#2b2150', borderRadius: 6, padding: '0 6px' }}>สีม่วง</b> = ส่วนจำลองสำหรับเดโม ไม่มีในแอปจริง (แผงนี้, ปุ่มจำลองแตะ NFC, การเลือกผลจำลอง, การสลับผู้ใช้)</p>
       </div>
 
       <div className="card">

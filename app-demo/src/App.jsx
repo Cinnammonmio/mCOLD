@@ -11,6 +11,7 @@ import { MultiStart } from './screens/MultiStart.jsx';
 import { StopTrip } from './screens/TripFlows.jsx';
 import { WifiEdit } from './screens/Settings.jsx';
 import { SendProgress } from './screens/Send.jsx';
+import { TripDetail, TripsScreen } from './screens/TripData.jsx';
 
 function Route() {
   const { ui } = useApp();
@@ -32,6 +33,10 @@ function Route() {
       return <StopTrip />;
     case 'wifi-edit':
       return <WifiEdit slot={r.slot} />;
+    case 'trips':
+      return <TripsScreen />;
+    case 'trip-detail':
+      return <TripDetail tripId={r.tripId} />;
     case 'send-progress':
       return <SendProgress ids={r.ids} />;
     default:
@@ -94,7 +99,7 @@ export default function App() {
       <aside className="side" aria-label="ควบคุมเดโม">
         <DemoPanel onOpenGuide={openGuide} />
       </aside>
-      <Btn kind="demo" size="sm" icon="flask-2" className="demo-fab" onClick={() => updateUi(() => ({ demoOpen: true }))} style={{ boxShadow: '0 4px 14px rgba(0,0,0,.18)' }}>
+      <Btn kind="demo" size="sm" icon="flask-2" className="demo-fab" onClick={() => updateUi(() => ({ demoOpen: true }))}>
         เดโม
       </Btn>
     </div>

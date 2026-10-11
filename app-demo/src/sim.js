@@ -213,6 +213,22 @@ export function tripDelivery(s, dev, trip) {
 }
 const pct = (tr) => `${Math.floor((100 * tr.rowsReceived) / Math.max(1, tr.totalRows))}%`;
 
+/** Every row of a trip as the box logged it (samples + events), in seq order — what READ_LOG_CHUNK returns. */
+export function tripRows(dev, trip, until) {
+  const end = Math.min(trip.stopUtc ?? until, until);
+  const period = trip.period * 1000;
+  const n = end >= trip.startUtc ? Math.floor((end - trip.startUtc) / period) + 1 : 0;
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    const t = trip.startUtc + i * period;
+    rows.push({ t, type: 'SAMPLE', temp: tempAt(dev, t) });
+  }
+  for (const e of trip.events) if (e.t <= end) rows.push({ t: e.t, type: e.type, temp: e.temp ?? null, detail: e.detail, ev: true });
+  rows.sort((x, y) => x.t - y.t || (x.type === 'TRIP_START' ? -1 : y.type === 'TRIP_START' ? 1 : 0));
+  rows.forEach((r, i) => (r.seq = i));
+  return rows;
+}
+
 // CSV columns from ble-protocol.md §6 (ASCII, CRLF). Size = header + rows × one typical row of this trip.
 const CSV_HEADER = 'trip_id,trip_date,trip_number,seq,sn,timestamp,utc,event,temp,tempmin,tempmax,alarm,timeok,gnssstate,latitude,longitude,motion,battery,internet,detail\r\n';
 

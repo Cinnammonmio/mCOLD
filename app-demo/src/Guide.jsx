@@ -121,6 +121,7 @@ export function Guide({ onBack }) {
               <div className="node"><b>เริ่ม / จบทริป</b><ul><li>ไม่มีทริป → ฟอร์มเริ่มทริปหน้าเดียว</li><li>มีทริป → หน้าระหว่างทริป → จบทริป</li></ul></div>
               <div className="node"><b>ตั้งค่าอุปกรณ์</b><ul><li>ดูค่าปัจจุบัน → แก้ไข → บันทึก/ยกเลิก</li><li>เครือข่ายขั้นสูง → แก้ Wi-Fi รายช่อง</li></ul></div>
               <div className="node"><b>ส่งข้อมูล</b><ul><li>ตัวกรอง ทั้งหมด/รอส่ง/ส่งแล้ว</li><li>เลือกหลายทริป → หน้าความคืบหน้า 5 ขั้น</li></ul></div>
+              <div className="node"><b>ข้อมูลทริป</b><ul><li>รายการทริปในเครื่อง</li><li>รายละเอียด: สรุป + กราฟ / ตาราง (READ_LOG_CHUNK)</li></ul></div>
               <div className="node"><b>เริ่มทริปหลายเครื่อง</b><ul><li>ตั้งช่วงอุณหภูมิครั้งเดียว</li><li>แตะทีละเครื่อง → ผลรายเครื่อง</li><li>ระบุกล่องที่ติดในรายการ</li></ul></div>
               <div className="node"><b>ซ้อนทับ</b><ul><li>หน้าต่างเชื่อมต่อ (NFC → BLE → ยืนยันสิทธิ์)</li><li>แผงควบคุมเดโม (แยกจากแอป)</li></ul></div>
             </div>
@@ -197,6 +198,7 @@ export function Guide({ onBack }) {
                 ['บันทึกค่าตั้ง', <code>APPLY_CONFIG ✎</code>, <code>{'{config:{…}}'}</code>, <><Doc /> ตอบ <code>applied</code> / <code>errors</code> รายค่า</>],
                 ['Wi-Fi: เพิ่ม / แก้ / ลบ', <><code>ADD_WIFI</code>, <code>EDIT_WIFI</code>, <code>DEL_WIFI</code> ✎</>, <><code>slot</code>, <code>ssid</code>, <code>pass</code>, <code>dhcp</code> | <code>ip/gateway/subnet/dns</code></>, <><Doc /> 5 ช่องคงที่ ไม่ส่งรหัสผ่านกลับ</>],
                 ['รายการทริป', <code>LIST_TRIPS</code>, '—', <><Doc /> <code>last_seq</code>, <code>sent</code> · ระยะเวลาต้องใช้ <code>GET_TRIP_SUMMARY</code> ต่อทริป</>],
+                ['ข้อมูลทริป (กราฟ / ตาราง)', <code>READ_LOG_CHUNK</code>, <><code>trip_id</code>, <code>from</code>, <code>max</code></>, <><Doc /> อ่านได้ทั้งทริปที่จบและที่กำลังบันทึก · ทริปที่รับเข้าแอปแล้วไม่อ่านซ้ำ <Ux /></>],
                 ['ส่งข้อมูล ขั้น 1', <code>READ_LOG_CHUNK</code>, <><code>trip_id</code>, <code>from</code>, <code>max</code> ≤ 16</>, <><Doc /> วนจน <code>next</code> = null · resume จาก seq ที่มี <Ux /></>],
                 ['ส่งข้อมูล ขั้น 2', 'สร้าง CSV ในแอป', <code>TRIP_&lt;SN&gt;_&lt;YYMMDDhhmm&gt;.csv</code>, <><Doc /> คอลัมน์ตามข้อ 6, CRLF</>],
                 ['ส่งข้อมูล ขั้น 3–4', 'HTTP ไปยัง server', 'ไฟล์ CSV', <><Open /> endpoint, รูปแบบคำตอบ “เก็บแล้ว”, การยืนยันตัวตนของแอป</>],
@@ -291,7 +293,9 @@ export function Guide({ onBack }) {
                 <ul>
                   <li>ชื่อแอป {APP_NAME} และหน้าเลือกผลิตภัณฑ์แบบชื่ออย่างเดียว</li>
                   <li>ชื่อเครื่องตามหมายเลข และ “กล่องที่ติด” เป็นข้อมูลของทริป</li>
-                  <li>เมนู 3 ฟังก์ชันแสดงหลังเชื่อมต่อเท่านั้น</li>
+                  <li>เมนูของเครื่องแสดงหลังเชื่อมต่อเท่านั้น (เริ่ม/จบทริป, ตั้งค่า, ข้อมูลทริป, ส่งข้อมูล)</li>
+                  <li>ข้อมูลทริปเป็นกราฟและตารางต่อเครื่อง</li>
+                  <li>สีม่วง = ส่วนจำลองของ demo ไม่มีในแอปจริง</li>
                   <li>เริ่มทริปหลายเครื่อง: แตะทีละเครื่อง หนึ่งการแตะหนึ่ง session แล้วตัดการเชื่อมต่อ</li>
                   <li>เริ่มทริปหน้าเดียว: ช่วงอุณหภูมิกรอกไว้จากทริปล่าสุด ตรวจความพร้อมอัตโนมัติ กดครั้งเดียว</li>
                   <li>ชื่อทริปและหมายเหตุเป็นข้อมูลของแอป</li>
