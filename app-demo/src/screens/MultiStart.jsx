@@ -4,8 +4,8 @@
 import { useRef, useState } from 'react';
 import { currentUser, getState, nav, toast, update, useApp, wardDevices, wardOf } from '../store.js';
 import { BleLost, disconnect, findDevice, finishConnect, startTrip } from '../sim.js';
-import { fmtTemp, fmtTime, tripLabel } from '../format.js';
-import { AppBar, Banner, Btn, Chip, Field, Icon, Seg } from '../ui.jsx';
+import { fmtTime } from '../format.js';
+import { AppBar, Btn, Chip, Icon, Seg } from '../ui.jsx';
 import { ERR_TEXT, preflight } from './TripFlows.jsx';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -18,9 +18,7 @@ const NFC_FAIL = {
 
 export function MultiStart() {
   const s = useApp();
-  const [phase, setPhase] = useState('setup'); // setup | tap
   const [form, setForm] = useState({ low: '2.0', high: '8.0' });
-  const [touched, setTouched] = useState(false);
   const [rows, setRows] = useState([]); // newest first: { sn, state, step, msg, tripId, at }
   const rowsRef = useRef([]);
   const [busy, setBusy] = useState(false);
@@ -128,94 +126,80 @@ export function MultiStart() {
     nav.toTab('devices');
   };
 
-  if (phase === 'setup') {
-    return (
-      <div className="screen">
-        <AppBar title="เริ่มทริปหลายเครื่อง" sub="ตั้งค่าทริปครั้งเดียว" />
-        <div className="content stack with-footer">
-          <div className="card stack">
-            <h3>ช่วงอุณหภูมิที่อนุญาต</h3>
-            <div className="grid2">
-              <Field label="ต่ำสุด" htmlFor="m-low" error={touched && errs.low}>
-                <div className="input-unit">
-                  <input id="m-low" className="input num" inputMode="decimal" value={form.low} onChange={(e) => setForm({ ...form, low: e.target.value })} />
-                  <span className="unit">°C</span>
-                </div>
-              </Field>
-              <Field label="สูงสุด" htmlFor="m-high" error={touched && errs.high}>
-                <div className="input-unit">
-                  <input id="m-high" className="input num" inputMode="decimal" value={form.high} onChange={(e) => setForm({ ...form, high: e.target.value })} />
-                  <span className="unit">°C</span>
-                </div>
-              </Field>
-            </div>
-            <div className="tiny muted">ใช้กับทุกเครื่องที่แตะในรอบนี้ ค่าตัวอย่าง 2–8°C</div>
-          </div>
-          <Banner tone="info">รอบบันทึกและค่าการแจ้งเตือนใช้ค่าที่ตั้งไว้ในแต่ละเครื่อง</Banner>
-        </div>
-        <div className="footer-bar">
-          <Btn kind="teal" block icon="nfc" onClick={() => (setTouched(true), formOk && setPhase('tap'))}>
-            ถัดไป: แตะเครื่อง
-          </Btn>
-        </div>
-      </div>
-    );
-  }
+  const locked = started > 0 || busy; // the range is fixed once the first box has started
+  const rangeInput = (key, label) => (
+    <div className="input-unit" style={{ flex: 1 }}>
+      <input
+        id={`m-${key}`}
+        aria-label={label}
+        className={`input num ${errs[key] ? 'invalid' : ''}`}
+        inputMode="decimal"
+        value={form[key]}
+        disabled={locked}
+        onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+        style={{ fontSize: 18, fontWeight: 600, minHeight: 46 }}
+      />
+      <span className="unit">°C</span>
+    </div>
+  );
 
   return (
     <div className="screen">
-      <AppBar title="เริ่มทริปหลายเครื่อง" sub={`${fmtTemp(low)} – ${fmtTemp(high)}`} onBack={() => (rows.length ? finish() : setPhase('setup'))} />
-      <div className="content stack with-footer">
-        <div className="card row between">
-          <div className="row" style={{ gap: 16 }}>
-            <div><div className="tiny muted">เริ่มแล้ว</div><div className="bold num" style={{ fontSize: 22, color: 'var(--ok)' }}>{started}</div></div>
-            <div><div className="tiny muted">ไม่สำเร็จ</div><div className="bold num" style={{ fontSize: 22, color: failed ? 'var(--bad)' : undefined }}>{failed}</div></div>
-            <div><div className="tiny muted">ข้าม</div><div className="bold num" style={{ fontSize: 22 }}>{skipped}</div></div>
+      <AppBar title="เริ่มทริปหลายเครื่อง" sub={`เริ่มแล้ว ${started} · ไม่สำเร็จ ${failed} · ข้าม ${skipped}`} onBack={() => (rows.length ? finish() : nav.back())} />
+      <div className="content stack with-footer" style={{ gap: 10 }}>
+        <div className="card stack tight" style={{ padding: 12 }}>
+          <div className="row" style={{ gap: 8 }}>
+            {rangeInput('low', 'ต่ำสุด')}
+            <span className="muted">–</span>
+            {rangeInput('high', 'สูงสุด')}
           </div>
-          {!started && (
-            <Btn kind="ghost" size="sm" icon="pencil" onClick={() => setPhase('setup')}>แก้ช่วง</Btn>
-          )}
+          <div className="tiny" style={{ color: formOk ? 'var(--muted)' : 'var(--bad)' }}>
+            {formOk ? (locked ? 'ใช้ช่วงนี้กับทุกเครื่องในรอบนี้' : 'ตั้งช่วงครั้งเดียว แล้วแตะ NFC ทีละเครื่อง') : errs.low || errs.high}
+          </div>
         </div>
 
-        <div className="card stack center" style={{ alignItems: 'center' }}>
-          <div className="bold row"><Icon name="nfc" size={20} /> แตะ NFC ทีละเครื่อง</div>
-          <Btn kind="teal" block icon={busy ? undefined : 'nfc'} busy={busy} onClick={() => tapOne(target)}>
-            {busy ? 'กำลังทำงานกับเครื่องที่แตะ…' : 'จำลองแตะ NFC'}
-          </Btn>
-          <div className="stack tight" style={{ width: '100%', textAlign: 'left', border: '1px dashed #cfc2f0', borderRadius: 12, padding: 10, background: 'var(--demo-bg)' }}>
-            <label htmlFor="m-pick" className="tiny bold" style={{ color: 'var(--demo)' }}>
-              <Icon name="flask-2" size={13} /> โหมดจำลอง · เครื่องที่แตะ
-            </label>
-            <select id="m-pick" className="input" value={target} onChange={(e) => setPicked(e.target.value)}>
+        <div className="stack tight" style={{ border: '1px dashed #cfc2f0', borderRadius: 12, padding: 8, background: 'var(--demo-bg)' }}>
+          <div className="row" style={{ gap: 6 }}>
+            <Icon name="flask-2" size={14} style={{ color: 'var(--demo)', flex: 'none' }} />
+            <select id="m-pick" aria-label="เครื่องที่แตะ (จำลอง)" className="input" value={target} onChange={(e) => setPicked(e.target.value)} style={{ minHeight: 36, padding: '4px 8px', fontSize: 14 }}>
               {s.devices.map((d) => (
                 <option key={d.sn} value={d.sn}>{d.name}{d.activeTripId ? ' (มีทริปอยู่)' : ''}{d.wardId !== currentUser(s).wardId ? ' · วอร์ดอื่น' : ''}</option>
               ))}
             </select>
-            <Seg
-              demo
-              label="ผลการแตะจำลอง"
-              value={s.demo.nfcOutcome}
-              onChange={(v) => update((st) => void (st.demo.nfcOutcome = v))}
-              options={[{ value: 'ok', label: 'สำเร็จ' }, { value: 'notfound', label: 'ไม่พบ' }, { value: 'connfail', label: 'ต่อไม่ได้' }, { value: 'authfail', label: 'สิทธิ์ไม่ผ่าน' }]}
-            />
-            <Btn kind="demo" size="sm" disabled={busy} onClick={() => tapMany(5)}>จำลองแตะต่อเนื่อง 5 เครื่อง</Btn>
+            <Btn kind="demo" size="sm" disabled={busy || !formOk} onClick={() => tapMany(5)} style={{ flex: 'none' }}>แตะต่อ 5</Btn>
           </div>
+          <Seg
+            demo
+            label="ผลการแตะจำลอง"
+            value={s.demo.nfcOutcome}
+            onChange={(v) => update((st) => void (st.demo.nfcOutcome = v))}
+            options={[{ value: 'ok', label: 'สำเร็จ' }, { value: 'notfound', label: 'ไม่พบ' }, { value: 'connfail', label: 'ต่อไม่ได้' }, { value: 'authfail', label: 'สิทธิ์ไม่ผ่าน' }]}
+          />
         </div>
 
-        {rows.length > 0 && <div className="section-title">เครื่องที่แตะในรอบนี้</div>}
-        <div className="stack tight">
-          {rows.map((r) => <ResultRow key={r.sn} r={r} onRetry={() => tapOne(r.sn)} busy={busy} />)}
-        </div>
+        {rows.length > 0 ? (
+          <div className="list">
+            {rows.map((r) => <ResultRow key={r.sn} r={r} onRetry={() => tapOne(r.sn)} busy={busy} />)}
+          </div>
+        ) : (
+          <div className="center small muted" style={{ padding: '18px 0' }}>
+            <Icon name="nfc" size={28} /><br />แตะ NFC บนกล่องทีละเครื่อง แอปตรวจความพร้อมและเริ่มทริปให้ทันที
+          </div>
+        )}
       </div>
-      <div className="footer-bar">
-        <Btn block icon="check" disabled={busy} onClick={finish}>
-          {started ? `เสร็จสิ้น (เริ่มแล้ว ${started} เครื่อง)` : 'เสร็จสิ้น'}
+      <div className="footer-bar row" style={{ gap: 8 }}>
+        <Btn kind="teal" className="grow" icon={busy ? undefined : 'nfc'} busy={busy} disabled={!formOk} onClick={() => tapOne(target)} style={{ minHeight: 52 }}>
+          {busy ? 'กำลังทำงาน…' : 'จำลองแตะ NFC'}
+        </Btn>
+        <Btn kind="secondary" disabled={busy} onClick={finish} style={{ minHeight: 52 }}>
+          เสร็จสิ้น
         </Btn>
       </div>
     </div>
   );
 }
 
+/** One line per tapped box; a cargo field appears under boxes that started. */
 function ResultRow({ r, onRetry, busy }) {
   const s = useApp();
   const dev = findDevice(s, r.sn);
@@ -223,37 +207,35 @@ function ResultRow({ r, onRetry, busy }) {
   const label = trip ? s.appTrips[trip.trip_id]?.name || '' : '';
   const chip = {
     working: <Chip tone="info" icon="loader-2">{r.step}</Chip>,
-    started: <Chip tone="ok" icon="circle-check">เริ่มทริปแล้ว</Chip>,
+    started: <Chip tone="ok" icon="circle-check">เริ่มแล้ว {trip ? fmtTime(trip.startUtc) : ''}</Chip>,
     skipped: <Chip tone="outline">ข้าม</Chip>,
     failed: <Chip tone="bad" icon="alert-triangle">ไม่สำเร็จ</Chip>,
     unknown: <Chip tone="warn" icon="alert-triangle">ไม่ทราบผล</Chip>,
   }[r.state];
   return (
-    <div className="card stack tight" style={{ padding: 12 }}>
+    <div className="stack tight" style={{ padding: '8px 12px', background: 'var(--surface)' }}>
       <div className="row between">
-        <div>
-          <div className="bold">{dev.name}</div>
-          <div className="tiny muted mono">{dev.sn}</div>
-        </div>
+        <span className="bold">{dev.name}</span>
         {chip}
       </div>
-      {trip && <div className="tiny muted">{tripLabel(trip)} · เริ่ม {fmtTime(trip.startUtc)}</div>}
-      {r.msg && <div className="small" style={{ color: r.state === 'skipped' ? 'var(--muted)' : 'var(--bad)' }}>{r.msg}</div>}
+      {r.msg && (
+        <div className="row small" style={{ gap: 6 }}>
+          <span className="grow" style={{ color: r.state === 'skipped' ? 'var(--muted)' : 'var(--bad)' }}>{r.msg}</span>
+          {(r.state === 'failed' || r.state === 'unknown') && (
+            <Btn kind="secondary" size="sm" icon="nfc" disabled={busy} onClick={onRetry} style={{ flex: 'none', minHeight: 32 }}>แตะอีกครั้ง</Btn>
+          )}
+        </div>
+      )}
       {trip && (
         <input
           className="input"
-          style={{ minHeight: 40, fontSize: 14 }}
+          style={{ minHeight: 34, fontSize: 13, padding: '4px 10px' }}
           aria-label={`กล่องที่ติด ${dev.name}`}
-          placeholder="ระบุกล่องที่ติด (ไม่บังคับ)"
+          placeholder="กล่องที่ติด (ไม่บังคับ)"
           maxLength={40}
           value={label}
           onChange={(e) => update((st) => void (st.appTrips[trip.trip_id] = { ...(st.appTrips[trip.trip_id] || { note: '' }), name: e.target.value }))}
         />
-      )}
-      {(r.state === 'failed' || r.state === 'unknown') && (
-        <Btn kind="secondary" size="sm" icon="nfc" disabled={busy} onClick={onRetry} style={{ alignSelf: 'flex-start' }}>
-          แตะเครื่องนี้อีกครั้ง
-        </Btn>
       )}
     </div>
   );

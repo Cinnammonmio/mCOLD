@@ -54,11 +54,10 @@ export function WardBar() {
   const u = currentUser(s);
   return (
     <>
-      <button className="card row" onClick={() => setOpen(true)} style={{ padding: '8px 12px', width: '100%', textAlign: 'left' }}>
-        <Avatar name={u.name} size={34} />
-        <span className="grow">
-          <span className="bold" style={{ display: 'block' }}>{wardOf(s, u.wardId).name}</span>
-          <span className="tiny muted">{u.name} · {u.role}</span>
+      <button className="row" onClick={() => setOpen(true)} style={{ padding: '2px 2px', width: '100%', textAlign: 'left', border: 0, background: 'none', minHeight: 40 }}>
+        <Avatar name={u.name} size={28} />
+        <span className="grow small" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <b>{wardOf(s, u.wardId).name}</b> <span className="muted">· {u.name}</span>
         </span>
         <span className="small" style={{ color: 'var(--teal)', fontWeight: 600 }}>เปลี่ยน</span>
       </button>

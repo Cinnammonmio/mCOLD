@@ -2,35 +2,12 @@
 import { useState } from 'react';
 import { nav, useApp, userName } from '../store.js';
 import { csvBytes, deviceView, findDevice, isLinked, runBatch, transferSteps, tripDelivery, tripSeries } from '../sim.js';
-import { fmtBytes, fmtDateTime, fmtDuration, fmtNum, fmtTime, tripLabel } from '../format.js';
+import { fmtBytes, fmtDateShort, fmtDateTime, fmtDuration, fmtNum, fmtTime, tripLabel } from '../format.js';
 import { requestConnect } from '../ConnectSheet.jsx';
 import { AppBar, Banner, Btn, Chip, Icon, Seg, Steps } from '../ui.jsx';
-import { DeviceContext, NeedConnection } from './Mcold.jsx';
+import { NeedConnection } from './Mcold.jsx';
 
 const NEEDS_BLE = ['queued', 'receiving', 'ble_interrupted', 'server_ok', 'mark_failed', undefined];
-
-function PathStrip() {
-  const node = (icon, label) => (
-    <div className="stack tight center" style={{ alignItems: 'center', gap: 2, minWidth: 0 }}>
-      <span className="dev-icon" style={{ width: 34, height: 34, borderRadius: 10 }}><Icon name={icon} size={18} /></span>
-      <span className="tiny muted">{label}</span>
-    </div>
-  );
-  const arrow = <Icon name="arrow-right" size={14} className="muted" style={{ marginBottom: 16 }} />;
-  return (
-    <div className="card row between" style={{ padding: '10px 8px' }} aria-label="เส้นทางข้อมูล: อุปกรณ์ ผ่าน Bluetooth ไปยังแอป แล้วผ่านอินเทอร์เน็ตไปยัง Server">
-      {node('package', 'อุปกรณ์')}
-      {arrow}
-      {node('bluetooth', 'Bluetooth')}
-      {arrow}
-      {node('device-mobile', 'แอป')}
-      {arrow}
-      {node('world', 'อินเทอร์เน็ต')}
-      {arrow}
-      {node('server', 'Server')}
-    </div>
-  );
-}
 
 export function SendTab() {
   const s = useApp();
@@ -71,12 +48,10 @@ export function SendTab() {
 
   return (
     <>
-      <DeviceContext />
       {!v.known ? (
         <NeedConnection dev={dev} text="แอปยังไม่เคยอ่านรายการทริปจากเครื่องนี้" reason="เชื่อมต่อเพื่ออ่านรายการทริป" />
       ) : (
         <>
-          <PathStrip />
           {!linked && (
             <Banner tone="neutral" icon="history" title={`รายการจากการเชื่อมต่อล่าสุด ${fmtTime(v.at)}`}>
               เลือกทริปได้เลย แอปจะขอให้แตะ NFC ก่อนรับข้อมูลจากอุปกรณ์
@@ -114,16 +89,13 @@ export function SendTab() {
               {filter === 'pending' ? 'ไม่มีทริปที่รอส่ง' : filter === 'sent' ? 'ยังไม่มีทริปที่ส่งแล้ว' : 'ยังไม่มีทริปในอุปกรณ์นี้'}
             </div>
           )}
-          <div className="stack tight">
+          <div className="list">
             {shown.map(({ t, d }) => (
               <TripRow key={t.trip_id} dev={dev} trip={t} d={d} checked={selected.includes(t.trip_id)} onToggle={() => toggle(t.trip_id)} />
             ))}
           </div>
           <div className="tiny muted" style={{ padding: '0 2px' }}>
-            การส่งไม่ลบทริปออกจากอุปกรณ์ และส่งซ้ำได้โดยข้อมูลบน Server ไม่ซ้ำ
-          </div>
-          <div className="tiny muted" style={{ padding: '0 2px' }}>
-            ขนาดเป็นค่าประมาณของไฟล์ CSV ที่ส่งด้วยอินเทอร์เน็ตมือถือ การรับข้อมูลจากอุปกรณ์ผ่าน Bluetooth ไม่ใช้อินเทอร์เน็ต ถ้าส่งไม่สำเร็จแล้วลองใหม่จะใช้อีกครั้ง
+            ตัวเลขขวามือ = ใช้อินเทอร์เน็ตมือถือโดยประมาณ (ไฟล์ CSV) · รับผ่าน Bluetooth ไม่ใช้เน็ต · ส่งแล้วไม่ลบทริปในอุปกรณ์
           </div>
           <div style={{ position: 'sticky', bottom: -24, padding: '10px 0 14px', background: 'linear-gradient(to top, var(--bg) 75%, transparent)' }}>
             <Btn kind="teal" block icon="cloud-upload" disabled={!selected.length || running} onClick={send}>
@@ -136,43 +108,34 @@ export function SendTab() {
   );
 }
 
+/** Compact trip row: title + status, then one line of when/how long/how big. */
 function TripRow({ dev, trip, d, checked, onToggle }) {
   const s = useApp();
   const active = d.key === 'active';
   const end = trip.stopUtc;
   const rows = end ? tripSeries(dev, trip, end).rows : null;
-  const name = s.appTrips[trip.trip_id]?.name;
+  const meta = s.appTrips[trip.trip_id];
   const disabled = !d.pending;
+  const who = [meta?.startedBy && `เริ่ม ${userName(s, meta.startedBy.by).split(' ')[0]}`, meta?.stoppedBy && `จบ ${userName(s, meta.stoppedBy.by).split(' ')[0]}`].filter(Boolean).join(' · ');
   return (
-    <label className={`card row ${checked ? 'selected' : ''}`} style={{ alignItems: 'flex-start', cursor: disabled ? 'default' : 'pointer', opacity: d.key === 'sent' ? 0.85 : 1 }}>
+    <label className="li" style={{ alignItems: 'flex-start', cursor: disabled ? 'default' : 'pointer', padding: '9px 12px', background: checked ? 'var(--mint)' : undefined }}>
       <input type="checkbox" checked={checked} disabled={disabled} onChange={onToggle} style={{ width: 20, height: 20, marginTop: 2, accentColor: 'var(--teal)', flex: 'none' }} aria-label={`เลือก ${tripLabel(trip)}`} />
-      <div className="grow stack tight" style={{ gap: 4 }}>
-        <div className="row between" style={{ alignItems: 'flex-start' }}>
-          <span className="bold">{name || tripLabel(trip)}</span>
+      <div className="grow" style={{ minWidth: 0 }}>
+        <div className="row between" style={{ gap: 6 }}>
+          <span className="bold" style={{ fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{meta?.name || tripLabel(trip)}</span>
+          <Chip tone={d.tone} dot={active}>{d.label}</Chip>
         </div>
-        {name && <span className="tiny muted">{tripLabel(trip)}</span>}
-        <span className="small muted">
-          {fmtDateTime(trip.startUtc)} – {end ? fmtDateTime(end) : 'ยังบันทึกอยู่'}
-        </span>
-        {(s.appTrips[trip.trip_id]?.startedBy || s.appTrips[trip.trip_id]?.stoppedBy) && (
-          <span className="tiny muted">
-            {s.appTrips[trip.trip_id]?.startedBy && <>เริ่มโดย {userName(s, s.appTrips[trip.trip_id].startedBy.by)}</>}
-            {s.appTrips[trip.trip_id]?.stoppedBy && <> · จบโดย {userName(s, s.appTrips[trip.trip_id].stoppedBy.by)}</>}
-          </span>
-        )}
-        <div className="row wrap small" style={{ gap: 10 }}>
-          <span className="row" style={{ gap: 4 }}><Icon name="clock" size={14} className="muted" />{end ? fmtDuration(end - trip.startUtc) : '—'}</span>
-          <span className="row" style={{ gap: 4 }}><Icon name="database" size={14} className="muted" />{rows != null ? `${fmtNum(rows)} แถว` : '—'}</span>
-          {end && <span className="row" style={{ gap: 4 }}><Icon name="world" size={14} className="muted" />{d.key === 'sent' ? fmtBytes(csvBytes(dev, trip)) : `ใช้เน็ต ≈ ${fmtBytes(csvBytes(dev, trip))}`}</span>}
+        <div className="tiny muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {fmtDateShort(trip.startUtc)} {fmtTime(trip.startUtc)}
+          {end ? ` · ${fmtDuration(end - trip.startUtc)} · ${fmtNum(rows)} แถว` : ' · ยังบันทึกอยู่ ส่งได้หลังจบทริป'}
+          {who && ` · ${who}`}
         </div>
-        <div><Chip tone={d.tone} dot={active}>{d.label}</Chip></div>
-        {active && (
-          <div className="tiny muted">
-            ทริปยังทำงานอยู่ ส่งข้อมูลเต็มทริปได้หลังจบทริป{' '}
-            <a href="#trip" onClick={(e) => { e.preventDefault(); nav.toTab('trip'); }} style={{ color: 'var(--teal)', fontWeight: 600 }}>ไปที่ทริป</a>
-          </div>
-        )}
       </div>
+      {end && (
+        <span className="small bold num" style={{ flex: 'none', paddingTop: 1, color: d.key === 'sent' ? 'var(--muted)' : undefined }} title="ใช้อินเทอร์เน็ตโดยประมาณ">
+          {fmtBytes(csvBytes(dev, trip))}
+        </span>
+      )}
     </label>
   );
 }
@@ -271,57 +234,60 @@ function TransferCard({ dev, trip, tr, running, onRetry }) {
     return { key: k, title: STEP_TEXT[k], sub, extra, state: steps[k] };
   });
 
+  // What to do when this trip is stuck, as one line + one button.
   let action = null;
+  const act = (tone, text, label, icon) => ({ tone, text, label, icon });
   if (!running && !trip.sent) {
-    if (stage === 'ble_interrupted')
-      action = (
-        <Banner tone="warn" title="Bluetooth หลุดระหว่างรับข้อมูล" actions={<Btn size="sm" kind="teal" icon="nfc" onClick={onRetry}>เชื่อมต่อเพื่อรับต่อ</Btn>}>
-          แอปเก็บข้อมูลที่รับแล้ว {recvPct}% จะรับต่อจากจุดเดิมโดยไม่ซ้ำ
-        </Banner>
-      );
-    else if (stage === 'waiting_internet')
-      action = (
-        <Banner tone="warn" icon="world-off" title="รับเข้าแอปครบแล้ว · รออินเทอร์เน็ต" actions={<Btn size="sm" kind="secondary" icon="refresh" onClick={onRetry}>ลองส่งตอนนี้</Btn>}>
-          ข้อมูลอยู่ในคิวของแอป จะส่งอัตโนมัติเมื่อมือถือมีอินเทอร์เน็ต
-        </Banner>
-      );
-    else if (stage === 'upload_failed')
-      action = (
-        <Banner tone="bad" title="ส่งขึ้น Server ไม่สำเร็จ" actions={<Btn size="sm" kind="teal" icon="refresh" onClick={onRetry}>ลองส่งใหม่</Btn>}>
-          ข้อมูลยังอยู่ในแอปครบ ไม่ต้องรับจากอุปกรณ์ใหม่
-        </Banner>
-      );
-    else if (stage === 'mark_failed')
-      action = (
-        <Banner tone="warn" title="Server รับแล้ว รอยืนยันกับอุปกรณ์" actions={<Btn size="sm" kind="teal" icon="nfc" onClick={onRetry}>ยืนยันกับอุปกรณ์อีกครั้ง</Btn>}>
-          ข้อมูลถึง Server แล้ว แต่ยังแจ้งอุปกรณ์ไม่สำเร็จ อุปกรณ์จึงยังแสดงว่ารอส่ง
-        </Banner>
-      );
-    else if (!tr || stage === 'queued')
-      action = <Banner tone="neutral" actions={<Btn size="sm" kind="teal" onClick={onRetry}>เริ่มส่ง</Btn>}>ยังไม่ได้เริ่ม</Banner>;
+    if (stage === 'ble_interrupted') action = act('warn', `Bluetooth หลุด · รับแล้ว ${recvPct}% จะรับต่อจากเดิม`, 'รับต่อ', 'nfc');
+    else if (stage === 'waiting_internet') action = act('warn', 'รับเข้าแอปครบแล้ว · รออินเทอร์เน็ต ส่งเองเมื่อมีเน็ต', 'ส่งตอนนี้', 'refresh');
+    else if (stage === 'upload_failed') action = act('bad', 'ส่ง Server ไม่สำเร็จ · ข้อมูลยังอยู่ในแอป', 'ลองใหม่', 'refresh');
+    else if (stage === 'mark_failed') action = act('warn', 'Server รับแล้ว รอยืนยันกับอุปกรณ์', 'ยืนยันอีกครั้ง', 'nfc');
+    else if (!tr || stage === 'queued') action = act('neutral', 'ยังไม่ได้เริ่ม', 'เริ่มส่ง', 'cloud-upload');
   }
+  const cur = items.find((it) => it.state !== 'done');
+  const color = { done: 'var(--ok)', active: 'var(--teal)', wait: 'var(--warn)', error: 'var(--bad)', todo: 'var(--line)' };
+  const short = { ble: 'รับ BLE', csv: 'ทำ CSV', upload: 'ส่งขึ้น', server: 'Server ยืนยัน', device: 'แจ้งเครื่อง' };
+  const size = csvBytes(dev, trip);
 
   return (
-    <div className="card stack">
-      <div className="row between" style={{ alignItems: 'flex-start' }}>
-        <div className="grow">
-          <div className="bold">{name || tripLabel(trip)}</div>
-          <div className="tiny muted">{dev.name} · {fmtDuration(trip.stopUtc - trip.startUtc)}</div>
+    <div className="card stack" style={{ gap: 8, padding: 12 }}>
+      <div className="row between">
+        <span className="bold" style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name || tripLabel(trip)}</span>
+        {trip.sent ? <Chip tone="ok" icon="circle-check">ส่งแล้ว</Chip> : <span className="tiny muted">{dev.name}</span>}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }} aria-label="ขั้นตอนการส่ง">
+        {items.map((it) => (
+          <div key={it.key} title={it.title}>
+            <div style={{ height: 6, borderRadius: 3, background: color[it.state], opacity: it.state === 'active' ? 0.7 : 1 }} />
+            <div className="tiny" style={{ fontSize: 10.5, color: it.state === 'todo' ? 'var(--faint)' : 'var(--muted)', marginTop: 2, textAlign: 'center' }}>{short[it.key]}</div>
+          </div>
+        ))}
+      </div>
+      {cur && !action && (
+        <div className="small">
+          {cur.state === 'active' && <Icon name="loader-2" size={14} className="spin" style={{ marginRight: 4, color: 'var(--teal)' }} />}
+          {cur.title}{cur.sub ? <span className="muted"> · {cur.sub}</span> : ''}
+          {cur.extra}
         </div>
-        {trip.sent ? <Chip tone="ok" icon="circle-check">ส่งแล้ว</Chip> : null}
-      </div>
-      <div className="row wrap" style={{ gap: 6 }}>
-        <Chip tone={inApp ? 'info' : ''} icon={inApp ? 'device-mobile' : undefined}>{inApp ? 'รับเข้าแอปครบแล้ว' : 'ยังรับเข้าแอปไม่ครบ'}</Chip>
-        <Chip tone={atServer ? 'ok' : ''} icon={atServer ? 'cloud-check' : undefined}>{atServer ? 'ส่งถึง Server สำเร็จแล้ว' : 'ยังไม่ถึง Server'}</Chip>
-      </div>
-      <Steps items={items} />
-      {action}
+      )}
+      {!trip.sent && (
+        <div className="row wrap" style={{ gap: 6 }}>
+          <Chip tone={inApp ? 'info' : ''} icon={inApp ? 'device-mobile' : undefined}>{inApp ? 'รับเข้าแอปครบแล้ว' : 'ยังรับเข้าแอปไม่ครบ'}</Chip>
+          <Chip tone={atServer ? 'ok' : ''} icon={atServer ? 'cloud-check' : undefined}>{atServer ? 'ส่งถึง Server แล้ว' : 'ยังไม่ถึง Server'}</Chip>
+        </div>
+      )}
+      {action && (
+        <div className={`banner ${action.tone}`} style={{ padding: '7px 10px', alignItems: 'center' }}>
+          <span className="grow small">{action.text}</span>
+          <Btn size="sm" kind="teal" icon={action.icon} onClick={onRetry}>{action.label}</Btn>
+        </div>
+      )}
       <div className="tiny muted">
-        ไฟล์ CSV ประมาณ {fmtBytes(csvBytes(dev, trip))}
-        {tr?.uploads ? ` · ใช้เน็ตไปแล้วประมาณ ${fmtBytes(csvBytes(dev, trip) * tr.uploads)}` : ''}
+        ไฟล์ CSV ≈ {fmtBytes(size)}
+        {tr?.uploads ? ` · ใช้เน็ตแล้ว ≈ ${fmtBytes(size * tr.uploads)}` : ''}
+        {tr?.uploads > 1 ? ` (ส่ง ${tr.uploads} ครั้ง ข้อมูลไม่ซ้ำ)` : ''}
+        {tr?.sentBy && trip.sent ? ` · ส่งโดย ${userName(s, tr.sentBy).split(' ')[0]} ${fmtTime(tr.doneAt)}` : ''}
       </div>
-      {tr?.sentBy && trip.sent && <div className="tiny muted">ส่งโดย {userName(s, tr.sentBy)} · {fmtTime(tr.doneAt)}</div>}
-      {tr?.uploads > 1 && <div className="tiny muted">ส่งขึ้น Server แล้ว {tr.uploads} ครั้ง · การส่งซ้ำไม่ทำให้ข้อมูลซ้ำ</div>}
     </div>
   );
 }

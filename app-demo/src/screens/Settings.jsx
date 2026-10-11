@@ -6,7 +6,7 @@ import { applyConfig, BleLost, CONFIG_RULES, deviceView, findDevice, isLinked, w
 import { fmtPeriod, fmtTime, fmtTz } from '../format.js';
 import { requestConnect } from '../ConnectSheet.jsx';
 import { AppBar, Banner, Btn, Chip, Field, Icon, Seg, Switch } from '../ui.jsx';
-import { DeviceContext, NeedConnection } from './Mcold.jsx';
+import { NeedConnection } from './Mcold.jsx';
 
 // Every value the app may set, with the default, range and meaning from docs/app/device-settings.md.
 // UI units are converted here (seconds → minutes, 0.01 °C → °C …); the box always gets its own units.
@@ -87,7 +87,8 @@ export function SettingsTab() {
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null); // { applied, errors } | { lost: true }
-  const [showAdv, setShowAdv] = useState(false);
+  const [openGroup, setOpenGroup] = useState(null); // one group open at a time keeps the page on one screen
+  const toggle = (id) => setOpenGroup((g) => (g === id ? null : id));
 
   const keys = useMemo(() => [...GROUPS.flatMap((g) => g.keys), ...ADV_KEYS], []);
   const startEdit = () => {
@@ -133,7 +134,6 @@ export function SettingsTab() {
 
   return (
     <>
-      <DeviceContext lockedReason={editing ? 'บันทึกหรือยกเลิกการแก้ไขก่อนเปลี่ยนเครื่อง' : null} />
       {!v.known && <NeedConnection dev={dev} text="ยังไม่เคยอ่านค่าจากเครื่องนี้ เชื่อมต่อเพื่อดูค่าปัจจุบัน" />}
       {v.known && (
         <>
@@ -142,12 +142,14 @@ export function SettingsTab() {
               ต้องเชื่อมต่อก่อนจึงจะแก้ไขค่าได้
             </Banner>
           )}
-          {linked && <div className="freshness live">ค่าปัจจุบันที่อุปกรณ์ส่งมาเมื่อเชื่อมต่อ ค่าเริ่มต้นและช่วงตามเอกสารค่าตั้งของเครื่อง</div>}
-          {dev.lastConfig && <div className="freshness">แก้ไขล่าสุดจากแอปโดย {userName(s, dev.lastConfig.by)} · {fmtTime(dev.lastConfig.t)}</div>}
+          <div className="freshness">
+            {linked ? 'ค่าปัจจุบันจากอุปกรณ์' : ''}
+            {dev.lastConfig ? `${linked ? ' · ' : ''}แก้ล่าสุดโดย ${userName(s, dev.lastConfig.by)} ${fmtTime(dev.lastConfig.t)}` : ''}
+          </div>
           {tripOn && (
-            <Banner tone="warn" icon="lock" title="มีทริปกำลังทำงาน">
-              ค่าที่ใช้กับข้อมูลทริปถูกล็อก แก้ไขได้หลังจบทริป ค่าอื่นแก้ไขได้ตามปกติ
-            </Banner>
+            <div className="lockline" style={{ fontSize: 13 }}>
+              <Icon name="lock" size={15} /> มีทริปทำงาน ค่าที่มีรูปกุญแจแก้ไขได้หลังจบทริป
+            </div>
           )}
           {result?.lost && (
             <Banner tone="bad" title="ไม่ได้รับผลจากอุปกรณ์" actions={<Btn size="sm" kind="teal" icon="nfc" onClick={() => requestConnect(dev.sn, 'เชื่อมต่อใหม่แล้วบันทึกอีกครั้ง')}>เชื่อมต่อใหม่</Btn>}>
@@ -160,55 +162,62 @@ export function SettingsTab() {
             </Banner>
           )}
 
-          {GROUPS.map((g) => (
-            <div key={g.id} className="card stack">
-              <h3 className="row"><Icon name={g.icon} size={18} className="muted" /> {g.title}</h3>
-              {g.keys.map((k) => (
-                <SettingRow key={k} k={k} dev={dev} editing={editing} locked={tripOn && TRIP_LOCKED.includes(k)} draft={draft} setDraft={setDraft} error={errors[k]} result={rowResult(k)} />
+          <div className="list">
+            {GROUPS.map((g) => {
+              const lockedHere = tripOn && g.keys.some((k) => TRIP_LOCKED.includes(k));
+              const failed = result && !result.lost && g.keys.some((k) => result.errors[k]);
+              return (
+                <Accordion
+                  key={g.id}
+                  id={g.id}
+                  open={openGroup === g.id || failed}
+                  onToggle={toggle}
+                  icon={g.icon}
+                  title={g.title}
+                  summary={g.keys.map((k) => displayValue(k, dev.config[k])).join(' · ')}
+                  badge={failed ? <Icon name="alert-circle" size={16} style={{ color: 'var(--bad)' }} /> : lockedHere ? <Icon name="lock" size={15} style={{ color: 'var(--warn)' }} /> : null}
+                >
+                  {g.keys.map((k) => (
+                    <SettingRow key={k} k={k} dev={dev} editing={editing} locked={tripOn && TRIP_LOCKED.includes(k)} draft={draft} setDraft={setDraft} error={errors[k]} result={rowResult(k)} />
+                  ))}
+                </Accordion>
+              );
+            })}
+            <Accordion
+              id="net"
+              open={openGroup === 'net'}
+              onToggle={toggle}
+              icon="wifi"
+              title="เครือข่ายขั้นสูง"
+              summary={`Wi-Fi ${dev.wifi.filter((w) => w.ssid).length}/5 ช่อง · ${dev.wifiNow?.connected ? `ต่ออยู่ ${dev.wifiNow.ssid}` : 'ไม่ได้ต่อ'} · ส่งทุก ${displayValue('upload_period_s', dev.config.upload_period_s)}`}
+            >
+              {ADV_KEYS.map((k) => (
+                <SettingRow key={k} k={k} dev={dev} editing={editing} locked={false} draft={draft} setDraft={setDraft} error={errors[k]} result={rowResult(k)} />
               ))}
-            </div>
-          ))}
-
-          <div className="card stack">
-            <button className="row between" style={{ border: 0, background: 'none', padding: 0, width: '100%' }} onClick={() => setShowAdv(!showAdv)} aria-expanded={showAdv}>
-              <h3 className="row"><Icon name="wifi" size={18} className="muted" /> เครือข่ายขั้นสูง</h3>
-              <Icon name="chevron-down" style={{ transform: showAdv ? 'rotate(180deg)' : 'none' }} />
-            </button>
-            {!showAdv && <div className="small muted">Wi-Fi ของอุปกรณ์ รอบส่งผ่าน Wi-Fi และ USB</div>}
-            {showAdv && (
-              <>
-                {ADV_KEYS.map((k) => (
-                  <SettingRow key={k} k={k} dev={dev} editing={editing} locked={false} draft={draft} setDraft={setDraft} error={errors[k]} result={rowResult(k)} />
-                ))}
-                <Banner tone="info">
-                  การส่งข้อมูลทริปผ่านมือถือทำที่เมนู <b>ส่งข้อมูล</b> และไม่ใช้รอบส่งของ Wi-Fi
-                </Banner>
-                <WifiNow dev={dev} />
-                <WifiList dev={dev} linked={linked} />
-                <dl className="kv">
-                  <dt>ที่อยู่สำหรับอัปเดต Firmware</dt>
-                  <dd>{dev.otaBase || '—'}</dd>
-                </dl>
-                <div className="tiny muted">Server ปลายทางของอุปกรณ์ (MQTT) และค่าโรงงานตั้งได้จากสาย USB เท่านั้น ไม่แก้จากแอป</div>
-              </>
-            )}
-          </div>
-
-          <div className="card stack tight">
-            <h3 className="row"><Icon name="cpu" size={18} className="muted" /> ข้อมูลอุปกรณ์</h3>
-            <dl className="kv">
-              <dt>ชื่อในแอป</dt><dd>{dev.name}</dd>
-              <dt>หมายเลขเครื่อง</dt><dd className="mono">{dev.sn}</dd>
-              <dt>Firmware</dt><dd className="mono">{dev.fw}</dd>
-              <dt>ฮาร์ดแวร์</dt><dd className="mono">{dev.hw}</dd>
-              <dt>เวอร์ชันโปรโตคอล</dt><dd className="mono">{dev.proto}</dd>
-              <dt>Bluetooth MAC</dt><dd className="mono">{dev.bleMac}</dd>
-              <dt>Wi-Fi MAC</dt><dd className="mono">{dev.wifiMac}</dd>
-              <dt>ค่าตั้งจาก Server ฉบับที่</dt><dd className="num">{dev.serverRev ?? '—'}</dd>
-              <dt>เคาะเป็นคำสั่ง (ทดสอบ)</dt><dd>{dev.config.tap_test ? 'เปิด' : 'ปิด'}</dd>
-              <dt>แสดงสิ่งที่รับบนจอ (ทดสอบ)</dt><dd>{dev.config.rx_show ? 'เปิด' : 'ปิด'}</dd>
-            </dl>
-            <div className="tiny muted">อ่านอย่างเดียว · ค่าทดสอบแก้ได้จากสาย USB เท่านั้น และไม่ใช้ในงานผลิต</div>
+              <div className="tiny muted">รอบส่งนี้คือ Wi-Fi ของอุปกรณ์ ไม่เกี่ยวกับการส่งข้อมูลผ่านมือถือในเมนูส่งข้อมูล</div>
+              <WifiNow dev={dev} />
+              <WifiList dev={dev} linked={linked} />
+              <dl className="kv">
+                <dt>ที่อยู่อัปเดต Firmware</dt>
+                <dd>{dev.otaBase || '—'}</dd>
+              </dl>
+              <div className="tiny muted">Server ปลายทาง (MQTT) และค่าโรงงานตั้งได้จากสาย USB เท่านั้น</div>
+            </Accordion>
+            <Accordion id="info" open={openGroup === 'info'} onToggle={toggle} icon="cpu" title="ข้อมูลอุปกรณ์" summary={`Firmware ${dev.fw} · ${dev.hw}`}>
+              <dl className="kv">
+                <dt>ชื่อในแอป</dt><dd>{dev.name}</dd>
+                <dt>หมายเลขเครื่อง</dt><dd className="mono">{dev.sn}</dd>
+                <dt>Firmware</dt><dd className="mono">{dev.fw}</dd>
+                <dt>ฮาร์ดแวร์</dt><dd className="mono">{dev.hw}</dd>
+                <dt>เวอร์ชันโปรโตคอล</dt><dd className="mono">{dev.proto}</dd>
+                <dt>Bluetooth MAC</dt><dd className="mono">{dev.bleMac}</dd>
+                <dt>Wi-Fi MAC</dt><dd className="mono">{dev.wifiMac}</dd>
+                <dt>ค่าตั้งจาก Server ฉบับที่</dt><dd className="num">{dev.serverRev ?? '—'}</dd>
+                <dt>เคาะเป็นคำสั่ง (ทดสอบ)</dt><dd>{dev.config.tap_test ? 'เปิด' : 'ปิด'}</dd>
+                <dt>แสดงสิ่งที่รับบนจอ (ทดสอบ)</dt><dd>{dev.config.rx_show ? 'เปิด' : 'ปิด'}</dd>
+              </dl>
+              <div className="tiny muted">อ่านอย่างเดียว · ค่าทดสอบแก้ได้จากสาย USB เท่านั้น</div>
+            </Accordion>
           </div>
           <div style={{ height: editing ? 70 : 0 }} />
         </>
@@ -452,6 +461,24 @@ function WifiNow({ dev }) {
       ) : (
         <div className="small muted">ไม่ได้เชื่อมต่อ Wi-Fi</div>
       )}
+    </div>
+  );
+}
+
+/** Collapsible settings group: closed it shows the current values in one line. */
+function Accordion({ id, open, onToggle, icon, title, summary, badge, children }) {
+  return (
+    <div style={{ background: 'var(--surface)' }}>
+      <button className="li" onClick={() => onToggle(id)} aria-expanded={open} style={{ minHeight: 54, padding: '8px 12px' }}>
+        <Icon name={icon} size={18} className="muted" />
+        <span className="grow">
+          <span className="t" style={{ fontSize: 14 }}>{title}</span>
+          {!open && <span className="s" style={{ fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{summary}</span>}
+        </span>
+        {badge}
+        <Icon name="chevron-down" size={18} style={{ transform: open ? 'rotate(180deg)' : 'none', flex: 'none' }} className="muted" />
+      </button>
+      {open && <div className="stack" style={{ padding: '4px 14px 14px' }}>{children}</div>}
     </div>
   );
 }

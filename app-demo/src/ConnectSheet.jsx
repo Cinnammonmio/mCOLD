@@ -1,6 +1,6 @@
 // Simulated "tap NFC → find box → BLE → authorize → ready" (ble-protocol.md §1–2).
 // No pairing code: the tap itself proves the phone is next to the box.
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { currentUser, getState, update, updateUi, useApp, wardOf } from './store.js';
 import { deviceView, finishConnect, findDevice, pendingTrips } from './sim.js';
 import { fmtPct, fmtTemp, tripLabel } from './format.js';
@@ -242,15 +242,13 @@ export function DeviceReadout({ sn }) {
     ['Wi-Fi ของเครื่อง', w.connected ? `${w.ssid} · ${w.rssi} dBm` : 'ไม่ได้เชื่อมต่อ'],
   ];
   return (
-    <div id={`readout-${sn}`}>
-      <dl className="kv">
-        {rows.map(([k, val]) => (
-          <Fragment key={k}>
-            <dt>{k}</dt>
-            <dd>{val}</dd>
-          </Fragment>
-        ))}
-      </dl>
+    <div id={`readout-${sn}`} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 12px' }}>
+      {rows.map(([k, val]) => (
+        <div key={k} style={{ minWidth: 0 }}>
+          <div className="tiny muted" style={{ fontSize: 11 }}>{k}</div>
+          <div className="small bold" style={{ overflowWrap: 'anywhere', lineHeight: 1.3 }}>{val}</div>
+        </div>
+      ))}
     </div>
   );
 }

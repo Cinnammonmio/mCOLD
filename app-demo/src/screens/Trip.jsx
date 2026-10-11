@@ -6,7 +6,7 @@ import { requestConnect } from '../ConnectSheet.jsx';
 import { Banner, BatteryIcon, Btn, Chip, Field, Icon } from '../ui.jsx';
 import { ERR_TEXT, preflight } from './TripFlows.jsx';
 import { toast } from '../store.js';
-import { DeviceContext, Freshness, NeedConnection } from './Mcold.jsx';
+import { Freshness, NeedConnection } from './Mcold.jsx';
 
 export const EVENT_TEXT = {
   TRIP_START: 'เริ่มทริป',
@@ -27,7 +27,6 @@ export function TripTab() {
   const linked = isLinked(s, dev.sn);
   return (
     <>
-      <DeviceContext />
       {!v.known ? (
         <NeedConnection dev={dev} text="แอปยังไม่เคยรับข้อมูลจากเครื่องนี้ เชื่อมต่อเพื่อดูสถานะและเริ่มทริป" />
       ) : v.trip ? (
@@ -47,23 +46,20 @@ function IdleTrip({ dev, v, linked }) {
     <>
       <QuickStart dev={dev} v={v} linked={linked} />
       {last && (
-        <>
-          <div className="section-title"><Icon name="history" size={18} /> ทริปล่าสุด</div>
-          <div className="card stack tight">
-            <div className="row between">
-              <span className="bold">{s.appTrips[last.trip_id]?.name || tripLabel(last)}</span>
-              {last.sent ? <Chip tone="ok">ส่งแล้ว</Chip> : <Chip tone="warn">รอส่ง</Chip>}
-            </div>
-            <div className="small muted">
-              {fmtDateTime(last.startUtc)} – {fmtDateTime(last.stopUtc)} · {fmtDuration(last.stopUtc - last.startUtc)}
-            </div>
-          </div>
-        </>
+        <div className="row small" style={{ gap: 6, padding: '0 2px' }}>
+          <Icon name="history" size={16} className="muted" />
+          <span className="grow muted" style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            ล่าสุด: {s.appTrips[last.trip_id]?.name || tripLabel(last)} · {fmtDuration(last.stopUtc - last.startUtc)}
+          </span>
+          {last.sent ? <Chip tone="ok">ส่งแล้ว</Chip> : <Chip tone="warn">รอส่ง</Chip>}
+        </div>
       )}
       {pending > 0 && (
-        <Banner tone="warn" title={`มีทริปที่จบแล้วรอส่ง ${pending} ทริป`} actions={<Btn size="sm" kind="secondary" onClick={() => nav.toTab('send')}>ไปที่ส่งข้อมูล</Btn>}>
-          ข้อมูลยังเก็บอยู่ในอุปกรณ์ เริ่มทริปใหม่ได้โดยข้อมูลเดิมไม่หาย
-        </Banner>
+        <button className="row small" onClick={() => nav.toTab('send')} style={{ border: 0, background: 'var(--warn-bg)', color: '#6f4800', borderRadius: 10, padding: '8px 10px', fontWeight: 600, width: '100%', textAlign: 'left' }}>
+          <Icon name="cloud-upload" size={16} />
+          <span className="grow">มีทริปรอส่ง {pending} ทริป (ข้อมูลยังอยู่ในอุปกรณ์)</span>
+          ส่งข้อมูล <Icon name="chevron-right" size={16} />
+        </button>
       )}
     </>
   );
@@ -231,33 +227,26 @@ function AlarmBanner({ dev, v, linked }) {
     }
   };
   return (
-    <div className="banner bad" role="alert" style={{ border: a.acked ? '1px solid #f0c8c8' : 0 }}>
+    <div className="banner bad" role="alert" style={{ border: a.acked ? '1px solid #f0c8c8' : 0, padding: '9px 10px', alignItems: 'center' }}>
       <Icon name="bell-ringing" />
-      <div className="grow">
+      <div className="grow small" style={{ minWidth: 0 }}>
         <b>{titles}</b>
-        <div className="small">
+        <div>
           ตั้งแต่ {fmtTime(a.last?.t)}
-          {a.last?.temp != null ? ` · วัดได้ ${fmtTemp(a.last.temp)}` : ''}
+          {a.last?.temp != null ? ` · ${fmtTemp(a.last.temp)}` : ''}
+          {a.acked && ` · รับทราบแล้ว${lastAck ? ` (${userName(s, lastAck.by)})` : ''} ปัญหายังไม่หาย`}
         </div>
-        {a.acked ? (
-          <div className="small" style={{ marginTop: 6 }}>
-            <Icon name="bell-check" size={14} /> รับทราบแล้ว{lastAck ? ` โดย ${userName(s, lastAck.by)} ${fmtTime(lastAck.t)}` : ''} แต่ปัญหายังไม่หาย ตรวจสอบกล่องและสินค้า
-          </div>
-        ) : (
-          <div className="actions">
-            {linked ? (
-              <Btn size="sm" kind="danger" busy={busy} icon="bell-check" onClick={ack}>
-                รับทราบการแจ้งเตือน
-              </Btn>
-            ) : (
-              <Btn size="sm" kind="secondary" icon="nfc" onClick={() => requestConnect(dev.sn, 'เชื่อมต่อเพื่อรับทราบการแจ้งเตือน')}>
-                เชื่อมต่อเพื่อรับทราบ
-              </Btn>
-            )}
-          </div>
-        )}
-        <div className="tiny" style={{ marginTop: 6, opacity: 0.85 }}>การรับทราบไม่ลบประวัติ และไม่ทำให้การแจ้งเตือนหายจนกว่าอุณหภูมิจะกลับเข้าช่วง</div>
       </div>
+      {!a.acked &&
+        (linked ? (
+          <Btn size="sm" kind="danger" busy={busy} icon="bell-check" onClick={ack} title="การรับทราบไม่ลบประวัติ และการแจ้งเตือนยังอยู่จนอุณหภูมิกลับเข้าช่วง">
+            รับทราบ
+          </Btn>
+        ) : (
+          <Btn size="sm" kind="secondary" icon="nfc" onClick={() => requestConnect(dev.sn, 'เชื่อมต่อเพื่อรับทราบการแจ้งเตือน')}>
+            เชื่อมต่อ
+          </Btn>
+        ))}
     </div>
   );
 }
@@ -269,108 +258,71 @@ function ActiveTrip({ dev, v, linked }) {
   const meta = s.appTrips[trip.trip_id];
   const ok = inRange(v.temp, trip);
   const g = v.gnss;
+  const [showEvents, setShowEvents] = useState(false);
+  const lastEv = trip.events[trip.events.length - 1];
+  const stat = (label, value, bad) => (
+    <div className="metric" style={{ padding: '6px 8px' }}>
+      <div className="label" style={{ fontSize: 11 }}>{label}</div>
+      <div className="bold num" style={{ fontSize: 14, color: bad ? 'var(--bad)' : undefined, whiteSpace: 'nowrap' }}>{value}</div>
+    </div>
+  );
   return (
     <>
       {!linked && (
-        <Banner
-          tone="neutral"
-          icon="history"
-          title={`แสดงข้อมูลล่าสุดเมื่อ ${fmtTime(v.at)} (${fmtAgo(v.at, now)})`}
-          actions={
-            <Btn size="sm" kind="teal" icon="nfc" onClick={() => requestConnect(dev.sn)}>
-              เชื่อมต่อเพื่อดูค่าปัจจุบัน
-            </Btn>
-          }
-        >
-          อุปกรณ์ยังบันทึกต่อแม้ไม่ได้เชื่อมต่อกับแอป
-        </Banner>
+        <div className="row small" style={{ background: 'var(--soft)', borderRadius: 10, padding: '6px 10px' }}>
+          <Icon name="history" size={16} className="muted" />
+          <span className="grow">ข้อมูลล่าสุดเมื่อ {fmtTime(v.at)} ({fmtAgo(v.at, now)})</span>
+          <Btn size="sm" kind="teal" icon="nfc" onClick={() => requestConnect(dev.sn)}>เชื่อมต่อ</Btn>
+        </div>
       )}
       <AlarmBanner dev={dev} v={v} linked={linked} />
 
-      <div className="card raised stack">
+      <div className="card raised stack" style={{ gap: 8, padding: 12 }}>
         <div className="row between" style={{ alignItems: 'flex-start' }}>
-          <div className="grow">
-            <div className="tiny muted">ทริปที่กำลังทำงาน</div>
-            <div className="bold" style={{ fontSize: 17 }}>{meta?.name || tripLabel(trip)}</div>
-            {meta?.name && <div className="tiny muted">{tripLabel(trip)}</div>}
-          </div>
-          <Chip tone="info" dot>กำลังบันทึก</Chip>
-        </div>
-        <div className="row between small">
-          <span className="muted">
-            เริ่ม {fmtDateTime(trip.startUtc)}
-            {meta?.startedBy && <> · โดย {userName(s, meta.startedBy.by)}</>}
-          </span>
-          <span className="bold num">ผ่านไป {fmtDuration(v.at - trip.startUtc)}</span>
-        </div>
-        <div className="divider" />
-        <div className="row between" style={{ alignItems: 'flex-end' }}>
-          <div>
-            <div className="tiny muted">{linked ? 'อุณหภูมิตอนนี้' : 'อุณหภูมิล่าสุดที่ได้รับ'}</div>
-            <div className={`tempbig ${linked ? '' : 'stale'}`} style={{ color: ok === false ? 'var(--bad)' : undefined, fontSize: 38 }}>
-              {v.temp == null ? 'ไม่พบหัววัด' : fmtTemp(v.temp, 2)}
+          <div className="grow" style={{ minWidth: 0 }}>
+            <div className="bold" style={{ fontSize: 16 }}>{meta?.name || tripLabel(trip)}</div>
+            <div className="tiny muted">
+              {meta?.name ? `${tripLabel(trip)} · ` : ''}เริ่ม {fmtDateTime(trip.startUtc)}{meta?.startedBy ? ` · ${userName(s, meta.startedBy.by)}` : ''}
             </div>
-            <div className="tiny muted">วัดเมื่อ {fmtTime(v.at)}</div>
+          </div>
+          <Chip tone="info" dot>{fmtDuration(v.at - trip.startUtc)}</Chip>
+        </div>
+        <div className="row between" style={{ alignItems: 'center' }}>
+          <div>
+            <span className={`tempbig ${linked ? '' : 'stale'}`} style={{ color: ok === false ? 'var(--bad)' : undefined, fontSize: 34 }}>
+              {v.temp == null ? 'ไม่พบหัววัด' : fmtTemp(v.temp, 2)}
+            </span>
+            <span className="tiny muted"> วัดเมื่อ {fmtTime(v.at)}</span>
           </div>
           {ok === true && <Chip tone="ok" icon="check">อยู่ในช่วง</Chip>}
           {ok === false && <Chip tone="bad" icon="alert-triangle">นอกช่วง</Chip>}
           {ok === null && <Chip tone="warn">ไม่มีค่า</Chip>}
         </div>
-        <div className="grid2">
-          <div className="metric">
-            <div className="label">ช่วงที่อนุญาต</div>
-            <div className="value">{fmtTemp(trip.low)} – {fmtTemp(trip.high)}</div>
-          </div>
-          <div className="metric">
-            <div className="label">ต่ำสุด / สูงสุดที่บันทึก</div>
-            <div className="value">
-              <span style={{ color: trip.min != null && trip.min < trip.low ? 'var(--bad)' : undefined }}>{fmtTemp(trip.min)}</span>
-              {' / '}
-              <span style={{ color: trip.max != null && trip.max > trip.high ? 'var(--bad)' : undefined }}>{fmtTemp(trip.max)}</span>
-            </div>
-          </div>
-          <div className="metric">
-            <div className="label"><Icon name="database" size={14} /> ข้อมูลในอุปกรณ์</div>
-            <div className="value">{fmtNum(trip.rows)} แถว</div>
-            <div className="hint">บันทึกทุก {fmtPeriod(trip.period)}</div>
-          </div>
-          <div className="metric">
-            <div className="label"><BatteryIcon pct={v.battery} /> แบตเตอรี่</div>
-            <div className="value" style={{ color: v.battery != null && v.battery < 15 ? 'var(--bad)' : undefined }}>{fmtPct(v.battery)}</div>
-          </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 0.7fr', gap: 6 }}>
+          {stat('ช่วงที่อนุญาต', `${fmtTemp(trip.low)}–${fmtTemp(trip.high)}`)}
+          {stat('ต่ำ / สูงที่บันทึก', `${fmtTemp(trip.min)} / ${fmtTemp(trip.max)}`, (trip.min != null && trip.min < trip.low) || (trip.max != null && trip.max > trip.high))}
+          {stat('แบต', fmtPct(v.battery), v.battery != null && v.battery < 15)}
         </div>
-        <div className="row small" style={{ alignItems: 'flex-start' }}>
-          <Icon name={g.state === 'none' ? 'map-pin-off' : 'map-pin'} size={18} className="muted" />
-          <div>
-            {g.state === 'none' && <span className="muted">ยังไม่พบตำแหน่ง</span>}
-            {g.state !== 'none' && (
-              <>
-                <span className="bold">{g.state === 'fix' ? 'ตำแหน่งล่าสุด' : 'ตำแหน่งเก่า'}</span>{' '}
-                <span className="num">{g.lat.toFixed(4)}, {g.lon.toFixed(4)}</span>
-                <div className="tiny muted">ได้เมื่อ {fmtTime(g.fixAt)} ({fmtAgo(g.fixAt, v.at)})</div>
-              </>
-            )}
-          </div>
+        <div className="tiny muted row wrap" style={{ gap: 10 }}>
+          <span className="row" style={{ gap: 3 }}><Icon name="database" size={13} />{fmtNum(trip.rows)} แถว · ทุก {fmtPeriod(trip.period)}</span>
+          <span className="row" style={{ gap: 3 }}>
+            <Icon name={g.state === 'none' ? 'map-pin-off' : 'map-pin'} size={13} />
+            {g.state === 'none' ? 'ยังไม่พบตำแหน่ง' : `${g.lat.toFixed(4)}, ${g.lon.toFixed(4)} (${fmtAgo(g.fixAt, v.at)})`}
+          </span>
         </div>
+        <TempChart trip={trip} current={v.temp} at={v.at} compact />
+        <div className="tiny muted">กราฟจากข้อมูลในอุปกรณ์ผ่าน Bluetooth · ข้อมูลเต็มทริปส่ง Server หลังจบทริป</div>
       </div>
 
-      <div className="card stack">
-        <div>
-          <h3>ประวัติอุณหภูมิในอุปกรณ์</h3>
-          <div className="tiny muted">อ่านผ่าน Bluetooth เพื่อแสดงในแอปเท่านั้น ข้อมูลเต็มทริปจะส่งขึ้น Server หลังจบทริป</div>
-        </div>
-        <TempChart trip={trip} current={v.temp} at={v.at} />
-        <div className="row tiny muted wrap" style={{ gap: 12 }}>
-          <span className="row" style={{ gap: 4 }}><span style={{ width: 14, height: 8, background: 'var(--ok-bg)', border: '1px solid #b9dfcb', borderRadius: 2 }} /> ช่วงที่อนุญาต</span>
-          <span className="row" style={{ gap: 4 }}><span style={{ width: 14, height: 2, background: 'var(--teal)' }} /> อุณหภูมิ</span>
-          <span className="row" style={{ gap: 4 }}><span style={{ width: 7, height: 7, borderRadius: 4, background: 'var(--bad)' }} /> นอกช่วง</span>
-        </div>
-      </div>
-
-      <div className="card stack tight">
-        <h3>เหตุการณ์ในทริป</h3>
-        {[...trip.events].reverse().map((e, i) => (
-          <div key={i} className="row small" style={{ alignItems: 'flex-start', padding: '4px 0' }}>
+      <div className="card stack tight" style={{ padding: '10px 12px' }}>
+        <button className="row between" onClick={() => setShowEvents(!showEvents)} aria-expanded={showEvents} style={{ border: 0, background: 'none', padding: 0, width: '100%', textAlign: 'left' }}>
+          <span className="small grow" style={{ minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <b>เหตุการณ์ {trip.events.length}</b> <span className="muted">· แจ้งเตือน {trip.alarms.raised} ครั้ง · ล่าสุด {eventText(lastEv)} {fmtTime(lastEv.t)}</span>
+          </span>
+          <Icon name="chevron-down" size={18} style={{ transform: showEvents ? 'rotate(180deg)' : 'none', flex: 'none' }} />
+        </button>
+        {showEvents && [...trip.events].reverse().map((e, i) => (
+          <div key={i} className="row small" style={{ alignItems: 'flex-start', padding: '3px 0' }}>
             <Icon
               name={isAlarm(e.type) ? 'alert-triangle' : e.type === 'ALARM_ACK' ? 'bell-check' : e.type === 'ALARM_CLEAR' ? 'circle-check' : 'flag'}
               size={16}
@@ -391,10 +343,9 @@ function ActiveTrip({ dev, v, linked }) {
             </div>
           </div>
         ))}
-        <div className="tiny muted">แจ้งเตือนทั้งทริป {trip.alarms.raised} ครั้ง</div>
       </div>
 
-      <div style={{ position: 'sticky', bottom: -24, padding: '10px 0 14px', background: 'linear-gradient(to top, var(--bg) 75%, transparent)' }}>
+      <div style={{ position: 'sticky', bottom: -24, padding: '6px 0 14px', background: 'linear-gradient(to top, var(--bg) 75%, transparent)' }}>
         <Btn block icon="player-stop" onClick={() => nav.push({ name: 'stop-trip' })}>
           จบทริป
         </Btn>
@@ -403,9 +354,9 @@ function ActiveTrip({ dev, v, linked }) {
   );
 }
 
-export function TempChart({ trip, current, at }) {
+export function TempChart({ trip, current, at, compact }) {
   const W = 340;
-  const H = 180;
+  const H = compact ? 120 : 180;
   const P = { l: 34, r: 10, t: 10, b: 24 };
   const pts = [...trip.points];
   if (at > (pts[pts.length - 1]?.t ?? 0)) pts.push({ t: at, c: current, live: true });

@@ -76,41 +76,45 @@ export function cargoOf(s, dev) {
   return dev.activeTripId ? s.appTrips[dev.activeTripId]?.name || '' : '';
 }
 
+/** One compact line per box so a whole ward fits on one screen. */
 function DeviceRow({ dev }) {
   const s = useApp();
   const v = deviceView(s, dev);
   const ok = v.trip ? inRange(v.temp, v.trip) : null;
   const cargo = cargoOf(s, dev);
   const linked = isLinked(s, dev.sn);
+  const pending = pendingTrips(s, dev).length;
+  const status = !v.known
+    ? 'ยังไม่เคยเชื่อมต่อ'
+    : s.pendingCmd[dev.sn]
+      ? 'รอตรวจสอบสถานะทริป'
+      : v.trip
+        ? `กำลังบันทึก${cargo ? ` · ${cargo}` : ''}`
+        : 'ว่าง';
   return (
-    <button className={`card tap stack tight ${linked ? 'selected' : ''}`} onClick={() => (linked ? nav.toTab('device') : connectAndOpen(dev.sn))}>
-      <div className="row" style={{ alignItems: 'flex-start' }}>
-        <div className={`dev-icon ${v.known ? '' : 'off'}`}>
-          <Icon name={linked ? 'bluetooth-connected' : 'snowflake'} size={22} />
-        </div>
-        <div className="grow">
-          <div className="bold" style={{ fontSize: 16 }}>{dev.name}</div>
-          <div className="tiny muted mono">{dev.sn}</div>
-        </div>
-        <div className="stack tight" style={{ alignItems: 'flex-end', gap: 0 }}>
-          <span className={`tempbig ${v.live ? '' : 'stale'}`} style={{ fontSize: 20, color: ok === false ? 'var(--bad)' : undefined }}>
-            {v.known ? (v.temp == null ? 'ไม่พบหัววัด' : fmtTemp(v.temp)) : '—'}
-          </span>
-          <span className="row tiny" style={{ gap: 3, color: v.battery != null && v.battery < 15 ? 'var(--bad)' : 'var(--muted)' }}>
-            <BatteryIcon pct={v.battery} /> {fmtPct(v.battery)}
-          </span>
-        </div>
+    <button className="li" onClick={() => (linked ? nav.toTab('device') : connectAndOpen(dev.sn))} style={{ minHeight: 54, padding: '8px 12px' }}>
+      <div className={`dev-icon ${v.known ? '' : 'off'}`} style={{ width: 34, height: 34, borderRadius: 10 }}>
+        <Icon name={linked ? 'bluetooth-connected' : 'snowflake'} size={18} />
       </div>
-      {cargo && v.trip && (
-        <div className="small row" style={{ gap: 6 }}>
-          <Icon name="package" size={15} className="muted" /> ติดกับ <b>{cargo}</b>
-        </div>
-      )}
-      {v.trip && s.appTrips[v.trip.trip_id]?.startedBy && (
-        <div className="tiny muted">เริ่มโดย {userName(s, s.appTrips[v.trip.trip_id].startedBy.by)}</div>
-      )}
-      <StateChips dev={dev} v={v} />
-      <Freshness v={v} />
+      <div className="grow">
+        <span className="row" style={{ gap: 6 }}>
+          <span className="t" style={{ fontSize: 15 }}>{dev.name}</span>
+          {linked && <span className="chip ok" style={{ padding: '0 6px', lineHeight: '16px', fontSize: 11 }}>เชื่อมต่ออยู่</span>}
+          {v.trip?.alarms.active.length > 0 && <Icon name="bell-ringing" size={14} style={{ color: 'var(--bad)' }} />}
+        </span>
+        <span className="s" style={{ fontSize: 12, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <span style={{ color: v.trip ? 'var(--info)' : undefined }}>{status}</span>
+          {pending > 0 && <span style={{ color: 'var(--warn)', fontWeight: 600 }}> · รอส่ง {pending}</span>}
+        </span>
+      </div>
+      <div className="stack" style={{ alignItems: 'flex-end', gap: 0, flex: 'none' }}>
+        <span className="bold num" style={{ fontSize: 16, color: ok === false ? 'var(--bad)' : v.live ? undefined : 'var(--muted)' }}>
+          {v.known ? (v.temp == null ? 'ไม่พบหัววัด' : fmtTemp(v.temp)) : '—'}
+        </span>
+        <span className="tiny num" style={{ color: v.battery != null && v.battery < 15 ? 'var(--bad)' : 'var(--muted)' }}>
+          {fmtPct(v.battery)} · {v.live ? 'สด' : v.known ? fmtTime(v.at) : '—'}
+        </span>
+      </div>
     </button>
   );
 }
@@ -130,47 +134,46 @@ export function McoldHome() {
   return (
     <div className="screen">
       <AppBar title="mCOLD" backLabel="กลับ" right={<NetIndicator />} />
-      <div className="content stack">
+      <div className="content stack" style={{ gap: 10 }}>
         <WardBar />
-        {linkedDev ? (
-          <button className="action" style={{ borderColor: 'var(--teal)' }} onClick={() => nav.toTab('device')}>
-            <span className="ai teal"><Icon name="bluetooth-connected" /></span>
+        {linkedDev && (
+          <button className="action" style={{ borderColor: 'var(--teal)', minHeight: 52, padding: '8px 12px' }} onClick={() => nav.toTab('device')}>
+            <span className="ai teal" style={{ width: 34, height: 34 }}><Icon name="bluetooth-connected" size={18} /></span>
             <span className="grow">
               <span className="t">{linkedDev.name}</span>
-              <div className="s">เชื่อมต่ออยู่ · แตะเพื่อเปิดเมนู</div>
+              <span className="s"> · เชื่อมต่ออยู่ แตะเพื่อเปิดเมนู</span>
             </span>
             <Icon name="chevron-right" className="muted" />
           </button>
-        ) : null}
-        <Btn kind="teal" block icon="nfc" onClick={() => connectAndOpen(null)} style={{ minHeight: 56, fontSize: 16 }}>
-          แตะ NFC เพื่อเชื่อมต่อ
-        </Btn>
-        <Btn kind="secondary" block icon="player-play" onClick={() => nav.push({ name: 'multi-start' })}>
-          เริ่มทริปหลายเครื่อง
-        </Btn>
-
-        {queued > 0 && (
-          <Banner tone="warn" icon="database" title={`ข้อมูลค้างในแอป ${queued} ทริป`}>
-            รับจากอุปกรณ์แล้วแต่ยังส่งไม่ครบ
-          </Banner>
         )}
-
-        <div className="section-title" style={{ marginTop: 6 }}>
-          อุปกรณ์ของวอร์ด <span className="muted">({mine.length})</span>
+        <div className="row" style={{ gap: 8 }}>
+          <Btn kind="teal" icon="nfc" className="grow" onClick={() => connectAndOpen(null)} style={{ minHeight: 52 }}>
+            แตะ NFC เชื่อมต่อ
+          </Btn>
+          <Btn kind="secondary" icon="player-play" onClick={() => nav.push({ name: 'multi-start' })} style={{ minHeight: 52, padding: '0 12px' }}>
+            เริ่มหลายเครื่อง
+          </Btn>
         </div>
+        {queued > 0 && (
+          <div className="row small" style={{ color: 'var(--warn)', fontWeight: 600 }}>
+            <Icon name="database" size={16} /> ข้อมูลค้างในแอป {queued} ทริป ยังส่งไม่ครบ
+          </div>
+        )}
         <Seg
           label="ตัวกรองอุปกรณ์"
           value={filter}
           onChange={setFilter}
           options={[
-            { value: 'all', label: 'ทั้งหมด' },
+            { value: 'all', label: `ทั้งหมด ${mine.length}` },
             { value: 'trip', label: `กำลังบันทึก ${nTrip}` },
             { value: 'pending', label: `รอส่ง ${nPending}` },
           ]}
         />
-        <div className="tiny muted" style={{ marginTop: -4 }}>ข้อมูลล่าสุดที่มือถือเครื่องนี้ได้รับจากแต่ละเครื่อง ตอนเชื่อมต่อครั้งล่าสุด</div>
-        {list.map((d) => <DeviceRow key={d.sn} dev={d} />)}
-        {list.length === 0 && <div className="card center small muted" style={{ padding: 24 }}>ไม่มีอุปกรณ์ในกลุ่มนี้</div>}
+        <div className="list">
+          {list.map((d) => <DeviceRow key={d.sn} dev={d} />)}
+          {list.length === 0 && <div className="li small muted" style={{ justifyContent: 'center' }}>ไม่มีอุปกรณ์ในกลุ่มนี้</div>}
+        </div>
+        <div className="tiny muted" style={{ marginTop: -4 }}>อุณหภูมิและแบตเป็นค่าล่าสุดที่มือถือเครื่องนี้ได้รับ (เวลากำกับ) · "สด" = เชื่อมต่ออยู่</div>
       </div>
     </div>
   );
@@ -190,7 +193,19 @@ export function DeviceHub() {
   const [more, setMore] = useState(false);
   return (
     <div className="screen">
-      <AppBar title={dev.name} sub={`${dev.sn} · ${wardOf(s, dev.wardId).name}`} backLabel="อุปกรณ์" onBack={() => nav.toTab('devices')} />
+      <AppBar
+        title={dev.name}
+        sub={`${dev.sn} · ${wardOf(s, dev.wardId).name}`}
+        backLabel="อุปกรณ์"
+        onBack={() => nav.toTab('devices')}
+        right={
+          linked && (
+            <button className="iconbtn" onClick={disconnect} aria-label="ตัดการเชื่อมต่อ" title="ตัดการเชื่อมต่อ">
+              <Icon name="bluetooth-off" />
+            </button>
+          )
+        }
+      />
       <div className="content stack">
         <div className="card raised stack">
           <StateChips dev={dev} v={v} />
@@ -237,27 +252,24 @@ export function DeviceHub() {
         {linked ? (
           <>
             <div className="action-grid">
-              <button className="action" onClick={() => open('trip')}>
+              <button className="action" style={{ minHeight: 54, padding: '8px 12px' }} onClick={() => open('trip')}>
                 <span className="ai"><Icon name={dev.activeTripId ? 'player-stop' : 'player-play'} /></span>
                 <span className="grow t">เริ่ม / จบทริป</span>
                 {dev.activeTripId && <Chip tone="info" dot>กำลังบันทึก</Chip>}
                 <Icon name="chevron-right" className="muted" />
               </button>
-              <button className="action" onClick={() => open('settings')}>
+              <button className="action" style={{ minHeight: 54, padding: '8px 12px' }} onClick={() => open('settings')}>
                 <span className="ai slate"><Icon name="adjustments-horizontal" /></span>
                 <span className="grow t">ตั้งค่าอุปกรณ์</span>
                 <Icon name="chevron-right" className="muted" />
               </button>
-              <button className="action" onClick={() => open('send')}>
+              <button className="action" style={{ minHeight: 54, padding: '8px 12px' }} onClick={() => open('send')}>
                 <span className="ai teal"><Icon name="cloud-upload" /></span>
                 <span className="grow t">ส่งข้อมูล</span>
                 {pending > 0 && <Chip tone="warn">{pending}</Chip>}
                 <Icon name="chevron-right" className="muted" />
               </button>
             </div>
-            <Btn kind="ghost" icon="bluetooth-off" onClick={disconnect} style={{ alignSelf: 'center' }}>
-              ตัดการเชื่อมต่อ
-            </Btn>
           </>
         ) : (
           <Banner
@@ -283,37 +295,24 @@ export function FunctionScreen({ fn }) {
   const dev = findDevice(s, s.selectedSn);
   return (
     <div className="screen">
-      <AppBar title={FN_TITLE[fn]} sub={dev.name} backLabel="เมนู" onBack={() => nav.toTab('device')} />
+      <AppBar
+        title={FN_TITLE[fn]}
+        sub={dev.name}
+        backLabel="เมนู"
+        onBack={() => nav.toTab('device')}
+        right={
+          isLinked(s, dev.sn) ? (
+            <Chip tone="ok" icon="bluetooth-connected">เชื่อมต่ออยู่</Chip>
+          ) : (
+            <Btn kind="teal" size="sm" icon="nfc" onClick={() => requestConnect(dev.sn)}>เชื่อมต่อ</Btn>
+          )
+        }
+      />
       <div className="content stack" key={fn}>
         {fn === 'trip' && <TripTab />}
         {fn === 'settings' && <SettingsTab />}
         {fn === 'send' && <SendTab />}
       </div>
-    </div>
-  );
-}
-
-/** Which box this screen acts on, and whether it is connected. */
-export function DeviceContext() {
-  const s = useApp();
-  const dev = findDevice(s, s.selectedSn);
-  const linked = isLinked(s, dev.sn);
-  return (
-    <div className="card row" style={{ padding: '10px 12px' }}>
-      <div className={`dev-icon ${linked ? '' : 'off'}`} style={{ width: 36, height: 36 }}>
-        <Icon name={linked ? 'bluetooth-connected' : 'bluetooth-off'} size={19} />
-      </div>
-      <div className="grow">
-        <div className="bold">{dev.name}</div>
-        <div className="tiny muted">
-          <span className="mono">{dev.sn}</span> · {linked ? <span style={{ color: 'var(--ok)', fontWeight: 600 }}>เชื่อมต่ออยู่</span> : 'ไม่ได้เชื่อมต่อ'}
-        </div>
-      </div>
-      {!linked && (
-        <Btn kind="teal" size="sm" icon="nfc" onClick={() => requestConnect(dev.sn)}>
-          เชื่อมต่อ
-        </Btn>
-      )}
     </div>
   );
 }
