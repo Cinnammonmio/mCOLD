@@ -1,5 +1,6 @@
 import { nav } from '../store.js';
 import { AppBar, Btn, Icon } from '../ui.jsx';
+import { UserChip } from '../Users.jsx';
 
 export const APP_NAME = 'Cold Chain Hub';
 
@@ -16,7 +17,7 @@ export function Products() {
   };
   return (
     <div className="screen">
-      <AppBar back={false} title={APP_NAME} />
+      <AppBar back={false} title={APP_NAME} right={<UserChip />} />
       <div className="content stack" style={{ gap: 14, paddingTop: 20 }}>
         {PRODUCTS.map((p) => (
           <button key={p.id} className="product" onClick={() => open(p)} aria-label={p.name}>

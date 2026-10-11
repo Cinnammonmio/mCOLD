@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { nav, useApp, simNow, update } from '../store.js';
+import { nav, useApp, simNow, update, userName } from '../store.js';
 import { ackAlarm, BleLost, deviceView, findDevice, inRange, isLinked, pendingTrips } from '../sim.js';
 import { fmtAgo, fmtDateTime, fmtDuration, fmtNum, fmtPct, fmtPeriod, fmtTemp, fmtTime, tripLabel } from '../format.js';
 import { requestConnect } from '../ConnectSheet.jsx';
@@ -82,7 +82,10 @@ function IdleTrip({ dev, v, linked }) {
 }
 
 function AlarmBanner({ dev, v, linked }) {
+  const s = useApp();
   const a = v.trip.alarms;
+  const acks = s.appTrips[v.trip.trip_id]?.acks || [];
+  const lastAck = acks[acks.length - 1];
   const [busy, setBusy] = useState(false);
   if (!a.active.length) return null;
   const titles = a.active.map((t) => EVENT_TEXT[t]).join(' · ');
@@ -109,7 +112,7 @@ function AlarmBanner({ dev, v, linked }) {
         </div>
         {a.acked ? (
           <div className="small" style={{ marginTop: 6 }}>
-            <Icon name="bell-check" size={14} /> รับทราบแล้ว แต่ปัญหายังไม่หาย ตรวจสอบกล่องและสินค้า
+            <Icon name="bell-check" size={14} /> รับทราบแล้ว{lastAck ? ` โดย ${userName(s, lastAck.by)} ${fmtTime(lastAck.t)}` : ''} แต่ปัญหายังไม่หาย ตรวจสอบกล่องและสินค้า
           </div>
         ) : (
           <div className="actions">
@@ -165,7 +168,10 @@ function ActiveTrip({ dev, v, linked }) {
           <Chip tone="info" dot>กำลังบันทึก</Chip>
         </div>
         <div className="row between small">
-          <span className="muted">เริ่ม {fmtDateTime(trip.startUtc)}</span>
+          <span className="muted">
+            เริ่ม {fmtDateTime(trip.startUtc)}
+            {meta?.startedBy && <> · โดย {userName(s, meta.startedBy.by)}</>}
+          </span>
           <span className="bold num">ผ่านไป {fmtDuration(v.at - trip.startUtc)}</span>
         </div>
         <div className="divider" />
@@ -242,7 +248,13 @@ function ActiveTrip({ dev, v, linked }) {
               style={{ color: isAlarm(e.type) ? 'var(--bad)' : e.type === 'ALARM_CLEAR' ? 'var(--ok)' : 'var(--muted)', marginTop: 2 }}
             />
             <div className="grow">
-              <div style={{ fontWeight: isAlarm(e.type) ? 600 : 500 }}>{eventText(e)}</div>
+              <div style={{ fontWeight: isAlarm(e.type) ? 600 : 500 }}>
+                {eventText(e)}
+                {e.type === 'ALARM_ACK' && meta?.acks?.find((k) => Math.abs(k.t - e.t) < 1000) && (
+                  <span className="muted" style={{ fontWeight: 400 }}> · {userName(s, meta.acks.find((k) => Math.abs(k.t - e.t) < 1000).by)}</span>
+                )}
+                {e.type === 'TRIP_START' && meta?.startedBy && <span className="muted" style={{ fontWeight: 400 }}> · {userName(s, meta.startedBy.by)}</span>}
+              </div>
               <div className="tiny muted">
                 {fmtDateTime(e.t)}
                 {e.temp != null ? ` · ${fmtTemp(e.temp)}` : ''}

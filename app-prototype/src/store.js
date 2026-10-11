@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 
 const STORAGE_KEY = 'cch-prototype-state-v1';
-const SCHEMA = 5;
+const SCHEMA = 6;
 
 export const DEFAULT_CONFIG = {
   sample_period_s: 300,
@@ -95,6 +95,8 @@ function mkDevice(o) {
     trips: [],
     seenReq: {},
     lastSyncAt: o.lastSyncAt ?? null,
+    wardId: o.wardId, // a box is registered to one customer ward; any user of that ward may use it
+    lastConfig: null, // { by, t } who last changed settings from the app
     // GET_INFO / NDEF identity. MACs follow the ESP32 pattern of the doc example (BLE = Wi-Fi MAC + 2).
     proto: 1,
     wifiMac: o.wifiMac,
@@ -118,7 +120,7 @@ export function seed(now = Date.now()) {
   const hex = (v) => v.toString(16).toUpperCase().padStart(2, '0');
   const mac = (low) => `28:84:85:27:9B:${hex(low)}`;
   const mk = (n, o) =>
-    mkDevice({ sn: sn(n), name: devName(sn(n)), knownSince: now - 20 * DAY, wifiMac: mac(0x80 + (n - 1) * 4), bleMac: mac(0x82 + (n - 1) * 4), ...o });
+    mkDevice({ sn: sn(n), name: devName(sn(n)), wardId: n <= 7 ? 'w-med3' : 'w-or', knownSince: now - 20 * DAY, wifiMac: mac(0x80 + (n - 1) * 4), bleMac: mac(0x82 + (n - 1) * 4), ...o });
   const appTrips = {};
 
   const d1 = mk(1, {
@@ -156,7 +158,12 @@ export function seed(now = Date.now()) {
     ],
   });
   d2.activeTripId = t2.trip_id;
-  appTrips[t2.trip_id] = { name: 'กล่องวัคซีน #12', note: '' };
+  appTrips[t2.trip_id] = {
+    name: 'กล่องวัคซีน #12',
+    note: '',
+    startedBy: { by: 'u-wipa', t: t2.startUtc },
+    acks: [{ by: 'u-somchai', t: hiFrom + 16 * MIN }],
+  };
 
   const d3 = mk(3, {
     baseTemp: 3.8, battery: 41, batteryMv: 3760, storagePct: 18, lastSyncAt: now - 2 * HOUR - 10 * MIN,
@@ -178,7 +185,7 @@ export function seed(now = Date.now()) {
   const d6 = mk(6, { baseTemp: 4.2, battery: 77, batteryMv: 3930, storagePct: 4, lastSyncAt: now - 35 * MIN, gnss: { fixAt: now - 50 * MIN, lat: 13.7012, lon: 100.6034 } });
   const t6 = mkTrip(d6, { start: now - 3 * HOUR - 10 * MIN, low: 2, high: 8 });
   d6.activeTripId = t6.trip_id;
-  appTrips[t6.trip_id] = { name: 'กล่องเลือด #7', note: '' };
+  appTrips[t6.trip_id] = { name: 'กล่องเลือด #7', note: '', startedBy: { by: 'u-arunee', t: t6.startUtc } };
 
   const d7 = mk(7, { baseTemp: 25.4, battery: 78, batteryMv: 3940, storagePct: 2, lastSyncAt: now - 3 * HOUR });
   const d8 = mk(8, { baseTemp: 25.0, battery: 91, batteryMv: 4060, storagePct: 1, lastSyncAt: now - 5 * HOUR });
@@ -189,9 +196,30 @@ export function seed(now = Date.now()) {
   d9.pendingFirstRead = { battery: 92, batteryMv: 4080, storagePct: 0 };
   d10.pendingFirstRead = { battery: 88, batteryMv: 4040, storagePct: 0 };
 
+  // Who used each finished trip is app data too (the box does not know users).
+  const who = ['u-somchai', 'u-wipa', 'u-arunee'];
+  [d1, d2, d3].forEach((d, i) =>
+    d.trips.forEach((t, j) => {
+      if (t.stopUtc == null) return;
+      appTrips[t.trip_id] = { name: '', note: '', ...(appTrips[t.trip_id] || {}), startedBy: { by: who[(i + j) % 3], t: t.startUtc }, stoppedBy: { by: who[(i + j + 1) % 3], t: t.stopUtc } };
+    }),
+  );
+
   return {
     schema: SCHEMA,
     seededAt: now,
+    org: 'โรงพยาบาลตัวอย่าง',
+    wards: [
+      { id: 'w-med3', name: 'หอผู้ป่วยอายุรกรรม 3' },
+      { id: 'w-or', name: 'ห้องผ่าตัด' },
+    ],
+    users: [
+      { id: 'u-somchai', name: 'สมชาย ใจดี', role: 'พยาบาล', wardId: 'w-med3' },
+      { id: 'u-wipa', name: 'วิภา รักษ์ดี', role: 'พยาบาล', wardId: 'w-med3' },
+      { id: 'u-arunee', name: 'อรุณี ศรีสุข', role: 'หัวหน้าวอร์ด', wardId: 'w-med3' },
+      { id: 'u-thanapon', name: 'ธนพล มั่นคง', role: 'พยาบาล', wardId: 'w-or' },
+    ],
+    userId: 'u-somchai',
     clockOffsetMs: 0,
     selectedSn: d1.sn,
     internet: true,
@@ -291,6 +319,15 @@ export function useApp() {
 }
 
 export const simNow = () => Date.now() + state.clockOffsetMs;
+
+// ---- ward and user ---------------------------------------------------------
+export const currentUser = (s) => s.users.find((u) => u.id === s.userId);
+export const wardOf = (s, id) => s.wards.find((w) => w.id === id);
+export const userName = (s, id) => s.users.find((u) => u.id === id)?.name || '—';
+/** Devices this user's ward owns. */
+export const wardDevices = (s) => s.devices.filter((d) => d.wardId === currentUser(s).wardId);
+/** Record "who, when" for an app action. */
+export const stamp = (s) => ({ by: s.userId, t: Date.now() + s.clockOffsetMs });
 
 // ---- navigation -----------------------------------------------------------
 export const nav = {

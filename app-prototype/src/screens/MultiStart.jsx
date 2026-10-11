@@ -2,7 +2,7 @@
 // NFC → BLE → authorize → check → START_TRIP → disconnect, so the phone never has to hold
 // many BLE links at once and the next box is ready right away. (UX proposal, see the guide.)
 import { useRef, useState } from 'react';
-import { getState, nav, toast, update, useApp } from '../store.js';
+import { currentUser, getState, nav, toast, update, useApp, wardDevices, wardOf } from '../store.js';
 import { BleLost, disconnect, findDevice, finishConnect, startTrip } from '../sim.js';
 import { fmtTemp, fmtTime, tripLabel } from '../format.js';
 import { AppBar, Banner, Btn, Chip, Field, Icon, Seg } from '../ui.jsx';
@@ -49,9 +49,10 @@ export function MultiStart() {
   const nextBox = () => {
     const st = getState();
     const handled = (sn) => rowsRef.current.some((r) => r.sn === sn);
-    return (st.devices.find((d) => !handled(d.sn) && !d.activeTripId) || st.devices.find((d) => !handled(d.sn)))?.sn;
+    const mine = wardDevices(st);
+    return (mine.find((d) => !handled(d.sn) && !d.activeTripId) || mine.find((d) => !handled(d.sn)))?.sn;
   };
-  const target = picked || nextBox() || s.devices[0].sn;
+  const target = picked || nextBox() || wardDevices(s)[0]?.sn || s.devices[0].sn;
 
   const tapOne = async (sn) => {
     if (busyRef.current) return;
@@ -68,6 +69,10 @@ export function MultiStart() {
       await wait(800);
       if (outcome !== 'ok') {
         setRow(sn, { state: 'failed', msg: NFC_FAIL[outcome] });
+        return;
+      }
+      if (findDevice(getState(), sn).wardId !== currentUser(getState()).wardId) {
+        setRow(sn, { state: 'failed', msg: `เครื่องนี้ลงทะเบียนกับ${wardOf(getState(), findDevice(getState(), sn).wardId).name}` });
         return;
       }
       finishConnect(sn);
@@ -183,7 +188,7 @@ export function MultiStart() {
             </label>
             <select id="m-pick" className="input" value={target} onChange={(e) => setPicked(e.target.value)}>
               {s.devices.map((d) => (
-                <option key={d.sn} value={d.sn}>{d.name}{d.activeTripId ? ' (มีทริปอยู่)' : ''}</option>
+                <option key={d.sn} value={d.sn}>{d.name}{d.activeTripId ? ' (มีทริปอยู่)' : ''}{d.wardId !== currentUser(s).wardId ? ' · วอร์ดอื่น' : ''}</option>
               ))}
             </select>
             <Seg

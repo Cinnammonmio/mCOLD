@@ -1,7 +1,7 @@
 // Start trip: choose box → connect/authorize → form → review → confirm → active trip.
 // Stop trip: summary → choose action → confirm → result.
 import { useRef, useState } from 'react';
-import { nav, toast, useApp, simNow } from '../store.js';
+import { nav, toast, useApp, simNow, userName } from '../store.js';
 import { BATT_TRIP_MV, BleLost, clearPendingCommand, deviceView, findDevice, isLinked, pendingCommand, runBatch, startTrip, stopTrip, tripSeries } from '../sim.js';
 import { fmtDateTime, fmtDuration, fmtNum, fmtPct, fmtPeriod, fmtTemp, tripLabel } from '../format.js';
 import { requestConnect } from '../ConnectSheet.jsx';
@@ -318,6 +318,9 @@ export function StopTrip() {
             </div>
             <div className="bold" style={{ fontSize: 18 }}>อุปกรณ์หยุดบันทึกแล้ว</div>
             <div className="small muted">{s.appTrips[t.trip_id]?.name || tripLabel(t)} · {fmtDuration(t.stopUtc - t.startUtc)}</div>
+            <div className="tiny muted">
+              เริ่มโดย {userName(s, s.appTrips[t.trip_id]?.startedBy?.by)} · จบโดย {userName(s, s.appTrips[t.trip_id]?.stoppedBy?.by)}
+            </div>
             <Chip tone="warn" icon="cloud-upload">รอส่ง · ข้อมูลยังเก็บในอุปกรณ์</Chip>
           </div>
           <Banner tone="info">ยังไม่ได้ส่งข้อมูลขึ้น Server ส่งได้ทุกเมื่อจากแท็บส่งข้อมูล</Banner>

@@ -1,7 +1,7 @@
 // Device settings: show current values → edit → save/cancel → per-value result.
 // Values and ranges follow docs/app/device-settings.md. Wi-Fi uses its own per-slot commands.
 import { useMemo, useState } from 'react';
-import { DEFAULT_CONFIG, nav, toast, useApp, TRIP_LOCKED } from '../store.js';
+import { DEFAULT_CONFIG, nav, toast, useApp, TRIP_LOCKED, userName } from '../store.js';
 import { applyConfig, BleLost, CONFIG_RULES, deviceView, findDevice, isLinked, wifiCommand } from '../sim.js';
 import { fmtPeriod, fmtTime, fmtTz } from '../format.js';
 import { requestConnect } from '../ConnectSheet.jsx';
@@ -143,6 +143,7 @@ export function SettingsTab() {
             </Banner>
           )}
           {linked && <div className="freshness live">ค่าปัจจุบันที่อุปกรณ์ส่งมาเมื่อเชื่อมต่อ ค่าเริ่มต้นและช่วงตามเอกสารค่าตั้งของเครื่อง</div>}
+          {dev.lastConfig && <div className="freshness">แก้ไขล่าสุดจากแอปโดย {userName(s, dev.lastConfig.by)} · {fmtTime(dev.lastConfig.t)}</div>}
           {tripOn && (
             <Banner tone="warn" icon="lock" title="มีทริปกำลังทำงาน">
               ค่าที่ใช้กับข้อมูลทริปถูกล็อก แก้ไขได้หลังจบทริป ค่าอื่นแก้ไขได้ตามปกติ

@@ -1,7 +1,7 @@
 // Simulated box + server. No Web Bluetooth, Web NFC or network calls: every "command" below is a
 // local function with a delay, so the UI can show loading, progress, success and error states.
 // Command names in comments map to docs/app/ble-protocol.md; they never appear in user-facing text.
-import { getState, update, simNow, nextReqId, uuid, tripDate, toast, TRIP_LOCKED } from './store.js';
+import { getState, update, simNow, nextReqId, uuid, tripDate, toast, TRIP_LOCKED, stamp } from './store.js';
 import { csvName } from './format.js';
 
 const MIN = 60000;
@@ -351,14 +351,27 @@ export function clearPendingCommand(sn) {
 
 export async function startTrip(sn, { low, high, name, note }) {
   const res = await tripCommand(sn, 'START', { low, high }, boxStartTrip);
-  if (res.ok && (name || note)) {
-    update((s) => void (s.appTrips[res.trip_id] = { name: name || '', note: note || '' }));
+  if (res.ok) {
+    update((s) => {
+      const cur = s.appTrips[res.trip_id] || {};
+      // a retry with the same request id returns the same trip: keep the first "started by"
+      s.appTrips[res.trip_id] = { name: name ?? cur.name ?? '', note: note ?? cur.note ?? '', ...cur, startedBy: cur.startedBy || stamp(s) };
+      if (name) s.appTrips[res.trip_id].name = name;
+      if (note) s.appTrips[res.trip_id].note = note;
+    });
   }
   return res;
 }
 
 export async function stopTrip(sn) {
-  return tripCommand(sn, 'STOP', {}, boxStopTrip);
+  const res = await tripCommand(sn, 'STOP', {}, boxStopTrip);
+  if (res.ok) {
+    update((s) => {
+      const cur = s.appTrips[res.trip_id] || { name: '', note: '' };
+      s.appTrips[res.trip_id] = { ...cur, stoppedBy: cur.stoppedBy || stamp(s) };
+    });
+  }
+  return res;
 }
 
 export async function ackAlarm(sn) {
@@ -371,7 +384,11 @@ export async function ackAlarm(sn) {
   update((s) => {
     const dev = findDevice(s, sn);
     const trip = dev.trips.find((t) => t.trip_id === dev.activeTripId);
-    if (trip) trip.events.push({ type: 'ALARM_ACK', t: simNow() });
+    if (!trip) return;
+    const st = stamp(s);
+    trip.events.push({ type: 'ALARM_ACK', t: st.t });
+    const meta = s.appTrips[trip.trip_id] || { name: '', note: '' };
+    s.appTrips[trip.trip_id] = { ...meta, acks: [...(meta.acks || []), st] }; // who acknowledged: app data
   });
 }
 
@@ -432,6 +449,7 @@ export async function applyConfig(sn, changes) {
     }
     dev.lastSyncAt = simNow();
   });
+  if (applied.length) update((s) => void (findDevice(s, sn).lastConfig = { ...stamp(s), keys: applied }));
   return { applied, errors };
 }
 
@@ -472,6 +490,7 @@ export async function wifiCommand(sn, op, data) {
     }
     dev.lastSyncAt = simNow();
   });
+  if (out.ok) update((s) => void (findDevice(s, sn).lastConfig = { ...stamp(s), keys: [`wifi ${op} ${data.slot}`] }));
   return out;
 }
 
@@ -491,7 +510,7 @@ async function processTrip(sn, id) {
   if (!trip || trip.stopUtc == null || trip.sent) return;
   if (!s.transfers[id]) {
     const total = tripSeries(dev, trip, trip.stopUtc).rows;
-    setTransfer(id, { sn, tripId: id, stage: 'queued', rowsReceived: 0, totalRows: total, csv: null, uploads: 0, error: null });
+    setTransfer(id, { sn, tripId: id, stage: 'queued', rowsReceived: 0, totalRows: total, csv: null, uploads: 0, error: null, requestedBy: getState().userId });
   }
   let tr = getState().transfers[id];
 
@@ -571,7 +590,7 @@ async function processTrip(sn, id) {
       d.trips.find((t) => t.trip_id === id).sent = true;
       d.lastSyncAt = simNow();
     });
-    setTransfer(id, { stage: 'done', error: null, doneAt: simNow() });
+    setTransfer(id, { stage: 'done', error: null, doneAt: simNow(), sentBy: getState().userId });
   }
 }
 

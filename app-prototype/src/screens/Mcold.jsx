@@ -2,7 +2,8 @@
 // A box is not tied to one shipping box, so devices are named by their own number and the
 // cargo label belongs to the trip. The three functions show only once a box is connected.
 import { useState } from 'react';
-import { nav, useApp, simNow } from '../store.js';
+import { nav, useApp, simNow, wardDevices, wardOf, userName } from '../store.js';
+import { WardBar } from '../Users.jsx';
 import { deviceView, disconnect, findDevice, inRange, isLinked, pendingTrips } from '../sim.js';
 import { fmtAgo, fmtPct, fmtTemp, fmtTime } from '../format.js';
 import { requestConnect } from '../ConnectSheet.jsx';
@@ -105,6 +106,9 @@ function DeviceRow({ dev }) {
           <Icon name="package" size={15} className="muted" /> ติดกับ <b>{cargo}</b>
         </div>
       )}
+      {v.trip && s.appTrips[v.trip.trip_id]?.startedBy && (
+        <div className="tiny muted">เริ่มโดย {userName(s, s.appTrips[v.trip.trip_id].startedBy.by)}</div>
+      )}
       <StateChips dev={dev} v={v} />
       <Freshness v={v} />
     </button>
@@ -117,15 +121,17 @@ export function McoldHome() {
   const [filter, setFilter] = useState('all');
   const linkedDev = s.ble ? findDevice(s, s.ble.sn) : null;
   const queued = Object.values(s.transfers).filter((t) => t.stage !== 'done').length;
-  const list = s.devices.filter((d) =>
+  const mine = wardDevices(s);
+  const list = mine.filter((d) =>
     filter === 'all' ? true : filter === 'trip' ? !!d.activeTripId : pendingTrips(s, d).length > 0,
   );
-  const nTrip = s.devices.filter((d) => d.activeTripId).length;
-  const nPending = s.devices.filter((d) => pendingTrips(s, d).length > 0).length;
+  const nTrip = mine.filter((d) => d.activeTripId).length;
+  const nPending = mine.filter((d) => pendingTrips(s, d).length > 0).length;
   return (
     <div className="screen">
       <AppBar title="mCOLD" backLabel="กลับ" right={<NetIndicator />} />
       <div className="content stack">
+        <WardBar />
         {linkedDev ? (
           <button className="action" style={{ borderColor: 'var(--teal)' }} onClick={() => nav.toTab('device')}>
             <span className="ai teal"><Icon name="bluetooth-connected" /></span>
@@ -150,7 +156,7 @@ export function McoldHome() {
         )}
 
         <div className="section-title" style={{ marginTop: 6 }}>
-          อุปกรณ์ <span className="muted">({s.devices.length})</span>
+          อุปกรณ์ของวอร์ด <span className="muted">({mine.length})</span>
         </div>
         <Seg
           label="ตัวกรองอุปกรณ์"
@@ -183,7 +189,7 @@ export function DeviceHub() {
   const open = (name) => nav.push({ name });
   return (
     <div className="screen">
-      <AppBar title={dev.name} sub={dev.sn} backLabel="อุปกรณ์" onBack={() => nav.toTab('devices')} />
+      <AppBar title={dev.name} sub={`${dev.sn} · ${wardOf(s, dev.wardId).name}`} backLabel="อุปกรณ์" onBack={() => nav.toTab('devices')} />
       <div className="content stack">
         <div className="card raised stack">
           <StateChips dev={dev} v={v} />
@@ -204,6 +210,9 @@ export function DeviceHub() {
             <div className="small row" style={{ gap: 6 }}>
               <Icon name="package" size={15} className="muted" /> ติดกับ <b>{cargo}</b>
             </div>
+          )}
+          {v.trip && s.appTrips[v.trip.trip_id]?.startedBy && (
+            <div className="tiny muted">ทริปเริ่มโดย {userName(s, s.appTrips[v.trip.trip_id].startedBy.by)} · {fmtTime(s.appTrips[v.trip.trip_id].startedBy.t)}</div>
           )}
           {v.trip?.alarms.active.length > 0 && <div className="small" style={{ color: 'var(--bad)', fontWeight: 600 }}>มีการแจ้งเตือนค้างอยู่</div>}
           <Freshness v={v} />

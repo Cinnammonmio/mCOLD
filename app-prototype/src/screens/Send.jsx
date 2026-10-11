@@ -1,6 +1,6 @@
 // Select finished trips and send them: box → BLE → app → phone internet → server → tell the box.
 import { useState } from 'react';
-import { nav, useApp } from '../store.js';
+import { nav, useApp, userName } from '../store.js';
 import { deviceView, findDevice, isLinked, runBatch, transferSteps, tripDelivery, tripSeries } from '../sim.js';
 import { fmtDateTime, fmtDuration, fmtNum, fmtTime, tripLabel } from '../format.js';
 import { requestConnect } from '../ConnectSheet.jsx';
@@ -142,6 +142,12 @@ function TripRow({ dev, trip, d, checked, onToggle }) {
         <span className="small muted">
           {fmtDateTime(trip.startUtc)} – {end ? fmtDateTime(end) : 'ยังบันทึกอยู่'}
         </span>
+        {(s.appTrips[trip.trip_id]?.startedBy || s.appTrips[trip.trip_id]?.stoppedBy) && (
+          <span className="tiny muted">
+            {s.appTrips[trip.trip_id]?.startedBy && <>เริ่มโดย {userName(s, s.appTrips[trip.trip_id].startedBy.by)}</>}
+            {s.appTrips[trip.trip_id]?.stoppedBy && <> · จบโดย {userName(s, s.appTrips[trip.trip_id].stoppedBy.by)}</>}
+          </span>
+        )}
         <div className="row wrap small" style={{ gap: 10 }}>
           <span className="row" style={{ gap: 4 }}><Icon name="clock" size={14} className="muted" />{end ? fmtDuration(end - trip.startUtc) : '—'}</span>
           <span className="row" style={{ gap: 4 }}><Icon name="database" size={14} className="muted" />{rows != null ? `${fmtNum(rows)} แถว` : '—'}</span>
@@ -296,6 +302,7 @@ function TransferCard({ dev, trip, tr, running, onRetry }) {
       </div>
       <Steps items={items} />
       {action}
+      {tr?.sentBy && trip.sent && <div className="tiny muted">ส่งโดย {userName(s, tr.sentBy)} · {fmtTime(tr.doneAt)}</div>}
       {tr?.uploads > 1 && <div className="tiny muted">ส่งขึ้น Server แล้ว {tr.uploads} ครั้ง · การส่งซ้ำไม่ทำให้ข้อมูลซ้ำ</div>}
     </div>
   );

@@ -1,7 +1,7 @@
 // Simulated "tap NFC → find box → BLE → authorize → ready" (ble-protocol.md §1–2).
 // No pairing code: the tap itself proves the phone is next to the box.
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { getState, update, updateUi, useApp } from './store.js';
+import { currentUser, getState, update, updateUi, useApp, wardOf } from './store.js';
 import { deviceView, finishConnect, findDevice, pendingTrips } from './sim.js';
 import { fmtPct, fmtTemp, tripLabel } from './format.js';
 import { Btn, Icon, Seg, Sheet, Steps } from './ui.jsx';
@@ -54,7 +54,7 @@ export function ConnectSheet() {
 function ConnectFlow({ req }) {
   const s = useApp();
   // Without an expected box the tag tells us which one it is; the demo lets you pick that box.
-  const [picked, setPicked] = useState(req.sn || s.selectedSn);
+  const [picked, setPicked] = useState(req.sn || (s.devices.find((d) => d.sn === s.selectedSn && d.wardId === currentUser(s).wardId) || s.devices.find((d) => d.wardId === currentUser(s).wardId)).sn);
   const dev = findDevice(s, req.sn || picked);
   const [phase, setPhase] = useState('idle'); // idle | running | error | done
   const [at, setAt] = useState(-1);
@@ -70,7 +70,12 @@ function ConnectFlow({ req }) {
   const run = async () => {
     const outcome = getState().demo.nfcOutcome;
     if (outcome !== 'ok') update((st) => void (st.demo.nfcOutcome = 'ok')); // one-shot fault
-    const f = FAIL[outcome];
+    const st0 = getState();
+    // The box answers any phone that taps it; keeping a box to its ward is app/server policy.
+    const otherWard = dev.wardId !== currentUser(st0).wardId;
+    const f = otherWard
+      ? { at: 1, title: 'เครื่องนี้เป็นของวอร์ดอื่น', body: `${dev.name} ลงทะเบียนกับ${wardOf(st0, dev.wardId).name} ใช้งานได้เฉพาะผู้ใช้ของวอร์ดนั้น` }
+      : FAIL[outcome];
     setFail(null);
     setPhase('running');
     for (let i = 0; i < STEPS.length - 1; i++) {
@@ -169,7 +174,7 @@ function ConnectFlow({ req }) {
             <Btn kind="teal" block icon="refresh" onClick={run}>
               แตะ NFC อีกครั้ง
             </Btn>
-            <DemoOutcome />
+            <DemoOutcome picker={req.sn ? null : { value: picked, onChange: setPicked }} />
           </>
         )}
         {phase !== 'running' && phase !== 'done' && (
@@ -193,7 +198,7 @@ function DemoOutcome({ picker }) {
           </label>
           <select id="demo-tapped" className="input" value={picker.value} onChange={(e) => picker.onChange(e.target.value)}>
             {s.devices.map((d) => (
-              <option key={d.sn} value={d.sn}>{d.name} · {d.sn}</option>
+              <option key={d.sn} value={d.sn}>{d.name} · {wardOf(s, d.wardId).name}</option>
             ))}
           </select>
         </>
