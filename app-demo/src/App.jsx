@@ -8,7 +8,7 @@ import { Btn, Icon, Sheet, Toasts, useTick } from './ui.jsx';
 import { Placeholder, Products } from './screens/Products.jsx';
 import { DeviceHub, FunctionScreen, McoldHome } from './screens/Mcold.jsx';
 import { MultiStart } from './screens/MultiStart.jsx';
-import { StartTrip, StopTrip } from './screens/TripFlows.jsx';
+import { StopTrip } from './screens/TripFlows.jsx';
 import { WifiEdit } from './screens/Settings.jsx';
 import { SendProgress } from './screens/Send.jsx';
 
@@ -28,8 +28,6 @@ function Route() {
       return <FunctionScreen fn={r.name} />;
     case 'multi-start':
       return <MultiStart />;
-    case 'start-trip':
-      return <StartTrip />;
     case 'stop-trip':
       return <StopTrip />;
     case 'wifi-edit':

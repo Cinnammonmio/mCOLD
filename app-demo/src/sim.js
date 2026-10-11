@@ -121,7 +121,9 @@ export function deviceView(s, dev) {
   }
   const temp = tempAt(dev, at);
   const tripObj = dev.activeTripId ? dev.trips.find((t) => t.trip_id === dev.activeTripId) : null;
-  const activeTrip = tripObj && tripObj.startUtc <= at ? tripObj : null;
+  // A start whose answer was lost: until the app talks to the box again it cannot know the trip began.
+  const unconfirmed = !live && s.pendingCmd[dev.sn]?.kind === 'START';
+  const activeTrip = tripObj && tripObj.startUtc <= at && !unconfirmed ? tripObj : null;
   let trip = null;
   if (activeTrip) {
     const ser = tripSeries(dev, activeTrip, at);

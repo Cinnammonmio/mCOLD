@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { nav, useApp, simNow, update, userName } from '../store.js';
-import { ackAlarm, BleLost, deviceView, findDevice, inRange, isLinked, pendingTrips } from '../sim.js';
+import { ackAlarm, BleLost, clearPendingCommand, deviceView, findDevice, inRange, isLinked, pendingCommand, pendingTrips, startTrip } from '../sim.js';
 import { fmtAgo, fmtDateTime, fmtDuration, fmtNum, fmtPct, fmtPeriod, fmtTemp, fmtTime, tripLabel } from '../format.js';
 import { requestConnect } from '../ConnectSheet.jsx';
-import { Banner, BatteryIcon, Btn, Chip, Icon } from '../ui.jsx';
+import { Banner, BatteryIcon, Btn, Chip, Field, Icon } from '../ui.jsx';
+import { ERR_TEXT, preflight } from './TripFlows.jsx';
 import { toast } from '../store.js';
 import { DeviceContext, Freshness, NeedConnection } from './Mcold.jsx';
 
@@ -44,20 +45,7 @@ function IdleTrip({ dev, v, linked }) {
   const pending = pendingTrips(s, dev).length;
   return (
     <>
-      <div className="card stack center" style={{ alignItems: 'center', padding: '22px 16px' }}>
-        <div className="dev-icon" style={{ width: 56, height: 56, borderRadius: 16 }}>
-          <Icon name="player-play" size={28} />
-        </div>
-        <div>
-          <div className="bold" style={{ fontSize: 17 }}>ไม่มีทริปที่กำลังทำงาน</div>
-          <div className="small muted">เริ่มทริปเมื่อบรรจุสินค้าลงกล่องแล้ว อุปกรณ์จะบันทึกอุณหภูมิตามรอบที่ตั้งไว้</div>
-        </div>
-        <Btn kind="teal" block icon="player-play" onClick={() => nav.push({ name: 'start-trip' })}>
-          เริ่มทริปใหม่
-        </Btn>
-        {!linked && <div className="tiny muted">ต้องแตะ NFC เพื่อเชื่อมต่อก่อนเริ่มทริป</div>}
-      </div>
-      <Freshness v={v} />
+      <QuickStart dev={dev} v={v} linked={linked} />
       {last && (
         <>
           <div className="section-title"><Icon name="history" size={18} /> ทริปล่าสุด</div>
@@ -78,6 +66,147 @@ function IdleTrip({ dev, v, linked }) {
         </Banner>
       )}
     </>
+  );
+}
+
+const fix1 = (n) => Number(n).toFixed(1);
+
+/**
+ * Start a trip on one screen: min/max are already filled (the box's last trip, else 2–8 °C),
+ * the readiness check runs on its own, and one tap sends START_TRIP.
+ */
+function QuickStart({ dev, v, linked }) {
+  const s = useApp();
+  const pend = pendingCommand(s, dev.sn, 'START');
+  const prev = dev.trips[dev.trips.length - 1];
+  const [form, setForm] = useState(() => ({
+    low: fix1(pend?.args.low ?? prev?.low ?? 2),
+    high: fix1(pend?.args.high ?? prev?.high ?? 8),
+    name: '',
+  }));
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(pend ? { kind: 'unknown' } : null);
+  const guard = useRef(false);
+  const pf = preflight(s, dev);
+  const blocks = pf.checks.filter((c) => c.state === 'block');
+  const warns = pf.checks.filter((c) => c.state === 'warn');
+
+  const low = parseFloat(form.low);
+  const high = parseFloat(form.high);
+  const errs = {};
+  if (form.low.trim() === '' || !Number.isFinite(low)) errs.low = 'กรอกตัวเลข';
+  if (form.high.trim() === '' || !Number.isFinite(high)) errs.high = 'กรอกตัวเลข';
+  if (!errs.low && !errs.high && low >= high) errs.high = 'ต้องมากกว่าค่าต่ำสุด';
+  if (!errs.low && (low < -40 || low > 100)) errs.low = 'ตั้งได้ −40 ถึง 100°C';
+  if (!errs.high && (high < -40 || high > 100)) errs.high = 'ตั้งได้ −40 ถึง 100°C';
+  const formOk = Object.keys(errs).length === 0;
+
+  const start = async () => {
+    if (guard.current) return; // one tap = one command, even if pressed twice
+    guard.current = true;
+    setBusy(true);
+    setResult(null);
+    try {
+      const res = await startTrip(dev.sn, { low, high, name: form.name.trim() });
+      if (res.ok) {
+        toast('เริ่มทริปแล้ว อุปกรณ์ยืนยันการเริ่มบันทึก', 'ok');
+        const c = res.clock;
+        if (c?.adjusted && Math.abs(c.diff_s) > 5) setTimeout(() => toast(`ตั้งเวลาของกล่องให้ตรงกับมือถือแล้ว (เดิมต่างกัน ${Math.abs(c.diff_s)} วินาที)`, 'info'), 600);
+      } else setResult({ kind: 'refused', err: res.err });
+    } catch (e) {
+      if (e instanceof BleLost) setResult({ kind: e.when === 'after' ? 'unknown' : 'lost' });
+      else throw e;
+    } finally {
+      guard.current = false;
+      setBusy(false);
+    }
+  };
+  const reconnectAndRetry = async () => {
+    const ok = await requestConnect(dev.sn, 'เชื่อมต่อใหม่เพื่อตรวจสอบว่าอุปกรณ์เริ่มทริปแล้วหรือยัง');
+    if (ok) start();
+  };
+
+  const field = (key, label) => (
+    <Field label={label} htmlFor={`qs-${key}`} error={errs[key]}>
+      <div className="input-unit">
+        <input
+          id={`qs-${key}`}
+          className={`input num ${errs[key] ? 'invalid' : ''}`}
+          inputMode="decimal"
+          value={form[key]}
+          disabled={busy || result?.kind === 'unknown'}
+          onChange={(e) => setForm({ ...form, [key]: e.target.value })}
+          style={{ fontSize: 22, fontWeight: 600, minHeight: 56 }}
+        />
+        <span className="unit">°C</span>
+      </div>
+    </Field>
+  );
+
+  return (
+    <div className="card raised stack">
+      <div className="row between">
+        <h3>เริ่มทริป</h3>
+        <span className="tiny muted">ไม่มีทริปทำงาน</span>
+      </div>
+      <div className="grid2">
+        {field('low', 'ต่ำสุด')}
+        {field('high', 'สูงสุด')}
+      </div>
+      {formOk && low < 0 && <div className="tiny" style={{ color: 'var(--warn)' }}>หัววัดรุ่นนี้ยังไม่ยืนยันการวัดต่ำกว่า 0°C</div>}
+      <input
+        id="qs-name"
+        className="input"
+        aria-label="กล่องที่ติด"
+        maxLength={40}
+        placeholder="กล่องที่ติด (ไม่บังคับ) เช่น กล่องวัคซีน #12"
+        value={form.name}
+        disabled={busy || result?.kind === 'unknown'}
+        onChange={(e) => setForm({ ...form, name: e.target.value })}
+      />
+      <div className="tiny muted">
+        บันทึกทุก {fmtPeriod(dev.config.sample_period_s)} · เตือนเมื่อนอกช่วง{dev.config.alarm_dwell_s ? `นาน ${fmtPeriod(dev.config.alarm_dwell_s)}` : 'ทันที'}
+      </div>
+
+      {linked && blocks.length > 0 && (
+        <Banner tone="bad" title="ยังเริ่มทริปไม่ได้">
+          {blocks.map((c) => <div key={c.key}>{c.title}: {c.note}</div>)}
+        </Banner>
+      )}
+      {linked && !blocks.length && (
+        <div className="tiny" style={{ color: warns.length ? 'var(--warn)' : 'var(--ok)' }}>
+          {warns.length ? warns.map((c) => `${c.title}: ${c.note}`).join(' · ') : `พร้อม · แบต ${fmtPct(v.battery)} · หัววัดปกติ · พื้นที่ใช้ไป ${fmtPct(v.storagePct)}`}
+        </div>
+      )}
+      {result?.kind === 'refused' && <Banner tone="bad" title={ERR_TEXT[result.err]?.title || 'อุปกรณ์ไม่เริ่มทริป'}>{ERR_TEXT[result.err]?.fix}</Banner>}
+      {result?.kind === 'lost' && <Banner tone="bad" title="การเชื่อมต่อหลุดก่อนส่งคำสั่ง">อุปกรณ์ยังไม่ได้รับคำสั่ง ทริปยังไม่เริ่ม</Banner>}
+      {result?.kind === 'unknown' && (
+        <Banner tone="warn" title="ไม่ได้รับการยืนยันจากอุปกรณ์">
+          ยังไม่ทราบว่าทริปเริ่มแล้วหรือไม่ เชื่อมต่อใหม่เพื่อตรวจสอบ ระบบจะไม่สร้างทริปซ้ำ
+        </Banner>
+      )}
+
+      {result?.kind === 'unknown' || result?.kind === 'lost' ? (
+        <>
+          <Btn kind="teal" block icon="nfc" onClick={reconnectAndRetry} style={{ minHeight: 56 }}>
+            เชื่อมต่อและลองอีกครั้ง
+          </Btn>
+          {result.kind === 'unknown' && (
+            <Btn kind="ghost" onClick={() => { clearPendingCommand(dev.sn); setResult(null); }} style={{ alignSelf: 'center' }}>
+              ยกเลิก
+            </Btn>
+          )}
+        </>
+      ) : !linked ? (
+        <Btn kind="teal" block icon="nfc" onClick={() => requestConnect(dev.sn)} style={{ minHeight: 56 }}>
+          แตะ NFC เพื่อเชื่อมต่อ
+        </Btn>
+      ) : (
+        <Btn kind="teal" block icon="player-play" busy={busy} disabled={!formOk || blocks.length > 0} onClick={start} style={{ minHeight: 56, fontSize: 17 }}>
+          {busy ? 'กำลังเริ่มทริป…' : `เริ่มทริป ${form.low}–${form.high}°C`}
+        </Btn>
+      )}
+    </div>
   );
 }
 
