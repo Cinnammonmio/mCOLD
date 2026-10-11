@@ -51,7 +51,6 @@ export function SendTab() {
   const selected = sel.filter((id) => selectable.includes(id));
   // Internet the phone will use: the CSV of each trip (receiving over Bluetooth uses none).
   const sizeOf = (id) => csvBytes(dev, dev.trips.find((t) => t.trip_id === id));
-  const allBytes = selectable.reduce((n, id) => n + sizeOf(id), 0);
   const selBytes = selected.reduce((n, id) => n + sizeOf(id), 0);
   const allOn = selectable.length > 0 && selected.length === selectable.length;
   const toggle = (id) => setSel(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
@@ -99,10 +98,16 @@ export function SendTab() {
             ]}
           />
           {filter !== 'sent' && selectable.length > 0 && (
-            <label className="check small" style={{ padding: '0 2px' }}>
-              <input type="checkbox" checked={allOn} onChange={() => setSel(allOn ? [] : selectable)} />
-              <span>เลือกทั้งหมดที่รอส่ง ({selectable.length} ทริป · ใช้เน็ตประมาณ {fmtBytes(allBytes)})</span>
-            </label>
+            <div className="row between small" style={{ padding: '0 2px', alignItems: 'flex-start' }}>
+              <label className="check">
+                <input type="checkbox" checked={allOn} onChange={() => setSel(allOn ? [] : selectable)} />
+                <span>เลือกทั้งหมดที่รอส่ง ({selectable.length})</span>
+              </label>
+              {/* total of what is selected right now */}
+              <span className="bold" style={{ whiteSpace: 'nowrap', paddingTop: 2 }}>
+                {selected.length ? `เลือก ${selected.length} · ใช้เน็ต ≈ ${fmtBytes(selBytes)}` : <span className="muted" style={{ fontWeight: 400 }}>ยังไม่ได้เลือก</span>}
+              </span>
+            </div>
           )}
           {shown.length === 0 && (
             <div className="card center small muted" style={{ padding: 24 }}>
