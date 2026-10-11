@@ -90,7 +90,9 @@ function ConnectFlow({ req }) {
     }
     finishConnect(dev.sn);
     setAt(STEPS.length - 1);
-    setPhase('done'); // stay open so the user sees what the box reported
+    setPhase('done');
+    await wait(900); // let the last step show as done, then go straight on
+    if (alive.current) close(true);
   };
 
   const items = STEPS.map((st, i) => {
@@ -142,13 +144,6 @@ function ConnectFlow({ req }) {
         )}
 
         {phase !== 'idle' && <Steps items={items} />}
-        {phase === 'done' && (
-          <>
-            <Btn kind="teal" block icon="check" onClick={() => close(true)}>
-              ดำเนินการต่อ
-            </Btn>
-          </>
-        )}
 
         {phase === 'error' && (
           <div className="banner bad" role="alert">
