@@ -87,3 +87,11 @@ export function csvName(sn, startUtc, tzMin = 420) {
   const s = `${p(d.getUTCFullYear() % 100)}${p(d.getUTCMonth() + 1)}${p(d.getUTCDate())}${p(d.getUTCHours())}${p(d.getUTCMinutes())}`;
   return `TRIP_${sn}_${s}.csv`;
 }
+
+/** File size for people: "850 B", "128 KB", "1.4 MB" (1 KB = 1024 B). */
+export function fmtBytes(n) {
+  if (!isNum(n)) return DASH;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024)).toLocaleString('th-TH')} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}

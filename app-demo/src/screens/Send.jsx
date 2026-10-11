@@ -1,8 +1,8 @@
 // Select finished trips and send them: box → BLE → app → phone internet → server → tell the box.
 import { useState } from 'react';
 import { nav, useApp, userName } from '../store.js';
-import { deviceView, findDevice, isLinked, runBatch, transferSteps, tripDelivery, tripSeries } from '../sim.js';
-import { fmtDateTime, fmtDuration, fmtNum, fmtTime, tripLabel } from '../format.js';
+import { csvBytes, deviceView, findDevice, isLinked, runBatch, transferSteps, tripDelivery, tripSeries } from '../sim.js';
+import { fmtBytes, fmtDateTime, fmtDuration, fmtNum, fmtTime, tripLabel } from '../format.js';
 import { requestConnect } from '../ConnectSheet.jsx';
 import { AppBar, Banner, Btn, Chip, Icon, Seg, Steps } from '../ui.jsx';
 import { DeviceContext, NeedConnection } from './Mcold.jsx';
@@ -49,6 +49,10 @@ export function SendTab() {
   const shown = trips.filter((x) => filter === 'all' || (filter === 'pending' ? x.d.pending || x.d.key === 'active' : x.d.key === 'sent'));
   const selectable = trips.filter((x) => x.d.pending).map((x) => x.t.trip_id);
   const selected = sel.filter((id) => selectable.includes(id));
+  // Internet the phone will use: the CSV of each trip (receiving over Bluetooth uses none).
+  const sizeOf = (id) => csvBytes(dev, dev.trips.find((t) => t.trip_id === id));
+  const allBytes = selectable.reduce((n, id) => n + sizeOf(id), 0);
+  const selBytes = selected.reduce((n, id) => n + sizeOf(id), 0);
   const allOn = selectable.length > 0 && selected.length === selectable.length;
   const toggle = (id) => setSel(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
   const running = s.batch?.running;
@@ -97,7 +101,7 @@ export function SendTab() {
           {filter !== 'sent' && selectable.length > 0 && (
             <label className="check small" style={{ padding: '0 2px' }}>
               <input type="checkbox" checked={allOn} onChange={() => setSel(allOn ? [] : selectable)} />
-              <span>เลือกทั้งหมดที่รอส่ง ({selectable.length})</span>
+              <span>เลือกทั้งหมดที่รอส่ง ({selectable.length} ทริป · ใช้เน็ตประมาณ {fmtBytes(allBytes)})</span>
             </label>
           )}
           {shown.length === 0 && (
@@ -113,9 +117,12 @@ export function SendTab() {
           <div className="tiny muted" style={{ padding: '0 2px' }}>
             การส่งไม่ลบทริปออกจากอุปกรณ์ และส่งซ้ำได้โดยข้อมูลบน Server ไม่ซ้ำ
           </div>
+          <div className="tiny muted" style={{ padding: '0 2px' }}>
+            ขนาดเป็นค่าประมาณของไฟล์ CSV ที่ส่งด้วยอินเทอร์เน็ตมือถือ การรับข้อมูลจากอุปกรณ์ผ่าน Bluetooth ไม่ใช้อินเทอร์เน็ต ถ้าส่งไม่สำเร็จแล้วลองใหม่จะใช้อีกครั้ง
+          </div>
           <div style={{ position: 'sticky', bottom: -24, padding: '10px 0 14px', background: 'linear-gradient(to top, var(--bg) 75%, transparent)' }}>
             <Btn kind="teal" block icon="cloud-upload" disabled={!selected.length || running} onClick={send}>
-              {running ? 'กำลังส่งรายการก่อนหน้า…' : selected.length ? `ส่งข้อมูลที่เลือก (${selected.length} ทริป)` : 'เลือกทริปที่ต้องการส่ง'}
+              {running ? 'กำลังส่งรายการก่อนหน้า…' : selected.length ? `ส่งที่เลือก ${selected.length} ทริป · ใช้เน็ต ≈ ${fmtBytes(selBytes)}` : 'เลือกทริปที่ต้องการส่ง'}
             </Btn>
           </div>
         </>
@@ -151,6 +158,7 @@ function TripRow({ dev, trip, d, checked, onToggle }) {
         <div className="row wrap small" style={{ gap: 10 }}>
           <span className="row" style={{ gap: 4 }}><Icon name="clock" size={14} className="muted" />{end ? fmtDuration(end - trip.startUtc) : '—'}</span>
           <span className="row" style={{ gap: 4 }}><Icon name="database" size={14} className="muted" />{rows != null ? `${fmtNum(rows)} แถว` : '—'}</span>
+          {end && <span className="row" style={{ gap: 4 }}><Icon name="world" size={14} className="muted" />{d.key === 'sent' ? fmtBytes(csvBytes(dev, trip)) : `ใช้เน็ต ≈ ${fmtBytes(csvBytes(dev, trip))}`}</span>}
         </div>
         <div><Chip tone={d.tone} dot={active}>{d.label}</Chip></div>
         {active && (
@@ -207,6 +215,7 @@ export function SendProgress({ ids }) {
           <div>
             <div className="tiny muted">ส่งสำเร็จครบทุกขั้น</div>
             <div className="bold" style={{ fontSize: 20 }}>{done} / {items.length} ทริป</div>
+            <div className="tiny muted">รวมใช้เน็ตประมาณ {fmtBytes(items.reduce((n, x) => n + csvBytes(x.dev, x.trip), 0))}</div>
           </div>
           {running ? <Chip tone="info" icon="loader-2">กำลังทำงาน</Chip> : done === items.length ? <Chip tone="ok" icon="circle-check">เสร็จสิ้น</Chip> : <Chip tone="warn">ค้าง {left.length}</Chip>}
         </div>
@@ -302,6 +311,10 @@ function TransferCard({ dev, trip, tr, running, onRetry }) {
       </div>
       <Steps items={items} />
       {action}
+      <div className="tiny muted">
+        ไฟล์ CSV ประมาณ {fmtBytes(csvBytes(dev, trip))}
+        {tr?.uploads ? ` · ใช้เน็ตไปแล้วประมาณ ${fmtBytes(csvBytes(dev, trip) * tr.uploads)}` : ''}
+      </div>
       {tr?.sentBy && trip.sent && <div className="tiny muted">ส่งโดย {userName(s, tr.sentBy)} · {fmtTime(tr.doneAt)}</div>}
       {tr?.uploads > 1 && <div className="tiny muted">ส่งขึ้น Server แล้ว {tr.uploads} ครั้ง · การส่งซ้ำไม่ทำให้ข้อมูลซ้ำ</div>}
     </div>

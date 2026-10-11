@@ -213,6 +213,21 @@ export function tripDelivery(s, dev, trip) {
 }
 const pct = (tr) => `${Math.floor((100 * tr.rowsReceived) / Math.max(1, tr.totalRows))}%`;
 
+// CSV columns from ble-protocol.md §6 (ASCII, CRLF). Size = header + rows × one typical row of this trip.
+const CSV_HEADER = 'trip_id,trip_date,trip_number,seq,sn,timestamp,utc,event,temp,tempmin,tempmax,alarm,timeok,gnssstate,latitude,longitude,motion,battery,internet,detail\r\n';
+
+/** Estimated size of the trip's CSV, i.e. what the phone uploads over its internet. */
+export function csvBytes(dev, trip) {
+  const rows = tripSeries(dev, trip, trip.stopUtc ?? simNow()).rows;
+  const hasFix = dev.gnss.fixAt != null;
+  const row = [
+    trip.trip_id, trip.trip_date, trip.trip_number, Math.floor(rows / 2), dev.sn,
+    '14:24:00 07/10/2026', Math.floor(trip.startUtc / 1000), 'SAMPLE', '4.25', trip.low.toFixed(1), trip.high.toFixed(1),
+    '', 'true', hasFix ? 'last' : 'none', hasFix ? '13.8121' : '', hasFix ? '100.5583' : '', '0', '78', 'offline', '',
+  ].join(',') + '\r\n';
+  return CSV_HEADER.length + rows * row.length;
+}
+
 export function pendingTrips(s, dev) {
   return dev.trips.filter((t) => t.stopUtc != null && !t.sent);
 }
