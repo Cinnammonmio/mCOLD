@@ -234,7 +234,7 @@ export function Guide({ onBack }) {
                 ['พบอุปกรณ์', 'ชื่อที่ประกาศ = SN', 'advertisement / scan response'],
                 ['เชื่อมต่อ Bluetooth', 'Firmware, ฮาร์ดแวร์, เวอร์ชันโปรโตคอล', <><code>INFO</code> (<code>fw</code>, <code>hw</code>, <code>proto</code>)</>],
                 ['ยืนยันสิทธิ์', 'ยืนยันแล้ว', <><code>AUTH</code> → <code>ok</code></>],
-                ['พร้อมสั่งงาน', 'อุณหภูมิ, แบต % · mV · ใช้แบต/เสียบไฟ, ทริป, แจ้งเตือนค้าง, ทริปรอส่ง, ที่มาของเวลา, ตำแหน่ง, พื้นที่, Wi-Fi ที่ต่ออยู่', <><code>STATUS</code> (temp, power.soc/mv/external, trip, time.quality, gnss, storage.used_pct), <code>LIST_TRIPS</code>, event <code>WIFI</code></>],
+                ['พร้อมสั่งงาน → เมนูของเครื่อง “ดูข้อมูลเพิ่มเติม”', 'อุณหภูมิละเอียด, แรงดันแบต, แหล่งไฟ, ทริป, แจ้งเตือนค้าง, ทริปรอส่ง, ที่มาของเวลา, ตำแหน่ง, พื้นที่, Wi-Fi ที่ต่ออยู่ (พับไว้ใต้การ์ดเครื่อง)', <><code>STATUS</code> (temp, power.soc/mv/external, trip, time.quality, gnss, storage.used_pct), <code>LIST_TRIPS</code>, event <code>WIFI</code></>],
               ]}
             />
             <h3>หน้าตั้งค่าอุปกรณ์</h3>

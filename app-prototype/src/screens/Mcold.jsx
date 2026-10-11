@@ -6,7 +6,7 @@ import { nav, useApp, simNow, wardDevices, wardOf, userName } from '../store.js'
 import { WardBar } from '../Users.jsx';
 import { deviceView, disconnect, findDevice, inRange, isLinked, pendingTrips } from '../sim.js';
 import { fmtAgo, fmtPct, fmtTemp, fmtTime } from '../format.js';
-import { requestConnect } from '../ConnectSheet.jsx';
+import { DeviceReadout, requestConnect } from '../ConnectSheet.jsx';
 import { AppBar, Banner, BatteryIcon, Btn, Chip, Icon, Seg, useTick } from '../ui.jsx';
 import { TripTab } from './Trip.jsx';
 import { SettingsTab } from './Settings.jsx';
@@ -187,6 +187,7 @@ export function DeviceHub() {
   const cargo = cargoOf(s, dev);
   const ok = v.trip ? inRange(v.temp, v.trip) : null;
   const open = (name) => nav.push({ name });
+  const [more, setMore] = useState(false);
   return (
     <div className="screen">
       <AppBar title={dev.name} sub={`${dev.sn} · ${wardOf(s, dev.wardId).name}`} backLabel="อุปกรณ์" onBack={() => nav.toTab('devices')} />
@@ -216,6 +217,21 @@ export function DeviceHub() {
           )}
           {v.trip?.alarms.active.length > 0 && <div className="small" style={{ color: 'var(--bad)', fontWeight: 600 }}>มีการแจ้งเตือนค้างอยู่</div>}
           <Freshness v={v} />
+          {v.known && (
+            <>
+              <button
+                className="row between"
+                onClick={() => setMore(!more)}
+                aria-expanded={more}
+                aria-controls={`readout-${dev.sn}`}
+                style={{ border: 0, borderTop: '1px solid var(--line)', background: 'none', padding: '10px 0 0', width: '100%', color: 'var(--teal)', fontWeight: 600, fontSize: 14 }}
+              >
+                {more ? 'ซ่อนข้อมูลเพิ่มเติม' : 'ดูข้อมูลเพิ่มเติม'}
+                <Icon name="chevron-down" size={18} style={{ transform: more ? 'rotate(180deg)' : 'none' }} />
+              </button>
+              {more && <DeviceReadout sn={dev.sn} />}
+            </>
+          )}
         </div>
 
         {linked ? (

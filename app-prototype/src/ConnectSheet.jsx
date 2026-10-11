@@ -144,7 +144,6 @@ function ConnectFlow({ req }) {
         {phase !== 'idle' && <Steps items={items} />}
         {phase === 'done' && (
           <>
-            <DeviceReadout sn={dev.sn} />
             <Btn kind="teal" block icon="check" onClick={() => close(true)}>
               ดำเนินการต่อ
             </Btn>
@@ -225,7 +224,10 @@ function DemoOutcome({ picker }) {
 const TIME_SRC = { ntp: 'ตั้งจากอินเทอร์เน็ต', gnss: 'ตั้งจากดาวเทียม', host: 'ตั้งจากมือถือ', rtc: 'นาฬิกาในเครื่อง', none: 'ยังไม่มีเวลา' };
 const ALARM_TH = { ALARM_HIGH: 'อุณหภูมิสูง', ALARM_LOW: 'อุณหภูมิต่ำ', ALARM_PROBE: 'หัววัด', BATTERY_LOW: 'แบตต่ำ' };
 
-/** What the box reports right after connecting (STATUS + WIFI event), in plain words. */
+/**
+ * Details the box reports on connect (STATUS, LIST_TRIPS, WIFI event), in plain words.
+ * Shown folded under the device card; temperature and battery % are already on the card.
+ */
 export function DeviceReadout({ sn }) {
   const s = useApp();
   const dev = findDevice(s, sn);
@@ -233,8 +235,9 @@ export function DeviceReadout({ sn }) {
   const pending = pendingTrips(s, dev).length;
   const w = v.wifiNow || {};
   const rows = [
-    ['อุณหภูมิ', v.known ? (v.temp == null ? 'ไม่พบหัววัด' : fmtTemp(v.temp, 2)) : '—'],
-    ['แบตเตอรี่', v.battery == null ? '—' : `${fmtPct(v.battery)} · ${v.batteryMv ?? '—'} mV · ${v.external ? 'เสียบไฟอยู่' : 'ใช้แบตเตอรี่'}`],
+    ['อุณหภูมิ (ละเอียด)', v.known ? (v.temp == null ? 'ไม่พบหัววัด' : fmtTemp(v.temp, 2)) : '—'],
+    ['แรงดันแบตเตอรี่', v.batteryMv == null ? '—' : `${v.batteryMv} mV`],
+    ['แหล่งไฟ', !v.known ? '—' : v.external ? 'เสียบไฟอยู่' : 'ใช้แบตเตอรี่'],
     ['ทริป', v.trip ? `${tripLabel(v.trip)} · กำลังบันทึก` : 'ไม่มีทริปทำงาน'],
     ['แจ้งเตือนค้าง', v.trip ? (v.trip.alarms.active.length ? v.trip.alarms.active.map((a) => ALARM_TH[a]).join(', ') : `ไม่มี (ทั้งทริป ${v.trip.alarms.raised} ครั้ง)`) : 'ไม่มี'],
     ['ทริปรอส่ง', `${pending} ทริป`],
@@ -244,8 +247,7 @@ export function DeviceReadout({ sn }) {
     ['Wi-Fi ของเครื่อง', w.connected ? `${w.ssid} · ${w.rssi} dBm` : 'ไม่ได้เชื่อมต่อ'],
   ];
   return (
-    <div className="card stack tight" style={{ background: 'var(--soft)', borderColor: 'transparent' }}>
-      <h3 className="row"><Icon name="device-mobile" size={18} className="muted" /> ข้อมูลที่ได้รับจากอุปกรณ์</h3>
+    <div id={`readout-${sn}`}>
       <dl className="kv">
         {rows.map(([k, val]) => (
           <Fragment key={k}>
