@@ -34,7 +34,8 @@ docs/
 display-mock/                                 renderer + ภาพหน้าจอทุก state ขนาดจริง
 led-mock/                                     renderer + ภาพ pattern ไฟและผังตำแหน่ง
 mcold-spec/                                   ต้นฉบับเอกสารสเปกสำหรับผู้บริหาร/ฝ่ายขาย
-app-prototype/                                ต้นแบบเว็บแอปที่กดได้ (แอปรวมผลิตภัณฑ์, flow ของ mCOLD) สำหรับทีมแอป
+app-demo/                                     โค้ด demo แอป (React) · ไฟล์ demo ที่ build แล้วอยู่ที่ docs/app/demo/index.html
+                                              สรุปการออกแบบแอปสำหรับทีมแอปที่ docs/app/app-design.md
 mCOLD_Functions_and_Usage_Flow_2026-09-20.pdf เอกสารที่ build ออกมาแล้ว (8 หน้า)
 ```
 

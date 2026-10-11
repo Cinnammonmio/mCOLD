@@ -10,7 +10,7 @@ import { DeviceContext, NeedConnection } from './Mcold.jsx';
 
 export const ERR_TEXT = {
   ALREADY_ACTIVE: { title: 'อุปกรณ์มีทริปกำลังทำงานอยู่แล้ว', fix: 'จบทริปเดิมก่อน แล้วจึงเริ่มทริปใหม่' },
-  LOW_BATTERY: { title: 'แบตเตอรี่ต่ำเกินกว่าจะเริ่มทริป', fix: 'ชาร์จกล่องให้แบตเตอรี่สูงขึ้น แล้วลองอีกครั้ง' },
+  BATTERY_LOW: { title: 'แบตเตอรี่ต่ำเกินกว่าจะเริ่มทริป', fix: 'ชาร์จกล่องให้แบตเตอรี่สูงขึ้น แล้วลองอีกครั้ง' },
   LOG_FULL: { title: 'พื้นที่บันทึกในอุปกรณ์เต็ม', fix: 'ส่งข้อมูลทริปเก่าที่รอส่งก่อน เพื่อให้อุปกรณ์คืนพื้นที่' },
   NOT_ACTIVE: { title: 'อุปกรณ์ไม่มีทริปที่กำลังทำงาน', fix: 'ทริปนี้อาจจบไปแล้ว ตรวจสอบรายการรอส่ง' },
 };
@@ -82,8 +82,8 @@ export function StartTrip() {
   if (form.low.trim() === '' || !Number.isFinite(low)) errs.low = 'กรอกตัวเลข';
   if (form.high.trim() === '' || !Number.isFinite(high)) errs.high = 'กรอกตัวเลข';
   if (!errs.low && !errs.high && low >= high) errs.high = 'ค่าสูงสุดต้องมากกว่าค่าต่ำสุด';
-  if (!errs.low && (low < -40 || low > 80)) errs.low = 'อยู่นอกช่วงที่รองรับ (−40 ถึง 80°C)';
-  if (!errs.high && (high < -40 || high > 80)) errs.high = 'อยู่นอกช่วงที่รองรับ (−40 ถึง 80°C)';
+  if (!errs.low && (low < -40 || low > 100)) errs.low = 'อยู่นอกช่วงที่รองรับ (−40 ถึง 100°C)';
+  if (!errs.high && (high < -40 || high > 100)) errs.high = 'อยู่นอกช่วงที่รองรับ (−40 ถึง 100°C)';
   const formOk = Object.keys(errs).length === 0;
 
   const confirm = async () => {

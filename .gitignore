@@ -9,5 +9,5 @@ __pycache__/
 # can carry positions) and copies of the PDFs packed for sending.
 exports/
 
-# app prototype (dist/index.html is kept so the prototype opens without a build)
-app-prototype/node_modules/
+# app demo (built into docs/app/demo/)
+app-demo/node_modules/

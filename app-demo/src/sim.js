@@ -265,7 +265,7 @@ function boxStartTrip(s, sn, cmd) {
   const now = simNow();
   let res;
   if (dev.activeTripId) res = { ok: false, err: 'ALREADY_ACTIVE' };
-  else if (dev.batteryMv != null && dev.batteryMv < BATT_TRIP_MV) res = { ok: false, err: 'LOW_BATTERY' };
+  else if (dev.batteryMv != null && dev.batteryMv < BATT_TRIP_MV) res = { ok: false, err: 'BATTERY_LOW' };
   else if (dev.storagePct >= 99) res = { ok: false, err: 'LOG_FULL' };
   else {
     const diff = dev.clockDiffS;

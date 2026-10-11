@@ -1,4 +1,4 @@
-# ต้นแบบแอป Cold Chain Hub (ส่วน mCOLD)
+# Demo แอป Cold Chain Hub (ส่วน mCOLD)
 
 เว็บแอปต้นแบบที่กดใช้งานได้ จำลองแอปมือถือที่รวมหลายผลิตภัณฑ์ (eTEMP, mCOLD, SMT) โดยออกแบบละเอียดเฉพาะ mCOLD
 ใช้นำเสนอทีมพัฒนาแอปให้เห็นหน้าจอ ลำดับการใช้งาน และพฤติกรรมของระบบ
@@ -13,7 +13,8 @@
 
 ## เปิดดู
 
-ไฟล์ที่ build แล้วอยู่ที่ [`dist/index.html`](dist/index.html) เป็นไฟล์เดียว เปิดในเบราว์เซอร์ได้เลย
+ไฟล์ที่ build แล้วอยู่ที่ [`docs/app/demo/index.html`](../docs/app/demo/index.html) เป็นไฟล์เดียว เปิดในเบราว์เซอร์ได้เลย
+สรุปการออกแบบสำหรับทีมทำแอปอยู่ที่ [`docs/app/app-design.md`](../docs/app/app-design.md)
 (ฟอนต์ IBM Plex Sans Thai โหลดจาก Google Fonts ถ้าออฟไลน์จะใช้ฟอนต์ไทยของระบบแทน)
 
 บน Desktop แสดงเป็นกรอบมือถือพร้อมแผงควบคุมเดโมด้านขวา บนมือถือแสดงเต็มจอ และแผงเดโมอยู่ที่ปุ่ม “เดโม”
@@ -21,10 +22,10 @@
 ## พัฒนาต่อ
 
 ```bash
-cd app-prototype
+cd app-demo
 npm install
 npm run dev      # เปิด http://localhost:5173
-npm run build    # สร้าง dist/index.html ไฟล์เดียว
+npm run build    # สร้าง ../docs/app/demo/index.html ไฟล์เดียว
 ```
 
 ต้องมี Node.js 18 ขึ้นไป · React 18 + Vite 5
