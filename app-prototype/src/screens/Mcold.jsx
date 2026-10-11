@@ -162,6 +162,7 @@ export function McoldHome() {
             { value: 'pending', label: `รอส่ง ${nPending}` },
           ]}
         />
+        <div className="tiny muted" style={{ marginTop: -4 }}>ข้อมูลล่าสุดที่มือถือเครื่องนี้ได้รับจากแต่ละเครื่อง ตอนเชื่อมต่อครั้งล่าสุด</div>
         {list.map((d) => <DeviceRow key={d.sn} dev={d} />)}
         {list.length === 0 && <div className="card center small muted" style={{ padding: 24 }}>ไม่มีอุปกรณ์ในกลุ่มนี้</div>}
       </div>

@@ -1,8 +1,9 @@
 // Simulated "tap NFC → find box → BLE → authorize → ready" (ble-protocol.md §1–2).
 // No pairing code: the tap itself proves the phone is next to the box.
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { getState, update, updateUi, useApp } from './store.js';
-import { finishConnect, findDevice } from './sim.js';
+import { deviceView, finishConnect, findDevice, pendingTrips } from './sim.js';
+import { fmtPct, fmtTemp, tripLabel } from './format.js';
 import { Btn, Icon, Seg, Sheet, Steps } from './ui.jsx';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -84,9 +85,7 @@ function ConnectFlow({ req }) {
     }
     finishConnect(dev.sn);
     setAt(STEPS.length - 1);
-    setPhase('done');
-    await wait(700);
-    if (alive.current) close(true);
+    setPhase('done'); // stay open so the user sees what the box reported
   };
 
   const items = STEPS.map((st, i) => {
@@ -94,7 +93,15 @@ function ConnectFlow({ req }) {
     if (phase === 'done' || i < at) state = 'done';
     else if (i === at) state = phase === 'error' && fail?.at === i ? 'error' : 'active';
     if (phase === 'done' && i === STEPS.length - 1) state = 'done';
-    const sub = st.key === 'find' && state === 'done' ? `${dev.name} · ${dev.sn}` : st.sub;
+    // What the app has in hand after each step (ble-protocol.md §1–2). The tag key is never shown.
+    const got = {
+      tap: `หมายเลขเครื่อง ${dev.sn} · Bluetooth ${dev.bleMac} · รหัสยืนยัน: ได้รับแล้ว (ไม่แสดง)`,
+      find: `พบอุปกรณ์ชื่อ ${dev.sn} ในระยะ`,
+      ble: `Firmware ${dev.fw} · ฮาร์ดแวร์ ${dev.hw} · โปรโตคอล ${dev.proto}`,
+      auth: 'ยืนยันแล้ว สั่งงานได้จนกว่าจะตัดการเชื่อมต่อ',
+      ready: 'ได้รับสถานะและค่าตั้งของอุปกรณ์แล้ว',
+    };
+    const sub = state === 'done' ? got[st.key] : st.sub;
     return { ...st, sub, state };
   });
 
@@ -109,14 +116,16 @@ function ConnectFlow({ req }) {
         </div>
         {req.reason && <div className="small">{req.reason}</div>}
 
-        <div className={`nfc-art ${phase === 'running' && at === 0 ? 'tapping' : ''}`}>
-          <div className="box">
-            <div className={`tag ${phase === 'idle' ? 'pulse' : ''}`} style={{ position: 'relative' }}>
-              <Icon name="nfc" size={20} />
+        {phase !== 'done' && (
+          <div className={`nfc-art ${phase === 'running' && at === 0 ? 'tapping' : ''}`}>
+            <div className="box">
+              <div className={`tag ${phase === 'idle' ? 'pulse' : ''}`} style={{ position: 'relative' }}>
+                <Icon name="nfc" size={20} />
+              </div>
             </div>
+            <div className="phone-ic" />
           </div>
-          <div className="phone-ic" />
-        </div>
+        )}
 
         {phase === 'idle' && (
           <>
@@ -128,6 +137,14 @@ function ConnectFlow({ req }) {
         )}
 
         {phase !== 'idle' && <Steps items={items} />}
+        {phase === 'done' && (
+          <>
+            <DeviceReadout sn={dev.sn} />
+            <Btn kind="teal" block icon="check" onClick={() => close(true)}>
+              ดำเนินการต่อ
+            </Btn>
+          </>
+        )}
 
         {phase === 'error' && (
           <div className="banner bad" role="alert">
@@ -196,6 +213,42 @@ function DemoOutcome({ picker }) {
           { value: 'authfail', label: 'สิทธิ์ไม่ผ่าน' },
         ]}
       />
+    </div>
+  );
+}
+
+const TIME_SRC = { ntp: 'ตั้งจากอินเทอร์เน็ต', gnss: 'ตั้งจากดาวเทียม', host: 'ตั้งจากมือถือ', rtc: 'นาฬิกาในเครื่อง', none: 'ยังไม่มีเวลา' };
+const ALARM_TH = { ALARM_HIGH: 'อุณหภูมิสูง', ALARM_LOW: 'อุณหภูมิต่ำ', ALARM_PROBE: 'หัววัด', BATTERY_LOW: 'แบตต่ำ' };
+
+/** What the box reports right after connecting (STATUS + WIFI event), in plain words. */
+export function DeviceReadout({ sn }) {
+  const s = useApp();
+  const dev = findDevice(s, sn);
+  const v = deviceView(s, dev);
+  const pending = pendingTrips(s, dev).length;
+  const w = v.wifiNow || {};
+  const rows = [
+    ['อุณหภูมิ', v.known ? (v.temp == null ? 'ไม่พบหัววัด' : fmtTemp(v.temp, 2)) : '—'],
+    ['แบตเตอรี่', v.battery == null ? '—' : `${fmtPct(v.battery)} · ${v.batteryMv ?? '—'} mV · ${v.external ? 'เสียบไฟอยู่' : 'ใช้แบตเตอรี่'}`],
+    ['ทริป', v.trip ? `${tripLabel(v.trip)} · กำลังบันทึก` : 'ไม่มีทริปทำงาน'],
+    ['แจ้งเตือนค้าง', v.trip ? (v.trip.alarms.active.length ? v.trip.alarms.active.map((a) => ALARM_TH[a]).join(', ') : `ไม่มี (ทั้งทริป ${v.trip.alarms.raised} ครั้ง)`) : 'ไม่มี'],
+    ['ทริปรอส่ง', `${pending} ทริป`],
+    ['เวลาของเครื่อง', TIME_SRC[v.timeQuality] || '—'],
+    ['ตำแหน่ง', v.gnss.state === 'none' ? 'ยังไม่พบตำแหน่ง' : `${v.gnss.lat.toFixed(4)}, ${v.gnss.lon.toFixed(4)}`],
+    ['พื้นที่บันทึก', `ใช้ไป ${fmtPct(v.storagePct)}`],
+    ['Wi-Fi ของเครื่อง', w.connected ? `${w.ssid} · ${w.rssi} dBm` : 'ไม่ได้เชื่อมต่อ'],
+  ];
+  return (
+    <div className="card stack tight" style={{ background: 'var(--soft)', borderColor: 'transparent' }}>
+      <h3 className="row"><Icon name="device-mobile" size={18} className="muted" /> ข้อมูลที่ได้รับจากอุปกรณ์</h3>
+      <dl className="kv">
+        {rows.map(([k, val]) => (
+          <Fragment key={k}>
+            <dt>{k}</dt>
+            <dd>{val}</dd>
+          </Fragment>
+        ))}
+      </dl>
     </div>
   );
 }

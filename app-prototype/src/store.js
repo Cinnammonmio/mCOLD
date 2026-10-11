@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 
 const STORAGE_KEY = 'cch-prototype-state-v1';
-const SCHEMA = 4;
+const SCHEMA = 5;
 
 export const DEFAULT_CONFIG = {
   sample_period_s: 300,
@@ -16,6 +16,13 @@ export const DEFAULT_CONFIG = {
   buzzer_enabled: 1,
   alarm_dwell_s: 300,
   alarm_hyst_c10: 5,
+  idle_wake_s: 3600,
+  led_status_s: 900,
+  accel_wake_ths: 2,
+  usb_drive: 1,
+  // test-only, set from the USB console; the app shows them read-only
+  tap_test: 0,
+  rx_show: 0,
 };
 
 /** Keys the docs lock while a trip runs (device-settings.md, 🔒). */
@@ -88,6 +95,14 @@ function mkDevice(o) {
     trips: [],
     seenReq: {},
     lastSyncAt: o.lastSyncAt ?? null,
+    // GET_INFO / NDEF identity. MACs follow the ESP32 pattern of the doc example (BLE = Wi-Fi MAC + 2).
+    proto: 1,
+    wifiMac: o.wifiMac,
+    bleMac: o.bleMac,
+    timeQuality: o.timeQuality || 'rtc',
+    serverRev: o.serverRev ?? null, // SETTINGS.server_rev: last settings document applied from the server
+    otaBase: o.otaBase ?? null,
+    wifiNow: o.wifiNow || { connected: false },
     knownSince: o.knownSince,
   };
 }
@@ -100,7 +115,10 @@ const devName = (sn) => `mCOLD ${sn.slice(-3)}`;
  */
 export function seed(now = Date.now()) {
   const sn = (n) => `mCDV1-L0169-1069-${String(n).padStart(3, '0')}`;
-  const mk = (n, o) => mkDevice({ sn: sn(n), name: devName(sn(n)), knownSince: now - 20 * DAY, ...o });
+  const hex = (v) => v.toString(16).toUpperCase().padStart(2, '0');
+  const mac = (low) => `28:84:85:27:9B:${hex(low)}`;
+  const mk = (n, o) =>
+    mkDevice({ sn: sn(n), name: devName(sn(n)), knownSince: now - 20 * DAY, wifiMac: mac(0x80 + (n - 1) * 4), bleMac: mac(0x82 + (n - 1) * 4), ...o });
   const appTrips = {};
 
   const d1 = mk(1, {
@@ -109,10 +127,20 @@ export function seed(now = Date.now()) {
   });
   mkTrip(d1, { start: now - 4 * DAY - 3 * HOUR, stop: now - 3 * DAY - 2 * HOUR, sent: true });
 
+  // mCDV1-L0169-1069-002 is the example box in the docs; its values are taken from them:
+  // NDEF ble MAC, STATUS (soc 78, 3987 mV, used_pct 1, time ntp), WIFI event, GET_NETWORK 5 slots,
+  // and the rev 3 settings document (upload_period_s 600, temp_adj_c100 -50, ota_base).
   const d2 = mk(2, {
-    baseTemp: 5.1, battery: 64, batteryMv: 3870, storagePct: 7, lastSyncAt: now - 4 * MIN,
+    baseTemp: 4.75, battery: 78, batteryMv: 3987, storagePct: 1, lastSyncAt: now - 4 * MIN,
     gnss: { fixAt: now - 25 * MIN, lat: 13.8121, lon: 100.5583 },
-    wifi: [{ slot: 1, ssid: 'Warehouse-2', dhcp: true }],
+    wifiMac: '28:84:85:27:9B:84', bleMac: '28:84:85:27:9B:86', timeQuality: 'ntp', serverRev: 3,
+    otaBase: 'https://drive.siamatic.co.th/media/firmwares',
+    config: { upload_period_s: 600, temp_adj_c100: -50 },
+    wifi: [
+      { slot: 1, ssid: 'RDE_2.4GHz', dhcp: true },
+      { slot: 3, ssid: 'Warehouse', dhcp: false, ip: '192.168.1.50', gateway: '192.168.1.1', subnet: '255.255.255.0', dns: '' },
+    ],
+    wifiNow: { connected: true, ssid: 'RDE_2.4GHz', dhcp: true, ip: '192.168.0.13', gateway: '192.168.0.1', subnet: '255.255.255.0', dns: '192.168.0.1', rssi: -51 },
   });
   mkTrip(d2, { start: now - 9 * DAY, stop: now - 7 * DAY - 5 * HOUR, sent: true });
   mkTrip(d2, { start: now - 6 * DAY - 4 * HOUR, stop: now - 5 * DAY, sent: true });
@@ -134,6 +162,7 @@ export function seed(now = Date.now()) {
     baseTemp: 3.8, battery: 41, batteryMv: 3760, storagePct: 18, lastSyncAt: now - 2 * HOUR - 10 * MIN,
     gnss: { fixAt: now - 3 * HOUR, lat: 13.7466, lon: 100.5347 },
     wifi: [{ slot: 2, ssid: 'Hospital-Logistics', dhcp: true }],
+    timeQuality: 'gnss',
   });
   mkTrip(d3, { start: now - 12 * DAY, stop: now - 10 * DAY, sent: true });
   mkTrip(d3, { start: now - 6 * DAY - 2 * HOUR, stop: now - 3 * DAY - 16 * HOUR, low: 2, high: 6 });

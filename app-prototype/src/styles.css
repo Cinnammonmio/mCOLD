@@ -187,9 +187,9 @@ button { cursor: pointer; }
 .section-title { color: var(--navy); margin: 6px 2px 0; display: flex; align-items: center; gap: 8px; }
 .section-title .muted { font-weight: 400; }
 .divider { height: 1px; background: var(--line); margin: 2px 0; }
-.kv { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; font-size: 14px; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; font-size: 14px; }
 .kv dt { color: var(--muted); }
-.kv dd { margin: 0; text-align: right; font-weight: 500; }
+.kv dd { margin: 0; text-align: right; font-weight: 500; overflow-wrap: anywhere; }
 
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .metric { background: var(--soft); border-radius: 10px; padding: 10px 12px; min-width: 0; }

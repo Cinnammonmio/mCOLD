@@ -50,6 +50,7 @@ const TOC = [
   ['flows', 'Flow หลัก'],
   ['screens', 'หน้าจอและการกระทำ'],
   ['commands', 'Mapping คำสั่ง'],
+  ['data', 'ที่มาของข้อมูลบนจอ'],
   ['states', 'สถานะที่แยกกัน'],
   ['sources', 'เอกสาร / UX / ต้องตกลง'],
   ['conflicts', 'ข้อขัดแย้งที่พบ'],
@@ -201,6 +202,41 @@ export function Guide({ onBack }) {
                 ['ส่งข้อมูล ขั้น 5', <code>MARK_DELIVERED ✎</code>, <code>trip_id</code>, <><Doc /> เรียกหลัง server ยืนยันเท่านั้น · ไม่ลบทริปในกล่อง</>],
               ]}
             />
+          </section>
+
+          <section id="data">
+            <h2>ที่มาของข้อมูลบนหน้าจอ</h2>
+            <h3>รายการอุปกรณ์ (หน้า mCOLD)</h3>
+            <p className="small">แอปไม่มีช่องทางอ่านสถานะของหลายเครื่องพร้อมกัน ทุกค่าในรายการจึงเป็น<b>ค่าที่มือถือเครื่องนี้ได้รับตอนเชื่อมต่อครั้งล่าสุด</b> พร้อมเวลาที่ได้รับ ค่าสดมีเฉพาะเครื่องที่เชื่อมต่ออยู่</p>
+            <Table
+              head={['ข้อมูลบนการ์ด', 'มาจาก', 'หมายเหตุ']}
+              rows={[
+                ['ชื่อเครื่อง “mCOLD 001”', 'แอปตั้งจาก 3 หลักท้ายของ SN', <Ux />],
+                ['หมายเลขเครื่อง (SN)', <>NDEF <code>sn</code> / <code>GET_INFO.sn</code></>, <Doc />],
+                ['อุณหภูมิ', <><code>STATUS.temp.c</code> (ok=false → “ไม่พบหัววัด”)</>, <Doc />],
+                ['แบตเตอรี่ %', <code>STATUS.power.soc</code>, <Doc />],
+                ['กำลังบันทึก / ว่าง', <code>STATUS.trip.active</code>, <Doc />],
+                ['รอส่ง n', <><code>LIST_TRIPS</code> ที่ <code>sent: false</code></>, <Doc />],
+                ['ติดกับ (กล่อง)', 'ข้อมูลของแอปที่ผูกกับ trip_id', <Ux />],
+                ['เชื่อมต่ออยู่ / ไม่ได้เชื่อมต่อ', 'สถานะ BLE ของแอป', <Doc />],
+                ['ข้อมูลล่าสุดที่ได้รับ HH:MM', 'เวลาที่แอปได้ STATUS ครั้งล่าสุด', <Ux />],
+              ]}
+            />
+            <p className="small"><Open /> ถ้าต้องการเห็นสถานะสดของทุกเครื่องในรายการ ต้องมี API ให้แอปอ่าน <code>status</code> ที่กล่องส่งขึ้น server ทาง MQTT (retain) ตอนนี้ยังไม่มีในเอกสาร</p>
+            <h3>หน้าแตะ NFC</h3>
+            <Table
+              head={['ขั้น', 'ข้อมูลที่แสดง', 'มาจาก']}
+              rows={[
+                ['แตะ NFC', 'หมายเลขเครื่อง, Bluetooth MAC, “รหัสยืนยัน: ได้รับแล้ว (ไม่แสดง)”', <>NDEF <code>{'{sn, ble, key}'}</code> · key ไม่แสดงบนจอและไม่ส่งทาง BLE</>],
+                ['พบอุปกรณ์', 'ชื่อที่ประกาศ = SN', 'advertisement / scan response'],
+                ['เชื่อมต่อ Bluetooth', 'Firmware, ฮาร์ดแวร์, เวอร์ชันโปรโตคอล', <><code>INFO</code> (<code>fw</code>, <code>hw</code>, <code>proto</code>)</>],
+                ['ยืนยันสิทธิ์', 'ยืนยันแล้ว', <><code>AUTH</code> → <code>ok</code></>],
+                ['พร้อมสั่งงาน', 'อุณหภูมิ, แบต % · mV · ใช้แบต/เสียบไฟ, ทริป, แจ้งเตือนค้าง, ทริปรอส่ง, ที่มาของเวลา, ตำแหน่ง, พื้นที่, Wi-Fi ที่ต่ออยู่', <><code>STATUS</code> (temp, power.soc/mv/external, trip, time.quality, gnss, storage.used_pct), <code>LIST_TRIPS</code>, event <code>WIFI</code></>],
+              ]}
+            />
+            <h3>หน้าตั้งค่าอุปกรณ์</h3>
+            <p className="small">แสดงทุกค่าในตาราง “ค่าที่แอป / server ตั้งได้” ของ <L p="docs/app/device-settings.md" /> พร้อมค่าเริ่มต้นและช่วงตามเอกสาร (แปลงหน่วยเป็นนาที/°C ในหน้าจอ ส่งให้กล่องเป็นหน่วยเดิม) ค่าที่ 🔒 ล็อกระหว่างทริป ค่า <code>tap_test</code>, <code>rx_show</code> แสดงอ่านอย่างเดียวเพราะตั้งจาก console เท่านั้น · Wi-Fi 5 ช่องจาก <code>GET_NETWORK</code> · Wi-Fi ที่ต่ออยู่จาก event <code>WIFI</code> · <code>ota_base</code> และ <code>server_rev</code> จาก event <code>SETTINGS</code> (อ่านอย่างเดียว) · MQTT broker ไม่แสดงให้แก้</p>
+            <p className="small">ข้อมูลของ <b>mCOLD 002</b> (SN <code>mCDV1-L0169-1069-002</code>) ใช้ค่าตัวอย่างในเอกสารโดยตรง: BLE MAC <code>28:84:85:27:9B:86</code>, Wi-Fi MAC <code>…:9B:84</code>, แบต 78% / 3987 mV, เวลา ntp, พื้นที่ 1%, Wi-Fi ช่อง 1 RDE_2.4GHz และช่อง 3 Warehouse (IP คงที่), ต่ออยู่ที่ RDE_2.4GHz 192.168.0.13 −51 dBm, ค่าตั้งฉบับ 3 (upload_period_s 600, temp_adj_c100 −50, ota_base) เครื่องอื่นสร้างตามรูปแบบเดียวกัน</p>
           </section>
 
           <section id="states">

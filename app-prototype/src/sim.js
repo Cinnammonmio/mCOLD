@@ -146,6 +146,9 @@ export function deviceView(s, dev) {
     trip,
     lastTrip: finished[finished.length - 1] || null,
     gnss,
+    timeQuality: dev.timeQuality,
+    external: false,
+    wifiNow: dev.wifiNow,
   };
 }
 
@@ -268,6 +271,7 @@ function boxStartTrip(s, sn, cmd) {
     const diff = dev.clockDiffS;
     const adjusted = Math.abs(diff) > 5;
     dev.clockDiffS = 0;
+    if (adjusted || dev.timeQuality === 'rtc') dev.timeQuality = 'host';
     const date = tripDate(now, dev.config.tz_offset_min);
     const trip = {
       trip_id: uuid(),
@@ -385,6 +389,10 @@ export const CONFIG_RULES = {
   buzzer_enabled: { min: 0, max: 1 },
   alarm_dwell_s: { min: 0, max: 3600 },
   alarm_hyst_c10: { min: 0, max: 100 },
+  idle_wake_s: { min: 300, max: 86400 },
+  led_status_s: { min: 60, max: 3600 },
+  accel_wake_ths: { min: 1, max: 63 },
+  usb_drive: { min: 0, max: 1 },
 };
 
 /** Save changed values (APPLY_CONFIG). Returns { applied: [keys], errors: { key: message } }. */
