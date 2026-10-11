@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 
 const STORAGE_KEY = 'cch-prototype-state-v1';
-const SCHEMA = 3;
+const SCHEMA = 4;
 
 export const DEFAULT_CONFIG = {
   sample_period_s: 300,
@@ -92,26 +92,34 @@ function mkDevice(o) {
   };
 }
 
+const devName = (sn) => `mCOLD ${sn.slice(-3)}`;
+
+/**
+ * Mock fleet. A box is not tied to one shipping box: it is clipped onto whatever box goes out,
+ * so devices are named by their own number and the cargo is recorded per trip (app-only label).
+ */
 export function seed(now = Date.now()) {
-  const A = mkDevice({
-    sn: 'mCDV1-L0169-1069-001', name: 'กล่องยา A-01', baseTemp: 4.6, battery: 86, batteryMv: 3990,
-    storagePct: 3, clockDiffS: 59, lastSyncAt: now - 18 * MIN, knownSince: now - 20 * DAY,
+  const sn = (n) => `mCDV1-L0169-1069-${String(n).padStart(3, '0')}`;
+  const mk = (n, o) => mkDevice({ sn: sn(n), name: devName(sn(n)), knownSince: now - 20 * DAY, ...o });
+  const appTrips = {};
+
+  const d1 = mk(1, {
+    baseTemp: 4.6, battery: 86, batteryMv: 3990, storagePct: 3, clockDiffS: 59, lastSyncAt: now - 18 * MIN,
     wifi: [{ slot: 1, ssid: 'Warehouse-2', dhcp: true }, { slot: 3, ssid: 'Office', dhcp: false, ip: '192.168.1.50', gateway: '192.168.1.1', subnet: '255.255.255.0', dns: '8.8.8.8' }],
   });
-  mkTrip(A, { start: now - 4 * DAY - 3 * HOUR, stop: now - 3 * DAY - 2 * HOUR, sent: true });
+  mkTrip(d1, { start: now - 4 * DAY - 3 * HOUR, stop: now - 3 * DAY - 2 * HOUR, sent: true });
 
-  const B = mkDevice({
-    sn: 'mCDV1-L0169-1069-002', name: 'กล่องวัคซีน B-02', baseTemp: 5.1, battery: 64, batteryMv: 3870,
-    storagePct: 7, lastSyncAt: now - 4 * MIN, knownSince: now - 30 * DAY,
+  const d2 = mk(2, {
+    baseTemp: 5.1, battery: 64, batteryMv: 3870, storagePct: 7, lastSyncAt: now - 4 * MIN,
     gnss: { fixAt: now - 25 * MIN, lat: 13.8121, lon: 100.5583 },
     wifi: [{ slot: 1, ssid: 'Warehouse-2', dhcp: true }],
   });
-  mkTrip(B, { start: now - 9 * DAY, stop: now - 7 * DAY - 5 * HOUR, sent: true });
-  mkTrip(B, { start: now - 6 * DAY - 4 * HOUR, stop: now - 5 * DAY, sent: true });
+  mkTrip(d2, { start: now - 9 * DAY, stop: now - 7 * DAY - 5 * HOUR, sent: true });
+  mkTrip(d2, { start: now - 6 * DAY - 4 * HOUR, stop: now - 5 * DAY, sent: true });
   const hiFrom = now - 9 * HOUR - 6 * MIN;
   const hiTo = now - 8 * HOUR - 20 * MIN;
-  B.episodes.push({ type: 'high', from: hiFrom, to: hiTo });
-  const active = mkTrip(B, {
+  d2.episodes.push({ type: 'high', from: hiFrom, to: hiTo });
+  const t2 = mkTrip(d2, {
     start: now - 26 * HOUR - 20 * MIN,
     events: [
       { type: 'ALARM_HIGH', t: hiFrom + 5 * MIN, temp: 10.4 },
@@ -119,29 +127,44 @@ export function seed(now = Date.now()) {
       { type: 'ALARM_CLEAR', t: hiTo, detail: 'ALARM_HIGH' },
     ],
   });
-  B.activeTripId = active.trip_id;
+  d2.activeTripId = t2.trip_id;
+  appTrips[t2.trip_id] = { name: 'กล่องวัคซีน #12', note: '' };
 
-  const C = mkDevice({
-    sn: 'mCDV1-L0169-1069-003', name: 'กล่องเลือด C-03', baseTemp: 3.8, battery: 41, batteryMv: 3760,
-    storagePct: 18, lastSyncAt: now - 2 * HOUR - 10 * MIN, knownSince: now - 25 * DAY,
+  const d3 = mk(3, {
+    baseTemp: 3.8, battery: 41, batteryMv: 3760, storagePct: 18, lastSyncAt: now - 2 * HOUR - 10 * MIN,
     gnss: { fixAt: now - 3 * HOUR, lat: 13.7466, lon: 100.5347 },
     wifi: [{ slot: 2, ssid: 'Hospital-Logistics', dhcp: true }],
   });
-  mkTrip(C, { start: now - 12 * DAY, stop: now - 10 * DAY, sent: true });
-  mkTrip(C, { start: now - 6 * DAY - 2 * HOUR, stop: now - 3 * DAY - 16 * HOUR, low: 2, high: 6 });
-  mkTrip(C, { start: now - 3 * DAY - 2 * HOUR, stop: now - 2 * DAY - 22 * HOUR });
-  mkTrip(C, { start: now - 20 * HOUR, stop: now - 11 * HOUR, low: 2, high: 6 });
+  mkTrip(d3, { start: now - 12 * DAY, stop: now - 10 * DAY, sent: true });
+  mkTrip(d3, { start: now - 6 * DAY - 2 * HOUR, stop: now - 3 * DAY - 16 * HOUR, low: 2, high: 6 });
+  mkTrip(d3, { start: now - 3 * DAY - 2 * HOUR, stop: now - 2 * DAY - 22 * HOUR });
+  mkTrip(d3, { start: now - 20 * HOUR, stop: now - 11 * HOUR, low: 2, high: 6 });
 
-  const D = mkDevice({ sn: 'mCDV1-L0169-1069-004', name: 'กล่องสำรอง D-04', baseTemp: 26.4, lastSyncAt: null, knownSince: now - 1 * DAY });
-  // The app has never read this box: values stay unknown until the first connection.
-  D.pendingFirstRead = { battery: 92, batteryMv: 4080, storagePct: 0 };
+  const d4 = mk(4, { baseTemp: 24.8, battery: 95, batteryMv: 4120, storagePct: 1, lastSyncAt: now - 1 * DAY });
+
+  const d5 = mk(5, { baseTemp: 25.1, battery: 12, batteryMv: 3500, storagePct: 2, lastSyncAt: now - 40 * MIN });
+  d5.lowBattery = true;
+  d5.savedBattery = { battery: 80, batteryMv: 3950 };
+
+  const d6 = mk(6, { baseTemp: 4.2, battery: 77, batteryMv: 3930, storagePct: 4, lastSyncAt: now - 35 * MIN, gnss: { fixAt: now - 50 * MIN, lat: 13.7012, lon: 100.6034 } });
+  const t6 = mkTrip(d6, { start: now - 3 * HOUR - 10 * MIN, low: 2, high: 8 });
+  d6.activeTripId = t6.trip_id;
+  appTrips[t6.trip_id] = { name: 'กล่องเลือด #7', note: '' };
+
+  const d7 = mk(7, { baseTemp: 25.4, battery: 78, batteryMv: 3940, storagePct: 2, lastSyncAt: now - 3 * HOUR });
+  const d8 = mk(8, { baseTemp: 25.0, battery: 91, batteryMv: 4060, storagePct: 1, lastSyncAt: now - 5 * HOUR });
+  d8.episodes.push({ type: 'probe', from: now - 6 * HOUR, to: null }); // probe unplugged
+  const d9 = mk(9, { baseTemp: 25.6, lastSyncAt: null, knownSince: now - 1 * DAY });
+  const d10 = mk(10, { baseTemp: 25.2, lastSyncAt: null, knownSince: now - 1 * DAY });
+  // Never read by the app: values stay unknown until the first connection.
+  d9.pendingFirstRead = { battery: 92, batteryMv: 4080, storagePct: 0 };
+  d10.pendingFirstRead = { battery: 88, batteryMv: 4040, storagePct: 0 };
 
   return {
     schema: SCHEMA,
     seededAt: now,
     clockOffsetMs: 0,
-    selectedSn: B.sn,
-    mcoldTab: 'devices',
+    selectedSn: d1.sn,
     internet: true,
     ble: null, // { sn, authorized, since }
     demo: {
@@ -151,10 +174,10 @@ export function seed(now = Date.now()) {
       markFailNext: false,
       settingsResult: 'ok', // ok | partial | fail
     },
-    devices: [A, B, C, D],
-    appTrips: {}, // trip_id -> { name, note } (app-only data, not sent to the box)
+    devices: [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10],
+    appTrips, // trip_id -> { name, note } (app-only data, not sent to the box)
     transfers: {}, // trip_id -> transfer job state in the app queue
-    batch: null, // { sn, ids, running }
+    batch: null, // { ids, running }
     pendingCmd: {}, // sn -> { kind, reqId, args } for idempotent retry after BLE loss
   };
 }
@@ -246,17 +269,18 @@ export const nav = {
   replace: (r) => updateUi((u) => ({ route: [...u.route.slice(0, -1), r] })),
   back: () => updateUi((u) => ({ route: u.route.length > 1 ? u.route.slice(0, -1) : u.route })),
   reset: (r) => updateUi(() => ({ route: [r] })),
-  /** Go back to the mCOLD shell on a given tab, dropping flow screens above it. */
-  toTab: (tab) => {
-    update((s) => {
-      s.mcoldTab = tab;
-    });
-    updateUi((u) => {
-      const i = u.route.findIndex((r) => r.name === 'mcold');
-      const base = i >= 0 ? u.route.slice(0, i + 1) : [{ name: 'products' }, { name: 'mcold' }];
+  /**
+   * Jump to a function screen of the connected box ('device' = its menu, 'devices' = device list),
+   * dropping flow screens above it: products › mCOLD › device › function.
+   */
+  toTab: (tab) =>
+    updateUi(() => {
+      const base = [{ name: 'products' }, { name: 'mcold' }];
+      if (tab === 'devices') return { route: base };
+      base.push({ name: 'device' });
+      if (tab !== 'device') base.push({ name: tab });
       return { route: base };
-    });
-  },
+    }),
 };
 
 let toastId = 0;

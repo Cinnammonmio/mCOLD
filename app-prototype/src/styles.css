@@ -78,6 +78,7 @@ button { cursor: pointer; }
   border: 11px solid #0f1d27;
   background: var(--bg);
   overflow: hidden;
+  overflow: clip; /* never let focus or scrollIntoView shift the frame itself */
   box-shadow: 0 30px 60px rgba(11, 53, 80, 0.25);
   display: flex;
   flex-direction: column;
@@ -95,7 +96,7 @@ button { cursor: pointer; }
 }
 .statusbar .row { gap: 5px; }
 .side { position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow: auto; }
-.demo-fab { display: none; }
+.btn.demo-fab { display: none; }
 
 @media (max-width: 860px) {
   body { background: var(--bg); }
@@ -103,11 +104,11 @@ button { cursor: pointer; }
   .phone { width: 100%; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
   .statusbar { display: none; }
   .side { display: none; }
-  .demo-fab {
+  .btn.demo-fab {
     display: inline-flex;
     position: fixed;
     right: 12px;
-    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
     z-index: 40;
   }
 }
@@ -335,7 +336,8 @@ button.li:hover { background: var(--soft); }
 }
 .product:hover { border-color: #b9cad4; }
 .product .logo { width: 54px; height: 54px; border-radius: 14px; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px; letter-spacing: 0.02em; }
-.product .name { font-size: 17px; font-weight: 700; color: var(--navy); }
+.product { min-height: 92px; }
+.product .name { font-size: 22px; font-weight: 700; color: var(--navy); letter-spacing: 0.01em; }
 .product .desc { font-size: 13px; color: var(--muted); }
 
 /* ---------- steps ---------- */

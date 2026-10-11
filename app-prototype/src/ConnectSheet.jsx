@@ -7,7 +7,10 @@ import { Btn, Icon, Seg, Sheet, Steps } from './ui.jsx';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Open the connect sheet for a box. Resolves true once connected and authorized. */
+/**
+ * Open the connect sheet. `sn` = the box we expect; null = whichever box the phone touches.
+ * Resolves with the connected SN (truthy) once connected and authorized, or false.
+ */
 export function requestConnect(sn, reason) {
   return new Promise((resolve) => {
     updateUi(() => ({ connect: { sn, reason, resolve } }));
@@ -49,7 +52,9 @@ export function ConnectSheet() {
 
 function ConnectFlow({ req }) {
   const s = useApp();
-  const dev = findDevice(s, req.sn);
+  // Without an expected box the tag tells us which one it is; the demo lets you pick that box.
+  const [picked, setPicked] = useState(req.sn || s.selectedSn);
+  const dev = findDevice(s, req.sn || picked);
   const [phase, setPhase] = useState('idle'); // idle | running | error | done
   const [at, setAt] = useState(-1);
   const [fail, setFail] = useState(null);
@@ -58,7 +63,7 @@ function ConnectFlow({ req }) {
 
   const close = (ok) => {
     updateUi(() => ({ connect: null }));
-    req.resolve(ok);
+    req.resolve(ok ? dev.sn : false);
   };
 
   const run = async () => {
@@ -77,7 +82,7 @@ function ConnectFlow({ req }) {
         return;
       }
     }
-    finishConnect(req.sn);
+    finishConnect(dev.sn);
     setAt(STEPS.length - 1);
     setPhase('done');
     await wait(700);
@@ -93,14 +98,14 @@ function ConnectFlow({ req }) {
     return { ...st, sub, state };
   });
 
-  const other = s.ble && s.ble.sn !== req.sn ? findDevice(s, s.ble.sn) : null;
+  const other = s.ble && s.ble.sn !== dev.sn ? findDevice(s, s.ble.sn) : null;
 
   return (
     <Sheet onClose={() => phase !== 'running' && close(false)} label="เชื่อมต่ออุปกรณ์">
       <div className="stack">
         <div>
-          <h2>เชื่อมต่อ {dev.name}</h2>
-          <div className="small muted">หมายเลขเครื่อง {dev.sn}</div>
+          <h2>{req.sn ? `เชื่อมต่อ ${dev.name}` : 'เชื่อมต่ออุปกรณ์ mCOLD'}</h2>
+          {req.sn && <div className="small muted">หมายเลขเครื่อง {dev.sn}</div>}
         </div>
         {req.reason && <div className="small">{req.reason}</div>}
 
@@ -139,7 +144,7 @@ function ConnectFlow({ req }) {
             <Btn kind="teal" block icon="nfc" onClick={run}>
               จำลองแตะ NFC
             </Btn>
-            <DemoOutcome />
+            <DemoOutcome picker={req.sn ? null : { value: picked, onChange: setPicked }} />
           </>
         )}
         {phase === 'error' && (
@@ -160,10 +165,22 @@ function ConnectFlow({ req }) {
   );
 }
 
-function DemoOutcome() {
+function DemoOutcome({ picker }) {
   const s = useApp();
   return (
     <div className="stack tight" style={{ border: '1px dashed #cfc2f0', borderRadius: 12, padding: 10, background: 'var(--demo-bg)' }}>
+      {picker && (
+        <>
+          <label htmlFor="demo-tapped" className="tiny bold" style={{ color: 'var(--demo)' }}>
+            <Icon name="flask-2" size={13} /> โหมดจำลอง · เครื่องที่แตะ
+          </label>
+          <select id="demo-tapped" className="input" value={picker.value} onChange={(e) => picker.onChange(e.target.value)}>
+            {s.devices.map((d) => (
+              <option key={d.sn} value={d.sn}>{d.name} · {d.sn}</option>
+            ))}
+          </select>
+        </>
+      )}
       <div className="tiny bold" style={{ color: 'var(--demo)' }}>
         <Icon name="flask-2" size={13} /> โหมดจำลอง · ผลของการแตะครั้งนี้
       </div>

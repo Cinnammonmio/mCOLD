@@ -6,7 +6,8 @@ import { DemoPanel } from './DemoPanel.jsx';
 import { Guide } from './Guide.jsx';
 import { Btn, Icon, Sheet, Toasts, useTick } from './ui.jsx';
 import { Placeholder, Products } from './screens/Products.jsx';
-import { McoldShell } from './screens/Mcold.jsx';
+import { DeviceHub, FunctionScreen, McoldHome } from './screens/Mcold.jsx';
+import { MultiStart } from './screens/MultiStart.jsx';
 import { StartTrip, StopTrip } from './screens/TripFlows.jsx';
 import { WifiEdit } from './screens/Settings.jsx';
 import { SendProgress } from './screens/Send.jsx';
@@ -18,7 +19,15 @@ function Route() {
     case 'placeholder':
       return <Placeholder product={r.product} />;
     case 'mcold':
-      return <McoldShell />;
+      return <McoldHome />;
+    case 'device':
+      return <DeviceHub />;
+    case 'trip':
+    case 'settings':
+    case 'send':
+      return <FunctionScreen fn={r.name} />;
+    case 'multi-start':
+      return <MultiStart />;
     case 'start-trip':
       return <StartTrip />;
     case 'stop-trip':

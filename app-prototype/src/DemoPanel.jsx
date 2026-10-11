@@ -57,7 +57,10 @@ export function DemoPanel({ onOpenGuide }) {
       </div>
 
       <div className="card stack tight">
-        <h4><Icon name="package" size={15} /> อุปกรณ์ที่เลือก: {dev.name}</h4>
+        <h4><Icon name="package" size={15} /> จำลองเหตุที่เครื่อง</h4>
+        <select id="demo-dev" aria-label="เครื่องที่จำลอง" className="input" value={dev.sn} onChange={(e) => update((st) => void (st.selectedSn = e.target.value))}>
+          {s.devices.map((d) => <option key={d.sn} value={d.sn}>{d.name}{s.ble?.sn === d.sn ? ' (เชื่อมต่ออยู่)' : ''}</option>)}
+        </select>
         {!isLinked(s, dev.sn) && <div className="tiny muted">ไม่ได้เชื่อมต่อ: แอปจะเห็นผลเมื่อเชื่อมต่อครั้งถัดไป</div>}
         <div className="row wrap">
           <Btn kind="demo" size="sm" icon="temperature" onClick={() => demoToggleHigh(dev.sn)}>{high ? 'อุณหภูมิกลับปกติ' : 'อุณหภูมิเกินช่วง'}</Btn>

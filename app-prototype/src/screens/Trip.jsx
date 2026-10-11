@@ -73,7 +73,7 @@ function IdleTrip({ dev, v, linked }) {
         </>
       )}
       {pending > 0 && (
-        <Banner tone="warn" title={`มีทริปที่จบแล้วรอส่ง ${pending} ทริป`} actions={<Btn size="sm" kind="secondary" onClick={() => update((st) => void (st.mcoldTab = 'send'))}>ไปที่ส่งข้อมูล</Btn>}>
+        <Banner tone="warn" title={`มีทริปที่จบแล้วรอส่ง ${pending} ทริป`} actions={<Btn size="sm" kind="secondary" onClick={() => nav.toTab('send')}>ไปที่ส่งข้อมูล</Btn>}>
           ข้อมูลยังเก็บอยู่ในอุปกรณ์ เริ่มทริปใหม่ได้โดยข้อมูลเดิมไม่หาย
         </Banner>
       )}

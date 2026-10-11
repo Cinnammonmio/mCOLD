@@ -8,14 +8,14 @@ import { requestConnect } from '../ConnectSheet.jsx';
 import { AppBar, Banner, Btn, Chip, Field, Icon } from '../ui.jsx';
 import { DeviceContext, NeedConnection } from './Mcold.jsx';
 
-const ERR_TEXT = {
+export const ERR_TEXT = {
   ALREADY_ACTIVE: { title: 'อุปกรณ์มีทริปกำลังทำงานอยู่แล้ว', fix: 'จบทริปเดิมก่อน แล้วจึงเริ่มทริปใหม่' },
   LOW_BATTERY: { title: 'แบตเตอรี่ต่ำเกินกว่าจะเริ่มทริป', fix: 'ชาร์จกล่องให้แบตเตอรี่สูงขึ้น แล้วลองอีกครั้ง' },
   LOG_FULL: { title: 'พื้นที่บันทึกในอุปกรณ์เต็ม', fix: 'ส่งข้อมูลทริปเก่าที่รอส่งก่อน เพื่อให้อุปกรณ์คืนพื้นที่' },
   NOT_ACTIVE: { title: 'อุปกรณ์ไม่มีทริปที่กำลังทำงาน', fix: 'ทริปนี้อาจจบไปแล้ว ตรวจสอบรายการรอส่ง' },
 };
 
-function preflight(s, dev) {
+export function preflight(s, dev) {
   const v = deviceView(s, dev);
   const checks = [];
   const lowBatt = dev.batteryMv != null && dev.batteryMv < BATT_TRIP_MV;
@@ -183,8 +183,8 @@ export function StartTrip() {
             </div>
             <div className="card stack">
               <h3>ข้อมูลเพิ่มเติม <span className="muted small">(ไม่บังคับ)</span></h3>
-              <Field label="ชื่อทริป" htmlFor="tname" help="เก็บไว้ในแอปเพื่อให้จำทริปได้ง่าย">
-                <input id="tname" className="input" maxLength={40} placeholder="เช่น วัคซีน รพ.ศิริราช" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <Field label="กล่องหรือสินค้าที่ติดเครื่องนี้" htmlFor="tname" help="เครื่องย้ายไปติดกล่องอื่นได้ทุกทริป ระบุไว้เพื่อให้รู้ว่าทริปนี้ติดกับอะไร">
+                <input id="tname" className="input" maxLength={40} placeholder="เช่น กล่องวัคซีน #12" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               </Field>
               <Field label="หมายเหตุ" htmlFor="tnote">
                 <textarea id="tnote" className="input" maxLength={200} placeholder="เช่น เลขใบส่งของ ผู้รับ" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
@@ -201,7 +201,7 @@ export function StartTrip() {
                 <dt>อุปกรณ์</dt><dd>{dev.name}</dd>
                 <dt>ช่วงที่อนุญาต</dt><dd className="num">{fmtTemp(low)} ถึง {fmtTemp(high)}</dd>
                 <dt>รอบบันทึก</dt><dd>ทุก {fmtPeriod(dev.config.sample_period_s)}</dd>
-                <dt>ชื่อทริป</dt><dd>{form.name.trim() || '—'}</dd>
+                <dt>ติดกับ</dt><dd>{form.name.trim() || '—'}</dd>
                 <dt>หมายเหตุ</dt><dd style={{ maxWidth: 190, overflowWrap: 'anywhere' }}>{form.note.trim() || '—'}</dd>
                 <dt>เวลาเริ่ม</dt><dd>เมื่ออุปกรณ์ยืนยัน</dd>
               </dl>
