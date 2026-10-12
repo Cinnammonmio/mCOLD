@@ -1,7 +1,7 @@
 {
   "name": "mcold-app-demo",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Clickable prototype of the multi-product cold-chain app (mCOLD flows). Mock data only.",
   "scripts": {

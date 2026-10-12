@@ -240,7 +240,7 @@ export function Guide({ onBack }) {
               ]}
             />
             <h3>หน้าตั้งค่าอุปกรณ์</h3>
-            <p className="small">แสดงทุกค่าในตาราง “ค่าที่แอป / server ตั้งได้” ของ <L p="docs/app/device-settings.md" /> พร้อมค่าเริ่มต้นและช่วงตามเอกสาร (แปลงหน่วยเป็นนาที/°C ในหน้าจอ ส่งให้กล่องเป็นหน่วยเดิม) ค่าที่ 🔒 ล็อกระหว่างทริป ยกเว้นกลุ่มตำแหน่งและเวลา (<code>gnss_period_s</code>, <code>tz_offset_min</code>) และไฟ (<code>led_*</code>) ที่ไม่แสดงในแอป (ตัดสินใจ 12 ต.ค.) · กลุ่มเสียงมี เปิด/ปิดเสียง (<code>buzzer_enabled</code>) และระดับความดัง (<code>buzzer_volume</code> 1–100%) · ค่า <code>tap_test</code>, <code>rx_show</code> แสดงอ่านอย่างเดียวเพราะตั้งจาก console เท่านั้น · Wi-Fi 5 ช่องจาก <code>GET_NETWORK</code> · Wi-Fi ที่ต่ออยู่จาก event <code>WIFI</code> · <code>ota_base</code> และ <code>server_rev</code> จาก event <code>SETTINGS</code> (อ่านอย่างเดียว) · MQTT broker ไม่แสดงให้แก้</p>
+            <p className="small">แสดงทุกค่าในตาราง “ค่าที่แอป / server ตั้งได้” ของ <L p="docs/app/device-settings.md" /> พร้อมค่าเริ่มต้นและช่วงตามเอกสาร (แปลงหน่วยเป็นนาที/°C ในหน้าจอ ส่งให้กล่องเป็นหน่วยเดิม) ค่าที่ 🔒 ล็อกระหว่างทริป กลุ่มเสียงมี เปิด/ปิดเสียง (<code>buzzer_enabled</code>) และระดับความดัง (<code>buzzer_volume</code> 1–100%) · ค่า <code>tap_test</code>, <code>rx_show</code> แสดงอ่านอย่างเดียวเพราะตั้งจาก console เท่านั้น · Wi-Fi 5 ช่องจาก <code>GET_NETWORK</code> · Wi-Fi ที่ต่ออยู่จาก event <code>WIFI</code> · <code>ota_base</code> และ <code>server_rev</code> จาก event <code>SETTINGS</code> (อ่านอย่างเดียว) · MQTT broker ไม่แสดงให้แก้</p>
             <p className="small">ข้อมูลของ <b>mCOLD 002</b> (SN <code>mCDV1-L0169-1069-002</code>) ใช้ค่าตัวอย่างในเอกสารโดยตรง: BLE MAC <code>28:84:85:27:9B:86</code>, Wi-Fi MAC <code>…:9B:84</code>, แบต 78% / 3987 mV, เวลา ntp, พื้นที่ 1%, Wi-Fi ช่อง 1 RDE_2.4GHz และช่อง 3 Warehouse (IP คงที่), ต่ออยู่ที่ RDE_2.4GHz 192.168.0.13 −51 dBm, ค่าตั้งฉบับ 3 (upload_period_s 600, temp_adj_c100 −50, ota_base) เครื่องอื่นสร้างตามรูปแบบเดียวกัน</p>
           </section>
 
@@ -280,7 +280,7 @@ export function Guide({ onBack }) {
                   <li>START_TRIP ใช้ <code>low</code>, <code>high</code>, <code>utc</code> · กล่องตั้งนาฬิกาเมื่อต่างเกิน 5 วินาที</li>
                   <li>Alarm delay และ hysteresis เป็นค่าของเครื่อง (<code>alarm_dwell_s</code>, <code>alarm_hyst_c10</code>)</li>
                   <li>ล็อกระหว่างทริป: <code>sample_period_s</code>, <code>temp_adj_c100</code>, <code>alarm_dwell_s</code>, <code>alarm_hyst_c10</code></li>
-                  <li>ช่วงค่า: รอบบันทึก 60–3600 s (แอปจำกัด 5–60 นาที <Ux />), ปรับค่า ±10.00°C, dwell 0–3600 s, hyst 0–10.0°C, tz ค่าเริ่มต้น +420</li>
+                  <li>ช่วงค่า: รอบบันทึก 60–3600 s (แอปจำกัด 5–60 นาที <Ux />), ปรับค่า ±10.00°C, dwell 0–3600 s, hyst 0–10.0°C, ระดับความดัง 1–100%</li>
                   <li>Wi-Fi 5 ช่อง, DHCP/IP คงที่, ไม่ส่งรหัสผ่านกลับ, MQTT ตั้งจาก console เท่านั้น</li>
                   <li>READ_LOG_CHUNK ≤ 16 แถว, CSV ชื่อ TRIP_SN_เวลาเริ่ม, MARK_DELIVERED หลัง server ยืนยัน</li>
                   <li>ทริป “ส่งแล้ว” ยังอยู่ในกล่อง ถูกลบก่อนเมื่อพื้นที่เต็ม</li>
