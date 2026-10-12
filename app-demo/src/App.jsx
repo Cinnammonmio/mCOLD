@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useApp, simNow, updateUi } from './store.js';
+import { useTheme } from './theme.js';
 import { fmtTime } from './format.js';
 import { ConnectSheet } from './ConnectSheet.jsx';
 import { DemoPanel } from './DemoPanel.jsx';
@@ -64,6 +65,7 @@ const readView = () => (typeof location !== 'undefined' && location.hash === '#g
 
 export default function App() {
   const s = useApp();
+  const theme = useTheme();
   const [view, setView] = useState(readView);
   useEffect(() => {
     const h = () => setView(readView());
@@ -85,7 +87,7 @@ export default function App() {
 
   return (
     <div className="stage">
-      <div className="phone">
+      <div className="phone" data-theme={theme.theme} data-mode={theme.resolved}>
         <StatusBar />
         <Route />
         <ConnectSheet />

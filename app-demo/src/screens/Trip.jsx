@@ -55,7 +55,7 @@ function IdleTrip({ dev, v, linked }) {
         </div>
       )}
       {pending > 0 && (
-        <button className="row small" onClick={() => nav.toTab('send')} style={{ border: 0, background: 'var(--warn-bg)', color: '#6f4800', borderRadius: 10, padding: '8px 10px', fontWeight: 600, width: '100%', textAlign: 'left' }}>
+        <button className="row small" onClick={() => nav.toTab('send')} style={{ border: 0, background: 'var(--warn-bg)', color: 'var(--warn-ink)', borderRadius: 10, padding: '8px 10px', fontWeight: 600, width: '100%', textAlign: 'left' }}>
           <Icon name="cloud-upload" size={16} />
           <span className="grow">มีทริปรอส่ง {pending} ทริป (ข้อมูลยังอยู่ในอุปกรณ์)</span>
           ส่งข้อมูล <Icon name="chevron-right" size={16} />
@@ -386,23 +386,23 @@ export function TempChart({ trip, current, at, compact }) {
   const gaps = pts.filter((p) => p.c == null);
   return (
     <svg className="chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`กราฟอุณหภูมิ ช่วงที่อนุญาต ${trip.low} ถึง ${trip.high} องศา`}>
-      <rect x={P.l} y={y(trip.high)} width={W - P.l - P.r} height={y(trip.low) - y(trip.high)} fill="#e2f3eb" />
+      <rect x={P.l} y={y(trip.high)} width={W - P.l - P.r} height={y(trip.low) - y(trip.high)} style={{ fill: 'var(--ok-bg)' }} />
       {ticks.map((c) => (
         <g key={c}>
-          <line x1={P.l} x2={W - P.r} y1={y(c)} y2={y(c)} stroke="#e6edf1" strokeWidth="1" />
+          <line x1={P.l} x2={W - P.r} y1={y(c)} y2={y(c)} style={{ stroke: 'var(--line)' }} strokeWidth="1" />
           <text x={P.l - 6} y={y(c) + 3} textAnchor="end">{c}°</text>
         </g>
       ))}
-      <line x1={P.l} x2={W - P.r} y1={y(trip.high)} y2={y(trip.high)} stroke="#1d8a5a" strokeDasharray="4 3" strokeWidth="1" />
-      <line x1={P.l} x2={W - P.r} y1={y(trip.low)} y2={y(trip.low)} stroke="#1d8a5a" strokeDasharray="4 3" strokeWidth="1" />
+      <line x1={P.l} x2={W - P.r} y1={y(trip.high)} y2={y(trip.high)} style={{ stroke: 'var(--ok)' }} strokeDasharray="4 3" strokeWidth="1" />
+      <line x1={P.l} x2={W - P.r} y1={y(trip.low)} y2={y(trip.low)} style={{ stroke: 'var(--ok)' }} strokeDasharray="4 3" strokeWidth="1" />
       {gaps.map((p, i) => (
-        <rect key={i} x={x(p.t) - 1.5} y={P.t} width="3" height={H - P.t - P.b} fill="#f3d7a6" opacity="0.7" />
+        <rect key={i} x={x(p.t) - 1.5} y={P.t} width="3" height={H - P.t - P.b} style={{ fill: 'var(--gap)' }} opacity="0.7" />
       ))}
-      <path d={d} fill="none" stroke="#0e8391" strokeWidth="2" strokeLinejoin="round" />
+      <path d={d} fill="none" style={{ stroke: 'var(--teal)' }} strokeWidth="2" strokeLinejoin="round" />
       {out.map((p, i) => (
-        <circle key={i} cx={x(p.t)} cy={y(p.c)} r="2.6" fill="#c63737" />
+        <circle key={i} cx={x(p.t)} cy={y(p.c)} r="2.6" style={{ fill: 'var(--bad)' }} />
       ))}
-      {last?.c != null && <circle cx={x(last.t)} cy={y(last.c)} r="4.5" fill="#fff" stroke={last.c > trip.high || last.c < trip.low ? '#c63737' : '#0e8391'} strokeWidth="2.5" />}
+      {last?.c != null && <circle cx={x(last.t)} cy={y(last.c)} r="4.5" style={{ fill: 'var(--surface)', stroke: last.c > trip.high || last.c < trip.low ? 'var(--bad)' : 'var(--teal)' }} strokeWidth="2.5" />}
       <text x={P.l} y={H - 6}>{fmtTime(t0)}</text>
       <text x={W - P.r} y={H - 6} textAnchor="end">{fmtTime(t1)}</text>
     </svg>

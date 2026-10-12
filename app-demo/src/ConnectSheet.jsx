@@ -157,7 +157,7 @@ function ConnectFlow({ req }) {
 
         {phase === 'idle' && (
           <>
-            <Btn kind="demo" block icon="nfc" onClick={run} style={{ background: 'var(--demo)', color: '#fff' }}>
+            <Btn kind="demo" block icon="nfc" onClick={run} style={{ background: 'var(--demo)', color: 'var(--on-demo)' }}>
               จำลองแตะ NFC
             </Btn>
             <DemoOutcome picker={req.sn ? null : { value: picked, onChange: setPicked }} />

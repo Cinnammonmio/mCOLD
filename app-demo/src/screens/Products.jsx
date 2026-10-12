@@ -5,9 +5,9 @@ import { UserChip } from '../Users.jsx';
 export const APP_NAME = 'Cold Chain Hub';
 
 const PRODUCTS = [
-  { id: 'etemp', name: 'eTEMP', color: '#3d5a6e', icon: 'temperature' },
+  { id: 'etemp', name: 'eTEMP', color: 'var(--slate)', icon: 'temperature' },
   { id: 'mcold', name: 'mCOLD', color: 'var(--teal)', icon: 'snowflake' },
-  { id: 'smt', name: 'SMT', color: '#5a6b85', icon: 'cpu' },
+  { id: 'smt', name: 'SMT', color: 'var(--slate2)', icon: 'cpu' },
 ];
 
 export function Products() {
@@ -28,7 +28,7 @@ export function Products() {
             <Icon name="chevron-right" className="muted" />
           </button>
         ))}
-        <div className="tiny" style={{ marginTop: 'auto', textAlign: 'center', color: '#7c5cd6' }}>{DEMO_VERSION}</div>
+        <div className="tiny" style={{ marginTop: 'auto', textAlign: 'center', color: 'var(--demo)' }}>{DEMO_VERSION}</div>
       </div>
     </div>
   );

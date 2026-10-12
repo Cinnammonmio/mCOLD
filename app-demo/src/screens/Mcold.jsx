@@ -274,7 +274,7 @@ export function DeviceHub() {
                 <Icon name="chevron-right" className="muted" />
               </button>
               <button className="action" style={{ minHeight: 54, padding: '8px 12px' }} onClick={() => open('trips')}>
-                <span className="ai" style={{ background: '#2463a8' }}><Icon name="chart-line" /></span>
+                <span className="ai" style={{ background: 'var(--info)' }}><Icon name="chart-line" /></span>
                 <span className="grow t">ข้อมูลทริป (กราฟ / ตาราง)</span>
                 <span className="tiny muted">{dev.trips.length} ทริป</span>
                 <Icon name="chevron-right" className="muted" />

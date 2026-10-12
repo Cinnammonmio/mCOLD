@@ -4,7 +4,8 @@
 import { useState } from 'react';
 import { getState, update, updateUi, useApp, currentUser, wardOf } from './store.js';
 import { disconnect, findDevice } from './sim.js';
-import { Icon, Sheet } from './ui.jsx';
+import { Icon, Seg, Sheet } from './ui.jsx';
+import { MODES, setTheme, THEMES, useTheme } from './theme.js';
 
 const initial = (name) => name.trim().charAt(0);
 
@@ -81,7 +82,8 @@ export function UserSheet({ onClose }) {
           </div>
         </div>
         <div className="small">อุปกรณ์ mCOLD ลงทะเบียนกับวอร์ด ผู้ใช้ทุกคนในวอร์ดใช้เครื่องร่วมกันได้ และแอปบันทึกว่าใครเป็นผู้เริ่ม จบ รับทราบการแจ้งเตือน และส่งข้อมูล</div>
-        <div className="stack tight" style={{ border: '1px dashed #cfc2f0', borderRadius: 12, padding: 10, background: 'var(--demo-bg)' }}>
+        <ThemePicker />
+        <div className="stack tight" style={{ border: '1px dashed var(--demo-line)', borderRadius: 12, padding: 10, background: 'var(--demo-bg)' }}>
           <div className="tiny bold" style={{ color: 'var(--demo)' }}>
             <Icon name="flask-2" size={13} /> โหมดจำลอง · สลับผู้ใช้งาน (แทนการเข้าสู่ระบบ)
           </div>
@@ -105,5 +107,26 @@ export function UserSheet({ onClose }) {
         </div>
       </div>
     </Sheet>
+  );
+}
+
+/** Theme and light/dark, kept on this phone (theme.js). */
+function ThemePicker() {
+  const t = useTheme();
+  return (
+    <div className="stack tight">
+      <div className="small bold"><Icon name="palette" size={15} /> ธีมของแอป</div>
+      <div className="grid3" role="radiogroup" aria-label="ธีมของแอป">
+        {THEMES.map((x) => (
+          <button key={x.id} role="radio" aria-checked={t.theme === x.id} className={`theme-card ${t.theme === x.id ? 'on' : ''}`} onClick={() => setTheme({ theme: x.id })}>
+            <span className="sw" aria-hidden="true">
+              {x.swatch.map((c) => <span key={c} style={{ background: c }} />)}
+            </span>
+            <span className="tiny bold">{x.name}</span>
+          </button>
+        ))}
+      </div>
+      <Seg label="สว่างหรือมืด" value={t.mode} onChange={(v) => setTheme({ mode: v })} options={MODES} />
+    </div>
   );
 }

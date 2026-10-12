@@ -165,10 +165,10 @@ export function TripDetail({ tripId }) {
               <div className="card stack tight" style={{ padding: 10 }}>
                 <TempChart trip={{ ...trip, ...tripSeries(dev, trip, until) }} current={undefined} at={until} />
                 <div className="row tiny muted wrap" style={{ gap: 12 }}>
-                  <span className="row" style={{ gap: 4 }}><span style={{ width: 14, height: 8, background: 'var(--ok-bg)', border: '1px solid #b9dfcb', borderRadius: 2 }} /> ช่วงที่อนุญาต</span>
+                  <span className="row" style={{ gap: 4 }}><span style={{ width: 14, height: 8, background: 'var(--ok-bg)', border: '1px solid var(--ok)', borderRadius: 2 }} /> ช่วงที่อนุญาต</span>
                   <span className="row" style={{ gap: 4 }}><span style={{ width: 14, height: 2, background: 'var(--teal)' }} /> อุณหภูมิ</span>
                   <span className="row" style={{ gap: 4 }}><span style={{ width: 7, height: 7, borderRadius: 4, background: 'var(--bad)' }} /> นอกช่วง</span>
-                  <span className="row" style={{ gap: 4 }}><span style={{ width: 4, height: 10, background: '#f3d7a6' }} /> ไม่มีค่า</span>
+                  <span className="row" style={{ gap: 4 }}><span style={{ width: 4, height: 10, background: 'var(--gap)' }} /> ไม่มีค่า</span>
                 </div>
                 <div className="stack tight" style={{ marginTop: 4 }}>
                   {rows.filter((r) => r.ev).map((r) => (

@@ -188,7 +188,7 @@ export function MultiStart() {
         )}
       </div>
       <div className="footer-bar row" style={{ gap: 8 }}>
-        <Btn kind="demo" className="grow" icon={busy ? undefined : 'nfc'} busy={busy} disabled={!formOk} onClick={() => tapOne(target)} style={{ minHeight: 52, background: 'var(--demo)', color: '#fff' }}>
+        <Btn kind="demo" className="grow" icon={busy ? undefined : 'nfc'} busy={busy} disabled={!formOk} onClick={() => tapOne(target)} style={{ minHeight: 52, background: 'var(--demo)', color: 'var(--on-demo)' }}>
           {busy ? 'กำลังทำงาน…' : 'จำลองแตะ NFC'}
         </Btn>
         <Btn kind="secondary" disabled={busy} onClick={finish} style={{ minHeight: 52 }}>
