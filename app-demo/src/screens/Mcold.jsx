@@ -273,11 +273,6 @@ export function DeviceHub() {
                 {dev.activeTripId && <Chip tone="info" dot>กำลังบันทึก</Chip>}
                 <Icon name="chevron-right" className="muted" />
               </button>
-              <button className="action" style={{ minHeight: 54, padding: '8px 12px' }} onClick={() => open('settings')}>
-                <span className="ai slate"><Icon name="adjustments-horizontal" /></span>
-                <span className="grow t">ตั้งค่าอุปกรณ์</span>
-                <Icon name="chevron-right" className="muted" />
-              </button>
               <button className="action" style={{ minHeight: 54, padding: '8px 12px' }} onClick={() => open('trips')}>
                 <span className="ai" style={{ background: '#2463a8' }}><Icon name="chart-line" /></span>
                 <span className="grow t">ข้อมูลทริป (กราฟ / ตาราง)</span>
@@ -288,6 +283,11 @@ export function DeviceHub() {
                 <span className="ai teal"><Icon name="cloud-upload" /></span>
                 <span className="grow t">ส่งข้อมูล</span>
                 {pending > 0 && <Chip tone="warn">{pending}</Chip>}
+                <Icon name="chevron-right" className="muted" />
+              </button>
+              <button className="action" style={{ minHeight: 54, padding: '8px 12px' }} onClick={() => open('settings')}>
+                <span className="ai slate"><Icon name="adjustments-horizontal" /></span>
+                <span className="grow t">ตั้งค่าอุปกรณ์</span>
                 <Icon name="chevron-right" className="muted" />
               </button>
             </div>
