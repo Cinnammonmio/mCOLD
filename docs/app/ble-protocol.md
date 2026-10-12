@@ -1,10 +1,10 @@
 ---
 name: BLE-Protocol
 lang: th
-version: 0.3
+version: 0.4
 status: draft
-date: 2026-10-07
-firmware: 0.7.0-dev.50
+date: 2026-10-12
+firmware: 0.7.0-dev.51
 ---
 
 # mCOLD BLE Protocol (สำหรับทีมแอป)
