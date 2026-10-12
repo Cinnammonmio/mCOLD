@@ -221,19 +221,22 @@ export function DeviceHub() {
       <div className="content stack">
         <div className="card raised stack">
           <StateChips dev={dev} v={v} />
+          {/* big numbers that fill their tiles; the reading time sits under them */}
           <div className="grid2">
-            <div className="metric">
+            <div className="metric" style={{ padding: '10px 12px 12px' }}>
               <div className="label"><Icon name="temperature" size={14} /> อุณหภูมิ</div>
-              <div className="value" style={{ color: ok === false ? 'var(--bad)' : undefined }}>
+              <div className="num" style={{ fontWeight: 700, lineHeight: 1.1, letterSpacing: '-0.02em', fontSize: v.known && v.temp == null ? 22 : 40, color: ok === false ? 'var(--bad)' : undefined }}>
                 {v.known && v.temp == null ? 'ไม่พบหัววัด' : fmtTemp(v.temp)}
               </div>
-              <div className="hint">วัดเมื่อ {fmtTime(v.at)}</div>
             </div>
-            <div className="metric">
+            <div className="metric" style={{ padding: '10px 12px 12px' }}>
               <div className="label"><BatteryIcon pct={v.battery} /> แบตเตอรี่</div>
-              <div className="value" style={{ color: v.battery != null && v.battery < 15 ? 'var(--bad)' : undefined }}>{fmtPct(v.battery)}</div>
+              <div className="num" style={{ fontWeight: 700, lineHeight: 1.1, letterSpacing: '-0.02em', fontSize: 40, color: v.battery != null && v.battery < 15 ? 'var(--bad)' : undefined }}>
+                {fmtPct(v.battery)}
+              </div>
             </div>
           </div>
+          <div className="tiny muted">วัดเมื่อ {fmtTime(v.at)}</div>
           {cargo && v.trip && (
             <div className="small row" style={{ gap: 6 }}>
               <Icon name="package" size={15} className="muted" /> ติดกับ <b>{cargo}</b>
