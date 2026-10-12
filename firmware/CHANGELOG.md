@@ -38,6 +38,15 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Buzzer volume; the settings go to the server** (2026-10-12).
+  `buzzer_volume` (1..100 %, 100), app- and server-settable: the PWM duty
+  of the 2.7 kHz drive scales with it (50 % duty is full; not linear to the
+  ear). The box publishes everything the app's SETTINGS event shows,
+  network included without passwords, plus `utc`, to `mcold/<sn>/settings`
+  (retained, QoS 1): once per broker connection and again on every change,
+  whoever made it. Checked on box 001: sent at connect, and again after
+  each `config set buzzer_volume`. 0.7.0-dev.52.
+
 - Console: `time skew N` puts the clock N s off, forced, for checking
   START_TRIP's clock check. Bench only. 0.7.0-dev.51.
 

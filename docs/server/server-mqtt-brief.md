@@ -1,10 +1,10 @@
 ---
 name: Server-Brief_MQTT
 lang: th
-version: 0.14
+version: 0.15
 status: draft
 date: 2026-10-12
-firmware: 0.7.0-dev.51
+firmware: 0.7.0-dev.52
 ---
 
 # mCOLD — สิ่งที่ฝั่ง Server ต้องทำ (MQTT)
@@ -46,6 +46,7 @@ firmware: 0.7.0-dev.51
 | `mcold/v1/<sn>/firmware` | **server → กล่อง** | 1 | **ใช่** | ชื่อไฟล์ firmware ที่จะให้อัปเดต (ข้อ 8) |
 | `mcold/v1/<sn>/config` | **server → กล่อง** | 1 | **ใช่** | เอกสารตั้งค่า (ข้อ 9) |
 | `mcold/<sn>/config/state` | กล่อง → server | 1 | ใช่ | ผลการตั้งค่า (ข้อ 9) |
+| `mcold/<sn>/settings` | กล่อง → server | 1 | ใช่ | **ค่าตั้งทั้งหมดของกล่องตอนนี้** ส่งใหม่ทุกครั้งที่มีการแก้ (ข้อ 10) |
 
 รับข้อมูลทุกกล่องได้ด้วยการ subscribe `mcold/+/rec`
 
@@ -53,7 +54,8 @@ firmware: 0.7.0-dev.51
 
 ทุก record เป็น **แถวเดียวกัน มี column ชุดเดียวกัน** ไม่ว่าจะเป็น sample หรือ event
 (ตกลงกันเมื่อ 5 ต.ค.) แต่ละแถวมีสถานะของกล่อง ณ ตอนนั้นครบ server เก็บลงตารางเดียวได้เลย
-และเป็น column ชุดเดียวกับไฟล์ CSV ที่คนเปิดดู
+หัวข้อนี้เป็น **column ของ MQTT เท่านั้น** ไฟล์ CSV (ที่แอปและไดรฟ์ USB ใช้) มีคอลัมน์มากกว่า
+ดู `../app/ble-protocol.md` ข้อ 6
 
 ```
 {"sn":"mCDV1-L0169-1069-002","trip_id":"95518e06-1b3b-494f-b4c5-284ae94f5424","trip_date":"20261007","trip_number":2,"part":1,"parts":1,
@@ -72,47 +74,48 @@ firmware: 0.7.0-dev.51
 - trip ที่แอปส่งให้ server เองแล้ว (แอปเรียก `MARK_DELIVERED`) กล่องจะไม่ส่งซ้ำทาง Wi-Fi
 - ระหว่าง trip `status` → `trip` มี `alarms_raised` และ `last_alarm` (ชนิด + เวลา)
   ใช้รู้ว่ามี alarm เกิดตอนกล่องออฟไลน์
-- **key ของแต่ละแถวคือ (trip_id, seq)** — `trip_id` เป็น UUID ที่กล่องสร้างตอนเริ่ม trip (ตกลง 7 ต.ค.) แถวทุกแถวมี `sn` ผูก trip กับกล่อง
+- **key ของแต่ละแถวคือ (trip_id, seq)** — `trip_id` เป็น UUID ที่กล่องสร้างตอนเริ่ม trip (ตกลง 7 ต.ค.) ผูก trip กับกล่องด้วย `sn` ที่หัวชุด (และใน topic)
 
-| column | ความหมาย |
-|---|---|
-**แถวใน MQTT ไม่มี `sn`, `utc` และ `detail`** (ตกลง 7 ต.ค.): `sn` อยู่ที่หัวชุดและใน topic อยู่แล้ว, `timestamp` เป็นวินาที Unix (ว่างเป็น `null` เมื่อ `timeok` เป็น false), ส่วน `detail` ไม่ส่ง ไฟล์ CSV ยังมีครบทุกคอลัมน์ (`sn`, `timestamp` ข้อความเวลาท้องถิ่น, `utc`, `detail`)
+**Column ของแถวใน MQTT** (ตกลง 7 ต.ค.: ไม่มี `sn`, `utc`, `detail` เพราะ `sn` อยู่ที่หัวชุดและใน topic, `timestamp` เป็น Unix อยู่แล้ว และ `detail` ส่วนใหญ่ว่าง)
 
-| `trip_id` | UUID ของ trip ที่กล่องสร้าง |
-| `trip_date` | วันที่ท้องถิ่นตอนเริ่ม trip รูปแบบ YYYYMMDD (ข้อความ) |
-| `trip_number` | เลขรันของ trip ในวันนั้น เริ่มที่ 1 |
-| `seq` | ลำดับแถวใน trip เริ่มที่ 0 |
-| `sn` | serial number ของกล่อง |
-| `timestamp` | เวลาไทย `hh:mm:ss DD/MM/YYYY` |
-| `utc` | เวลาเดียวกันเป็น Unix seconds สำหรับเรียงลำดับ |
-| `event` | แถวนี้คืออะไร (ตารางถัดไป) |
-| `temp` | อุณหภูมิ °C; `null` = probe อ่านไม่ได้ |
-| `tempmin` / `tempmax` | ช่วง alarm ของ trip นี้ |
-| `alarm` | alarm ที่ค้างอยู่ `HIGH`, `LOW`, `PROBE`, `BATTERY` คั่นด้วย `|`; ว่าง = ไม่มี |
-| `timeok` | `false` = กล่องไม่รู้เวลาตอนนั้น (`timestamp`/`utc` เป็น `null` และมี `boot`, `up_s` ไว้เรียงลำดับ) |
-| `gnssstate` | `fix` = ตำแหน่งใหม่, `last` = ตำแหน่งเก่า, `none` = ไม่มี |
-| `latitude` / `longitude` | องศา; `null` เมื่อ `none` |
-| `motion` | จำนวนครั้งที่ขยับตั้งแต่แถวก่อน |
-| `battery` | แบต % |
-| `internet` | ผลการส่งรอบล่าสุด: `online`, `wifi_only` (ต่อ Wi-Fi ได้แต่ไม่ถึง server), `offline` |
-| `detail` | รายละเอียดของ event (ส่วนใหญ่ว่าง) |
-
-| `event` | เกิดเมื่อ | `detail` |
+| column | ชนิด | ความหมาย |
 |---|---|---|
-| `TRIP_START` / `TRIP_STOP` | เริ่ม / จบ trip | |
-| `SAMPLE` | ทุกรอบบันทึก (ค่าเริ่มต้น 5 นาที) | |
-| `ALARM_HIGH` / `ALARM_LOW` | อุณหภูมิเกิน `tempmax` / ต่ำกว่า `tempmin` นานกว่าเวลาที่ตั้ง | |
-| `ALARM_PROBE` | อ่านอุณหภูมิไม่ได้เกิน 1 นาที | |
-| `BATTERY_LOW` | แบตต่ำกว่า 15% | % |
-| `ALARM_CLEAR` | alarm หาย | ชนิด |
-| `ALARM_ACK` | มีคนกดรับทราบ | alarm ที่รับทราบ |
-| `PROBE_FAULT` / `PROBE_OK` | probe หลุด / กลับมา | สาเหตุ |
-| `USB_IN` / `USB_OUT` | เสียบ / ถอดไฟ | |
-| `POWER_ON` | เครื่องรีเซ็ตแล้วทำ trip ต่อ | สาเหตุการรีเซ็ต |
-| `POWER_OFF` | แบตหมด เครื่องตัดตัวเอง | mV |
-| `TIME_SET` | มีการตั้งเวลา | เวลาก่อนตั้ง |
-| `DATA_LOST` | trip เก่าถูกลบเพราะพื้นที่เต็ม | เลข trip |
-| `SHOCK` | สำรองไว้: กระแทกแรงเกินเกณฑ์ (ยังไม่ได้ตั้งเกณฑ์) | |
+| `trip_id` | ข้อความ | UUID ของ trip ที่กล่องสร้าง |
+| `trip_date` | ข้อความ | วันที่ท้องถิ่นตอนเริ่ม trip รูปแบบ YYYYMMDD (`"00000000"` ถ้าตอนเริ่มกล่องยังไม่รู้เวลา) |
+| `trip_number` | ตัวเลข | เลขรันของ trip ในวันนั้น เริ่มที่ 1 |
+| `seq` | ตัวเลข | ลำดับแถวใน trip เริ่มที่ 0 |
+| `timestamp` | ตัวเลข / `null` | เวลาเป็นวินาที Unix (UTC) · `null` เมื่อ `timeok` เป็น `false` |
+| `event` | ข้อความ | แถวนี้คืออะไร (ตารางถัดไป) |
+| `temp` | ตัวเลข / `null` | อุณหภูมิ °C · `null` = probe อ่านไม่ได้ |
+| `tempmin` / `tempmax` | ตัวเลข | ช่วง alarm ของ trip นี้ (°C) |
+| `alarm` | ข้อความ | alarm ที่ค้างอยู่ `HIGH`, `LOW`, `PROBE`, `BATTERY` หลายตัวคั่นด้วยขีดตั้ง เช่น `"HIGH\|BATTERY"` · `""` = ไม่มี |
+| `timeok` | true/false | `false` = กล่องไม่รู้เวลาตอนนั้น แถวนั้นมี `boot` และ `up_s` เพิ่มมาไว้เรียงลำดับ |
+| `gnssstate` | ข้อความ | `fix` = ตำแหน่งใหม่, `last` = ตำแหน่งเก่า, `none` = ไม่มี |
+| `latitude` / `longitude` | ตัวเลข / `null` | องศา · `null` เมื่อ `none` |
+| `motion` | ตัวเลข | จำนวนครั้งที่ขยับตั้งแต่แถวก่อน |
+| `battery` | ตัวเลข / `null` | แบต % · `null` ถ้าอ่านไม่ได้ |
+| `internet` | ข้อความ | ผลการส่งรอบล่าสุด: `online`, `wifi_only` (ต่อ Wi-Fi ได้แต่ไม่ถึง server), `offline` |
+| `boot` | ตัวเลข | (เฉพาะแถวที่ `timeok` เป็น `false`) เลขการบูตของกล่อง |
+| `up_s` | ตัวเลข | (เฉพาะแถวที่ `timeok` เป็น `false`) วินาทีนับจากบูต ใช้เรียงแถวในการบูตเดียวกัน |
+
+| `event` | เกิดเมื่อ |
+|---|---|
+| `TRIP_START` / `TRIP_STOP` | เริ่ม / จบ trip |
+| `SAMPLE` | ทุกรอบบันทึก (ค่าเริ่มต้น 5 นาที) |
+| `ALARM_HIGH` / `ALARM_LOW` | อุณหภูมิเกิน `tempmax` / ต่ำกว่า `tempmin` นานกว่าเวลาที่ตั้ง (`alarm_dwell_s`) |
+| `ALARM_PROBE` | อ่านอุณหภูมิไม่ได้เกิน 1 นาที |
+| `BATTERY_LOW` | แบตต่ำกว่า 15% |
+| `ALARM_CLEAR` | alarm หาย |
+| `ALARM_ACK` | มีคนกดรับทราบ |
+| `PROBE_FAULT` / `PROBE_OK` | probe หลุด / กลับมา |
+| `USB_IN` / `USB_OUT` | เสียบ / ถอดไฟ |
+| `POWER_ON` | เครื่องรีเซ็ตแล้วทำ trip ต่อ |
+| `POWER_OFF` | แบตหมด เครื่องตัดตัวเอง |
+| `TIME_SET` | มีการตั้งเวลา (จาก NTP, GNSS หรือแอปตอนเริ่ม trip) |
+| `DATA_LOST` | trip เก่าถูกลบเพราะพื้นที่เต็ม |
+| `SHOCK` | สำรองไว้: กระแทกแรงเกินเกณฑ์ (ยังไม่ได้ตั้งเกณฑ์) |
+
+รายละเอียดของ event (เช่นสาเหตุการรีเซ็ต, mV ตอนแบตหมด) ไม่ได้ส่งทาง MQTT อยู่ในคอลัมน์ `detail` ของไฟล์ CSV
 
 การขยับธรรมดาไม่เป็นแถว นับรวมไว้ใน `motion`
 
@@ -228,3 +231,37 @@ publish เอกสารตั้งค่าที่ `mcold/v1/<sn>/config` 
 - รายการค่าทั้งหมด: [`../app/device-settings.md`](../app/device-settings.md) · แอปใช้เอกสารเดียวกันผ่าน BLE (`APPLY_CONFIG`)
 
 ⚠️ เอกสารนี้มีรหัส Wi-Fi: บนพอร์ต 1883 ที่ไม่เข้ารหัส ใครดักฟังก็เห็น — เป็นอีกเหตุผลที่ต้องเปิด TLS (ข้อ 6)
+
+## 10. ค่าตั้งปัจจุบันของกล่อง → server
+
+กล่อง publish ค่าตั้ง**ทั้งหมด**ที่ใช้อยู่ตอนนี้ที่ `mcold/<sn>/settings` แบบ **retain** (ตัดสินใจ 12 ต.ค.)
+server จึงรู้เสมอว่ากล่องตั้งอะไรไว้ ไม่ว่าจะแก้จากแอป (BLE), จาก server (ข้อ 9) หรือจากสาย USB
+
+- **ส่งเมื่อไร:** ทุกครั้งที่กล่องต่อ broker ได้ และทุกครั้งที่ค่าใดค่าหนึ่งเปลี่ยน (ค่า config, Wi-Fi เพิ่ม/แก้/ลบ, `ota_base`)
+  ตอนใช้แบตจะส่งในรอบ session ถัดไป (ตาม `upload_period_s`)
+- **เนื้อหา:** ชุดเดียวกับ event `SETTINGS` ที่แอปได้ทาง BLE · รายการ Wi-Fi 5 ช่อง **ไม่มีรหัสผ่าน** · `utc` คือเวลาที่กล่องสร้างข้อความ (`null` ถ้ายังไม่รู้เวลา)
+- ข้อความ retain อันล่าสุดคือค่าปัจจุบัน ไม่ต้องรวมหลายข้อความ
+- ต่างจาก `config/state` (ข้อ 9): `config/state` คือผลของเอกสารที่ server ส่งมา ส่วน `settings` คือค่าที่กล่องใช้อยู่จริงทั้งหมด
+
+```json
+{"config":{"sample_period_s":300,"temp_adj_c100":-50,"alarm_dwell_s":300,"alarm_hyst_c10":5,
+           "buzzer_enabled":1,"buzzer_volume":60,"upload_period_s":300, "...":"ทุกค่า"},
+ "editable":["sample_period_s","temp_adj_c100","alarm_dwell_s","..."],
+ "trip_locked":["sample_period_s","temp_adj_c100","alarm_dwell_s","alarm_hyst_c10","..."],
+ "server_rev":3,
+ "network":{"wifi":[{"slot":1,"ssid":"RDE_2.4GHz","dhcp":true},{"slot":2,"ssid":null},
+                    {"slot":3,"ssid":"Warehouse","dhcp":false,"ip":"192.168.1.50","gateway":"192.168.1.1",
+                     "subnet":"255.255.255.0","dns":"8.8.8.8"},{"slot":4,"ssid":null},{"slot":5,"ssid":null}],
+            "ota_base":"https://..."},
+ "utc":1791792252}
+```
+
+| ช่อง | ความหมาย |
+|---|---|
+| `config` | ทุกค่าตั้งและค่าปัจจุบัน (รายการและความหมายใน [`../app/device-settings.md`](../app/device-settings.md)) |
+| `editable` | ค่าที่แอปและ server แก้ได้ |
+| `trip_locked` | ค่าที่แก้ไม่ได้ระหว่าง trip |
+| `server_rev` | `rev` ของเอกสารตั้งค่าจาก server ฉบับล่าสุดที่กล่องใช้แล้ว |
+| `network.wifi` | Wi-Fi 5 ช่อง: ชื่อ, DHCP หรือ IP คงที่ · ช่องว่าง `ssid` เป็น `null` |
+| `network.ota_base` | ที่อยู่ดาวน์โหลด firmware |
+| `utc` | เวลาที่ส่ง (วินาที Unix) |

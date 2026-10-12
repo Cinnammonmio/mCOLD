@@ -63,6 +63,7 @@ constexpr Field FIELDS[] = {
     F(epd_inset_l, 0, 30, 0, "px"),
     F(epd_inset_r, 0, 30, 0, "px"),
     F(buzzer_enabled, 0, 1, 1, ""),
+    F(buzzer_volume, 1, 100, 100, "%"),
     F(sleep_en, 0, 1, 1, ""),
     F(idle_wake_s, 300, 86400, 3600, "s"),
     F(gnss_period_s, 300, 86400, 1800, "s"),

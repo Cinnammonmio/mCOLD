@@ -38,7 +38,13 @@ char g_pass[72] = "";
 #define TOPIC_SUB "mcold/v1/"
 #define TOPIC_PUB "mcold/"
 char t_rec[64], t_ack[64], t_status[64], t_online[64], t_fw[64], t_ota[64], t_cfg[64],
-    t_cfg_state[72];
+    t_cfg_state[72], t_settings[72];
+
+// The box's settings as they stand, for the server (decided 2026-10-12):
+// mcold/<sn>/settings, retained, sent once per connection and again
+// whenever something changes -- from the app, the console or the server.
+uint32_t g_settings_sent = 0;
+bool g_settings_any = false;    // nothing sent on this connection yet
 
 // The settings document from the server, handed from the MQTT task to
 // ours, where it is applied.
@@ -490,6 +496,29 @@ void publish_cfg(void) {
   cfg_put("report", nullptr);
 }
 
+// What the app sees in its SETTINGS event, network included (no
+// passwords), with the time it was taken.
+void publish_settings(void) {
+  if (!g_client || !g_mqtt) return;
+  const uint32_t gen = settings_gen();
+  if (g_settings_any && gen == g_settings_sent) return;
+  cJSON *o = cJSON_CreateObject();
+  settings_snapshot(o, true);
+  TimeStamp t;
+  time_now(&t);
+  if (t.quality != TimeSource::None) cJSON_AddNumberToObject(o, "utc", (double)(t.utc_ms / 1000));
+  else cJSON_AddNullToObject(o, "utc");
+  char *s = cJSON_PrintUnformatted(o);
+  cJSON_Delete(o);
+  if (!s) return;
+  const int id = esp_mqtt_client_publish(g_client, t_settings, s, 0, 1, 1);
+  free(s);
+  if (id < 0) return;
+  g_settings_sent = gen;
+  g_settings_any = true;
+  printf("[uplink] settings sent (change %lu)\n", (unsigned long)gen);
+}
+
 // The OTA module's latest word, once each, retained.
 uint32_t g_ota_sent = 0;
 void publish_ota(void) {
@@ -509,6 +538,7 @@ void stop_client(void) {
   g_client = nullptr;
   g_mqtt = false;
   g_started = false;
+  g_settings_any = false;
   xSemaphoreTake(g_mx, portMAX_DELAY);
   g_flight.on = false;
   xSemaphoreGive(g_mx);
@@ -629,6 +659,7 @@ void battery_pass(void) {
     publish_ota();
     apply_cfg_doc();
     publish_cfg();
+    publish_settings();
     // A download needs the radio; the OTA module has its own time limits.
     if (ota_busy()) return;
     xSemaphoreTake(g_mx, portMAX_DELAY);
@@ -681,6 +712,7 @@ void task(void *) {
     publish_ota();
     apply_cfg_doc();
     publish_cfg();
+    publish_settings();
 
     // Status on change, and every five minutes regardless.
     TripStatus s;
@@ -723,6 +755,7 @@ void uplink_start(const char *sn) {
   snprintf(t_ota, sizeof(t_ota), TOPIC_PUB "%s/ota/state", g_sn);
   snprintf(t_cfg, sizeof(t_cfg), TOPIC_SUB "%s/config", g_sn);
   snprintf(t_cfg_state, sizeof(t_cfg_state), TOPIC_PUB "%s/config/state", g_sn);
+  snprintf(t_settings, sizeof(t_settings), TOPIC_PUB "%s/settings", g_sn);
   {
     // A report not yet sent before the reset goes out at the next connection.
     nvs_handle_t h;

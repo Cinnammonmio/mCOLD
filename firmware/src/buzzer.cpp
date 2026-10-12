@@ -4,6 +4,7 @@
 #include <esp_timer.h>
 
 #include "board.h"
+#include "config.h"
 #include "health.h"
 #include "pm.h"
 
@@ -69,7 +70,15 @@ void buzzer_beep(uint32_t ms) {
   // There is no feedback from a buzzer, so "Ok" here only means the
   // peripheral accepted the command. Whether it made a sound is a
   // question for a person standing next to it.
-  if (ledc_set_duty(MODE, CHAN, HALF) == ESP_OK &&
+  // Loudness (config buzzer_volume, decided 2026-10-12): a narrower pulse
+  // drives the coil for less of each cycle. 50 % duty is the loudest a
+  // square wave gets; the scale below it is not linear to the ear.
+  int32_t vol = config().buzzer_volume;
+  if (vol < 1) vol = 1;
+  if (vol > 100) vol = 100;
+  uint32_t duty = HALF * (uint32_t)vol / 100;
+  if (!duty) duty = 1;
+  if (ledc_set_duty(MODE, CHAN, duty) == ESP_OK &&
       ledc_update_duty(MODE, CHAN) == ESP_OK) {
     health_ok(Dev::Buzzer);
   } else {

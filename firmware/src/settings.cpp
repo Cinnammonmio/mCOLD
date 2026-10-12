@@ -21,7 +21,7 @@ const char *const REMOTE[] = {
     "sample_period_s", "upload_period_s", "gnss_period_s",  "idle_wake_s",
     "tz_offset_min",   "led_front_pct",   "led_bright_pct", "led_status_s",
     "buzzer_enabled",  "accel_wake_ths",  "temp_adj_c100",  "usb_drive",
-    "alarm_hyst_c10",  "alarm_dwell_s",
+    "alarm_hyst_c10",  "alarm_dwell_s",   "buzzer_volume",
 };
 // usb_drive is here as the way back: if the drive ever made the port
 // unusable, the server can turn it off and the console returns on the
