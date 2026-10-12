@@ -1,9 +1,9 @@
 ---
 name: MQTT-Topics
 lang: th
-version: 1.2
+version: 1.3
 date: 2026-10-12
-firmware: 0.7.0-dev.51
+firmware: 0.7.0-dev.52
 ---
 
 # mCOLD — MQTT topics
@@ -41,11 +41,12 @@ firmware: 0.7.0-dev.51
 | `mcold/<sn>/ota/state` | **pub** | **sub** | 1 | ใช่ | ผลการอัปเดต firmware |
 | `mcold/v1/<sn>/ack` | **sub** | **pub** | 1 | ไม่ | ยืนยันว่าบันทึกแถวแล้ว |
 | `mcold/v1/<sn>/firmware` | **sub** | **pub** | 1 | **ใช่** | ชื่อไฟล์ firmware ที่จะให้อัปเดต |
-| `mcold/v1/<sn>/config` | **sub** | **pub** | 1 | **ใช่** | เอกสารตั้งค่า (Wi-Fi + DHCP/IP คงที่, รอบส่ง, ไฟ, temp adjust …) |
+| `mcold/v1/<sn>/config` | **sub** | **pub** | 1 | **ใช่** | เอกสารตั้งค่า (Wi-Fi + DHCP/IP คงที่, รอบส่ง, เสียง, temp adjust …) |
 | `mcold/<sn>/config/state` | **pub** | **sub** | 1 | ใช่ | ผลการตั้งค่า |
+| `mcold/<sn>/settings` | **pub** | **sub** | 1 | ใช่ | ค่าตั้งทั้งหมดของกล่องตอนนี้ ส่งใหม่ทุกครั้งที่มีการแก้ (จากแอป, server หรือสาย USB) |
 
 **Server subscribe:** `mcold/+/rec`, `mcold/+/status`, `mcold/+/online`, `mcold/+/ota/state`,
-`mcold/+/config/state`
+`mcold/+/config/state`, `mcold/+/settings`
 (หรือ `mcold/#` แล้วกรองเอง)
 
 **Server publish:** `mcold/v1/<sn>/ack`, `mcold/v1/<sn>/firmware` และ `mcold/v1/<sn>/config`
@@ -128,6 +129,24 @@ payload คือชื่อไฟล์อย่างเดียว เช�
 
 ```json
 {"rev":3,"applied":["upload_period_s","wifi add Warehouse-2"],"errors":{},"state":"ok"}
+```
+
+### `mcold/<sn>/settings` — ค่าตั้งปัจจุบัน (retain)
+
+ส่งเมื่อต่อ broker ได้ และทุกครั้งที่ค่าตั้งเปลี่ยน ไม่ว่าแก้จากที่ไหน เนื้อหาเหมือน event `SETTINGS` ของแอป
+(Wi-Fi ไม่มีรหัสผ่าน) รายละเอียดใน `server-mqtt-brief.md` ข้อ 10
+
+```json
+{"config":{"sample_period_s":300,"temp_adj_c100":-50,"alarm_dwell_s":300,"alarm_hyst_c10":5,
+           "buzzer_enabled":1,"buzzer_volume":60,"upload_period_s":300, "...":"ทุกค่า"},
+ "editable":["sample_period_s","temp_adj_c100","alarm_dwell_s","..."],
+ "trip_locked":["sample_period_s","temp_adj_c100","alarm_dwell_s","alarm_hyst_c10","..."],
+ "server_rev":3,
+ "network":{"wifi":[{"slot":1,"ssid":"RDE_2.4GHz","dhcp":true},{"slot":2,"ssid":null},
+                    {"slot":3,"ssid":"Warehouse","dhcp":false,"ip":"192.168.1.50","gateway":"192.168.1.1",
+                     "subnet":"255.255.255.0","dns":"8.8.8.8"},{"slot":4,"ssid":null},{"slot":5,"ssid":null}],
+            "ota_base":"https://..."},
+ "utc":1791792252}
 ```
 
 ### `mcold/<sn>/online`

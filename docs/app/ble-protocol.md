@@ -4,7 +4,7 @@ lang: th
 version: 0.4
 status: draft
 date: 2026-10-12
-firmware: 0.7.0-dev.51
+firmware: 0.7.0-dev.52
 ---
 
 # mCOLD BLE Protocol (สำหรับทีมแอป)
