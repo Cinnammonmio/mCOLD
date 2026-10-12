@@ -437,6 +437,7 @@ export const CONFIG_RULES = {
   led_front_pct: { min: 1, max: 100 },
   led_bright_pct: { min: 1, max: 100 },
   buzzer_enabled: { min: 0, max: 1 },
+  buzzer_volume: { min: 1, max: 100 },
   alarm_dwell_s: { min: 0, max: 3600 },
   alarm_hyst_c10: { min: 0, max: 100 },
   idle_wake_s: { min: 300, max: 86400 },

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { DEFAULT_CONFIG, nav, toast, useApp, TRIP_LOCKED, userName } from '../store.js';
 import { applyConfig, BleLost, CONFIG_RULES, deviceView, findDevice, isLinked, wifiCommand } from '../sim.js';
-import { fmtPeriod, fmtTime, fmtTz } from '../format.js';
+import { fmtTime } from '../format.js';
 import { requestConnect } from '../ConnectSheet.jsx';
 import { AppBar, Banner, Btn, Chip, Field, Icon, Seg, Switch } from '../ui.jsx';
 import { NeedConnection } from './Mcold.jsx';
@@ -17,17 +17,10 @@ const FIELDS = {
   temp_adj_c100: num('ปรับค่าอุณหภูมิ', '°C', 100, -10, 10, 0.01, 'บวกเพิ่มจากค่าที่วัด ใช้ทั้งบนจอ ในข้อมูลทริป และที่ส่ง Server · ค่าเริ่มต้น 0 · −10.00 ถึง +10.00°C'),
   alarm_dwell_s: num('เวลานอกช่วงก่อนแจ้งเตือน', 'นาที', 60, 0, 60, 1, 'อุณหภูมิต้องอยู่นอกช่วงต่อเนื่องนานเท่านี้ก่อนเตือน 0 = ทันที · ค่าเริ่มต้น 5 นาที · 0–60 นาที'),
   alarm_hyst_c10: num('ระยะกลับเข้าช่วง (Hysteresis)', '°C', 10, 0, 10, 0.1, 'ต้องกลับเข้าในช่วงเกินเส้นเท่านี้ก่อนถือว่าการเตือนจบ กันเตือนสลับถี่เมื่อค่าแกว่งตรงเส้น · ค่าเริ่มต้น 0.5°C · 0–10.0°C'),
-  gnss_period_s: num('รอบหาตำแหน่ง GPS ระหว่างทริป', 'นาที', 60, 5, 1440, 1, 'ค่าเริ่มต้น 30 นาที · 5 นาที ถึง 24 ชม. (1440 นาที)'),
-  tz_offset_min: {
-    label: 'เขตเวลา',
-    kind: 'select',
-    options: [-720, -600, -480, -300, -180, 0, 60, 120, 180, 240, 330, 360, 420, 480, 540, 600, 720, 840].map((m) => ({ value: m, label: fmtTz(m) + (m === 420 ? ' (ประเทศไทย)' : '') })),
-    help: 'ค่าเริ่มต้น UTC+7 · ตั้งได้ UTC−12 ถึง UTC+14',
-  },
-  buzzer_enabled: { label: 'เสียงเตือนที่กล่อง', kind: 'switch', help: 'ค่าเริ่มต้น เปิด' },
-  led_front_pct: num('ความสว่างไฟหน้า 3 ดวง', '%', 1, 1, 100, 1, 'ค่าเริ่มต้น 2% · 1–100%'),
-  led_bright_pct: num('ความสว่างไฟข้าง (ชาร์จ)', '%', 1, 1, 100, 1, 'ค่าเริ่มต้น 20% · 1–100%'),
-  led_status_s: num('รอบกะพริบบอกสถานะตอนใช้แบต', 'นาที', 60, 1, 60, 1, 'ค่าเริ่มต้น 15 นาที · 1–60 นาที'),
+  // Location/time and the lights are not in the app (decided 2026-10-12): the box keeps its
+  // defaults, and they stay settable from the server and the USB console.
+  buzzer_enabled: { label: 'เปิด/ปิดเสียง', kind: 'switch', help: 'เสียงเตือนที่กล่อง · ค่าเริ่มต้น เปิด' },
+  buzzer_volume: num('ระดับความดัง', '%', 1, 1, 100, 1, 'ค่าเริ่มต้น 100% (ดังสุด) · 1–100%'),
   idle_wake_s: num('ตื่นตรวจสถานะอย่างน้อยทุก', 'นาที', 60, 5, 1440, 1, 'ตอนไม่มีอะไรทำ · ค่าเริ่มต้น 60 นาที · 5 นาที ถึง 24 ชม.'),
   accel_wake_ths: num('ความไวการจับการขยับ', 'ระดับ', 1, 1, 63, 1, 'ระดับละ 31 mg ยิ่งน้อยยิ่งไว · ค่าเริ่มต้น 2 (62 mg) · 1–63'),
   upload_period_s: num('รอบส่งข้อมูลผ่าน Wi-Fi ของอุปกรณ์', 'นาที', 60, 1, 1440, 1, 'รอบที่กล่องเปิด Wi-Fi ของตัวเองส่งสถานะตอนใช้แบต ยิ่งถี่ยิ่งกินแบต · ค่าเริ่มต้น 5 นาที · 1 นาที ถึง 24 ชม.'),
@@ -37,8 +30,7 @@ const FIELDS = {
 const GROUPS = [
   { id: 'log', title: 'การบันทึกและอุณหภูมิ', icon: 'temperature', keys: ['sample_period_s', 'temp_adj_c100'] },
   { id: 'alarm', title: 'การแจ้งเตือน', icon: 'bell-ringing', keys: ['alarm_dwell_s', 'alarm_hyst_c10'] },
-  { id: 'loc', title: 'ตำแหน่งและเวลา', icon: 'map-pin', keys: ['gnss_period_s', 'tz_offset_min'] },
-  { id: 'led', title: 'ไฟและเสียง', icon: 'sun', keys: ['buzzer_enabled', 'led_front_pct', 'led_bright_pct', 'led_status_s'] },
+  { id: 'sound', title: 'เสียง', icon: 'volume', keys: ['buzzer_enabled', 'buzzer_volume'] },
   { id: 'power', title: 'พลังงานและการขยับ', icon: 'battery-3', keys: ['idle_wake_s', 'accel_wake_ths'] },
 ];
 const ADV_KEYS = ['upload_period_s', 'usb_drive'];
@@ -71,7 +63,7 @@ function toDevice(key, raw) {
 
 function displayValue(key, devVal) {
   const f = FIELDS[key];
-  if (f.kind === 'select') return f.options.find((o) => o.value === devVal)?.label || fmtTz(devVal);
+  if (f.kind === 'select') return f.options.find((o) => o.value === devVal)?.label ?? String(devVal);
   if (f.kind === 'switch') return devVal ? 'เปิด' : 'ปิด';
   if (key === 'temp_adj_c100') return `${devVal >= 0 ? '+' : '−'}${Math.abs(devVal / 100).toFixed(2)} °C`;
   if (key === 'alarm_dwell_s' && devVal === 0) return 'ทันที';

@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 
 const STORAGE_KEY = 'cch-prototype-state-v1';
-const SCHEMA = 6;
+const SCHEMA = 7;
 
 export const DEFAULT_CONFIG = {
   sample_period_s: 300,
@@ -14,6 +14,7 @@ export const DEFAULT_CONFIG = {
   led_front_pct: 2,
   led_bright_pct: 20,
   buzzer_enabled: 1,
+  buzzer_volume: 100,
   alarm_dwell_s: 300,
   alarm_hyst_c10: 5,
   idle_wake_s: 3600,
