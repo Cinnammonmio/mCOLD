@@ -1,6 +1,6 @@
 // Demo controls: kept apart from the user-facing app. Simulates link, internet, server and box faults.
 import { useState } from 'react';
-import { resetAll, update, useApp, simNow } from './store.js';
+import { DEMO_VERSION, resetAll, update, useApp, simNow } from './store.js';
 import { demoAdvance, demoToggleBattery, demoToggleHigh, demoToggleProbe, disconnect, findDevice, isLinked, setInternet } from './sim.js';
 import { fmtDateTime } from './format.js';
 import { Btn, Icon, Seg } from './ui.jsx';
@@ -21,6 +21,7 @@ export function DemoPanel({ onOpenGuide }) {
       <div className="demo-head">
         <div className="row"><Icon name="flask-2" /> <span className="t">ควบคุมเดโม</span></div>
         <p>โหมดจำลองทั้งหมด ไม่มีการเรียก Bluetooth, NFC, API หรือ Server จริง</p>
+        <p className="mono" style={{ marginTop: 6 }}>{DEMO_VERSION}</p>
         <p style={{ marginTop: 6 }}><b style={{ background: '#a78bfa', color: '#2b2150', borderRadius: 6, padding: '0 6px' }}>สีม่วง</b> = ส่วนจำลองสำหรับเดโม ไม่มีในแอปจริง (แผงนี้, ปุ่มจำลองแตะ NFC, การเลือกผลจำลอง, การสลับผู้ใช้)</p>
       </div>
 

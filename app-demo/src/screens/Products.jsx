@@ -1,4 +1,4 @@
-import { nav } from '../store.js';
+import { DEMO_VERSION, nav } from '../store.js';
 import { AppBar, Btn, Icon } from '../ui.jsx';
 import { UserChip } from '../Users.jsx';
 
@@ -28,6 +28,7 @@ export function Products() {
             <Icon name="chevron-right" className="muted" />
           </button>
         ))}
+        <div className="tiny" style={{ marginTop: 'auto', textAlign: 'center', color: '#7c5cd6' }}>{DEMO_VERSION}</div>
       </div>
     </div>
   );

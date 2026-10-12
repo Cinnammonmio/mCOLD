@@ -72,6 +72,9 @@ function mkTrip(dev, { start, stop = null, low = 2, high = 8, sent = false, even
   return trip;
 }
 
+/** The demo build, e.g. "เดโม v0.2.0 · build 2026-10-12 16:20" (vite.config.js). */
+export const DEMO_VERSION = `เดโม v${__DEMO_VERSION__} · build ${__DEMO_BUILT__}`;
+
 function wifiSlots(list) {
   return [1, 2, 3, 4, 5].map((slot) => list.find((w) => w.slot === slot) || { slot, ssid: null });
 }
@@ -80,7 +83,7 @@ function mkDevice(o) {
   return {
     sn: o.sn,
     name: o.name,
-    fw: '0.7.0-dev.50',
+    fw: '0.7.0-dev.52',
     hw: 'foamV1.0.1',
     baseTemp: o.baseTemp,
     battery: o.battery ?? null,
