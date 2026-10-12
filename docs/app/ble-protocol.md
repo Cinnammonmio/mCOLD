@@ -1,7 +1,7 @@
 ---
 name: BLE-Protocol
 lang: th
-version: 0.4
+version: 0.5
 status: draft
 date: 2026-10-12
 firmware: 0.7.0-dev.52
@@ -377,7 +377,7 @@ trip_id,trip_date,trip_number,seq,sn,timestamp,utc,event,temp,tempmin,tempmax,al
 | `trip_number` | เลขรันของ trip ในวันนั้น เริ่มที่ 1 |
 | `seq` | ลำดับแถวใน trip เริ่มที่ 0 **`(trip_id, seq)` คือคีย์** |
 | `sn` | serial number ของกล่อง (มีใน CSV; ใน MQTT อยู่ที่หัวชุด) |
-| `timestamp` | MQTT: วินาที Unix (UTC) เป็นตัวเลข · CSV: เวลาท้องถิ่น `hh:mm:ss DD/MM/YYYY` (ค่า `tz_offset_min` ปกติ +07:00) |
+| `timestamp` | MQTT: วินาที Unix (UTC) เป็นตัวเลข · CSV: เวลาท้องถิ่น `hh:mm:ss DD/MM/YYYY` (เวลาไทย +07:00) |
 | `utc` | เฉพาะ CSV: ช่วงเวลาเดียวกันเป็นวินาที Unix |
 | `event` | แถวนี้คืออะไร (ตารางด้านล่าง) |
 | `temp` | °C หลังปรับเทียบ; `null` เมื่อ probe ไม่ให้ค่า |
