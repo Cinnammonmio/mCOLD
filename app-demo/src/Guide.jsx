@@ -280,7 +280,7 @@ export function Guide({ onBack }) {
                   <li>START_TRIP ใช้ <code>low</code>, <code>high</code>, <code>utc</code> · กล่องตั้งนาฬิกาเมื่อต่างเกิน 5 วินาที</li>
                   <li>Alarm delay และ hysteresis เป็นค่าของเครื่อง (<code>alarm_dwell_s</code>, <code>alarm_hyst_c10</code>)</li>
                   <li>ล็อกระหว่างทริป: <code>sample_period_s</code>, <code>temp_adj_c100</code>, <code>alarm_dwell_s</code>, <code>alarm_hyst_c10</code></li>
-                  <li>ช่วงค่า: รอบบันทึก 60–3600 s, ปรับค่า ±10.00°C, dwell 0–3600 s, hyst 0–10.0°C, tz ค่าเริ่มต้น +420</li>
+                  <li>ช่วงค่า: รอบบันทึก 60–3600 s (แอปจำกัด 5–60 นาที <Ux />), ปรับค่า ±10.00°C, dwell 0–3600 s, hyst 0–10.0°C, tz ค่าเริ่มต้น +420</li>
                   <li>Wi-Fi 5 ช่อง, DHCP/IP คงที่, ไม่ส่งรหัสผ่านกลับ, MQTT ตั้งจาก console เท่านั้น</li>
                   <li>READ_LOG_CHUNK ≤ 16 แถว, CSV ชื่อ TRIP_SN_เวลาเริ่ม, MARK_DELIVERED หลัง server ยืนยัน</li>
                   <li>ทริป “ส่งแล้ว” ยังอยู่ในกล่อง ถูกลบก่อนเมื่อพื้นที่เต็ม</li>

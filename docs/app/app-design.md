@@ -130,7 +130,7 @@ Demo ใช้ข้อมูลจำลองทั้งหมด ไม่�
 
 | กลุ่ม | ค่า |
 |---|---|
-| การบันทึกและอุณหภูมิ | `sample_period_s` 🔒, `temp_adj_c100` 🔒 |
+| การบันทึกและอุณหภูมิ | `sample_period_s` 🔒 (**แอปให้ตั้ง 5–60 นาที** ค่าเริ่มต้น 5 นาที — กล่องรับ 60–3600 วินาทีตาม `device-settings.md` แอปจึงกันค่า 1–4 นาทีเอง), `temp_adj_c100` 🔒 |
 | การแจ้งเตือน | `alarm_dwell_s` 🔒, `alarm_hyst_c10` 🔒 (มีคำอธิบาย hysteresis) |
 | ตำแหน่งและเวลา | `gnss_period_s`, `tz_offset_min` (ค่าเริ่มต้น UTC+7) |
 | ไฟและเสียง | `buzzer_enabled`, `led_front_pct`, `led_bright_pct`, `led_status_s` |

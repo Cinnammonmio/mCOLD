@@ -12,7 +12,8 @@ import { NeedConnection } from './Mcold.jsx';
 // UI units are converted here (seconds → minutes, 0.01 °C → °C …); the box always gets its own units.
 const num = (label, unit, factor, min, max, step, help) => ({ label, unit, toUi: (v) => v / factor, toDev: (u) => Math.round(u * factor), min, max, step, help });
 const FIELDS = {
-  sample_period_s: num('รอบบันทึกอุณหภูมิ', 'นาที', 60, 1, 60, 1, 'ค่าเริ่มต้น 5 นาที · ตั้งได้ 1–60 นาที'),
+  // App allows 5–60 min (product decision 2026-10-12); the box itself accepts 60–3600 s.
+  sample_period_s: num('รอบบันทึกอุณหภูมิ', 'นาที', 60, 5, 60, 1, 'ค่าเริ่มต้น 5 นาที · ตั้งได้ 5–60 นาที'),
   temp_adj_c100: num('ปรับค่าอุณหภูมิ', '°C', 100, -10, 10, 0.01, 'บวกเพิ่มจากค่าที่วัด ใช้ทั้งบนจอ ในข้อมูลทริป และที่ส่ง Server · ค่าเริ่มต้น 0 · −10.00 ถึง +10.00°C'),
   alarm_dwell_s: num('เวลานอกช่วงก่อนแจ้งเตือน', 'นาที', 60, 0, 60, 1, 'อุณหภูมิต้องอยู่นอกช่วงต่อเนื่องนานเท่านี้ก่อนเตือน 0 = ทันที · ค่าเริ่มต้น 5 นาที · 0–60 นาที'),
   alarm_hyst_c10: num('ระยะกลับเข้าช่วง (Hysteresis)', '°C', 10, 0, 10, 0.1, 'ต้องกลับเข้าในช่วงเกินเส้นเท่านี้ก่อนถือว่าการเตือนจบ กันเตือนสลับถี่เมื่อค่าแกว่งตรงเส้น · ค่าเริ่มต้น 0.5°C · 0–10.0°C'),
