@@ -6,6 +6,8 @@
 |---|---|---|
 | [`ble-protocol.md`](ble-protocol.md) | หากล่องด้วย NFC, GATT, AUTH, รูปแบบข้อความ, คำสั่งทั้งหมด, `trip_id`, Wi-Fi 5 ช่อง, วิธีที่แอปเห็นค่าที่เปลี่ยน, ส่ง trip เป็น CSV | [`pdf/`](pdf/) |
 | [`device-settings.md`](device-settings.md) | ค่าตั้งของกล่อง ใครตั้งได้ ช่วงค่า อะไรล็อกระหว่าง trip | [`pdf/`](pdf/) |
+| [`app-design.md`](app-design.md) | **การออกแบบแอปที่ตกลงแล้ว**: หน้าจอ, flow, mapping คำสั่ง, ที่มาของข้อมูล, ข้อความผิดพลาด, สิ่งที่ firmware/server ต้องทำ, ประเด็นที่ต้องตกลง | — |
+| [`demo/index.html`](demo/index.html) | demo แอปที่กดใช้งานได้ (ข้อมูลจำลอง) เปิดในเบราว์เซอร์ · โค้ดที่ [`../../app-demo/`](../../app-demo/README.md) | — |
 
 เกี่ยวกับ server: [`../server/`](../server/README.md) (โดยเฉพาะ [`trip-data-flow.md`](../server/trip-data-flow.md) ว่าข้อมูล trip ไปทางไหน)
 

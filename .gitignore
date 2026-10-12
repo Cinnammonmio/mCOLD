@@ -8,3 +8,6 @@ __pycache__/
 # Files made for people, not sources: trip CSVs pulled from a box (they
 # can carry positions) and copies of the PDFs packed for sending.
 exports/
+
+# app demo (built into docs/app/demo/)
+app-demo/node_modules/
