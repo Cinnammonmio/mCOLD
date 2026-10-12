@@ -1,10 +1,10 @@
 ---
 name: Server-Brief_MQTT
 lang: th
-version: 0.13
+version: 0.14
 status: draft
-date: 2026-10-07
-firmware: 0.7.0-dev.47
+date: 2026-10-12
+firmware: 0.7.0-dev.51
 ---
 
 # mCOLD — สิ่งที่ฝั่ง Server ต้องทำ (MQTT)
@@ -222,7 +222,8 @@ publish เอกสารตั้งค่าที่ `mcold/v1/<sn>/config` 
 - **Wi-Fi 5 ช่อง:** `add` ใส่ `"slot":N` (1–5) เพื่อแก้ช่องนั้นโดยตรง และ `del` ใส่เลขช่องหรือชื่อ กล่องรายงานทั้ง 5 ช่องให้แอป (ดู Device Protocol)
 - **Wi-Fi แบบ eTEMP:** `dhcp` true/false, `ip`, `gateway`, `subnet`, `dns` ตั้งแยกต่อเครือข่าย
 - **ปรับอุณหภูมิ `temp_adj_c100`** (แบบ tempAdj ของ eTEMP) หน่วย 0.01 °C บวกเพิ่มจากค่าที่วัด
-- ค่าบางตัว (รอบบันทึก, temp adjust) เปลี่ยนไม่ได้ระหว่าง trip — ส่ง rev ใหม่หลังจบ trip
+- ค่าบางตัว (รอบบันทึก, temp adjust, `alarm_dwell_s`, `alarm_hyst_c10`) เปลี่ยนไม่ได้ระหว่าง trip — ส่ง rev ใหม่หลังจบ trip
+- **การเตือนอุณหภูมิเป็นค่าของเครื่อง** (ตัดสินใจ 2026-10-09): `alarm_dwell_s` = เวลาที่อุณหภูมิต้องอยู่นอกช่วงต่อเนื่องก่อนกล่องเตือน (0–3600 วินาที, 300) และ `alarm_hyst_c10` = ระยะที่ต้องกลับเข้าด้านในช่วงให้พ้นเส้นก่อนเคลียร์ (0–100 หน่วย 0.1 °C, 5) ใช้กับทุก trip ของเครื่องนั้น ค่าที่ใช้จริงของแต่ละ trip อยู่ในหัว trip (`hyst`, `dwell_s` ใน `GET_TRIP_SUMMARY`) ส่วนช่วงอุณหภูมิ `low`/`high` ยังเป็นของแต่ละ trip ที่แอปส่งตอนเริ่ม
 - **MQTT broker ตั้งจาก server ไม่ได้** ตั้งที่ตัวเครื่องผ่าน console เท่านั้น
 - รายการค่าทั้งหมด: [`../app/device-settings.md`](../app/device-settings.md) · แอปใช้เอกสารเดียวกันผ่าน BLE (`APPLY_CONFIG`)
 

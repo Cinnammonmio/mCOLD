@@ -16,7 +16,10 @@ Markdown here is a small subset (headings, paragraphs, lists, tables,
 import html
 import pathlib
 import re
+import shutil
 import subprocess
+import tempfile
+import time
 import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -178,10 +181,23 @@ def build(src):
     built = out / f"{path.stem}.html"
     built.write_text(page, encoding="utf-8")
     pdf = out / f"mCOLD_{meta['name']}_v{ver}.pdf"
+    # Its own profile: with Edge already open, a headless run on the shared
+    # profile hands the job to that window and exits without a PDF.
+    profile = tempfile.mkdtemp(prefix="mcold_edge_")
     cmd = [EDGE, "--headless=new", "--disable-gpu", "--no-pdf-header-footer",
+           f"--user-data-dir={profile}",
            "--allow-file-access-from-files", "--virtual-time-budget=8000",
            f"--print-to-pdf={pdf}", built.as_uri()]
-    subprocess.run(cmd, check=True, timeout=180, capture_output=True)
+    try:
+        subprocess.run(cmd, check=True, timeout=180, capture_output=True)
+    finally:
+        shutil.rmtree(profile, ignore_errors=True)
+    # Edge can return before the file is written (it hands the job to another
+    # process): wait for it.
+    for _ in range(120):
+        if pdf.exists() and pdf.stat().st_size > 0:
+            break
+        time.sleep(0.5)
     built.unlink()
     print("wrote", pdf.relative_to(HERE.parent.parent), pdf.stat().st_size, "bytes")
 
