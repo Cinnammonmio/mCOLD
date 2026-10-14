@@ -77,6 +77,9 @@ constexpr Field FIELDS[] = {
     F(rx_show, 0, 1, 0, ""),
     F(alarm_hyst_c10, 0, 100, 5, "0.1 C"),
     F(alarm_dwell_s, 0, 3600, 300, "s"),
+    F(chg_in_ma, 100, 3200, 400, "mA"),
+    F(chg_ma, 60, 3000, 300, "mA"),
+    F(uplink_en, 0, 1, 1, ""),
 };
 #undef F
 

@@ -38,6 +38,21 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Charger limits for the 6-box dock** (2026-10-14): the dock's adapter
+  gives 15 W (about 13.5 W at the 5 V rail), 2.25 W a slot. Until now the
+  charger was left at its own defaults. Now the box sets, on USB power and
+  again whenever the charger has put its own back (every plug-in, a
+  watchdog reset): input limit `chg_in_ma` (IINDPM, default 400 mA: six
+  boxes at 5 V make 12 W) and charge current `chg_ma` (ICHG, default
+  300 mA, 60 mA steps, never 0). Console-only. The box cannot tell the dock
+  from any other USB source, so every source gets this. Termination
+  current left as it was. 0.7.0-dev.53.
+
+- Console: `config set uplink_en 0` keeps the box off the broker (a retained
+  `online` "0" first, then the client stops; on battery the radio too) and
+  `config set uplink_en 1` brings it back. Bench only, not remote-settable.
+  0.7.0-dev.53.
+
 - **Buzzer volume; the settings go to the server** (2026-10-12).
   `buzzer_volume` (1..100 %, 100), app- and server-settable: the PWM duty
   of the 2.7 kHz drive scales with it (50 % duty is full; not linear to the

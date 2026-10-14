@@ -674,6 +674,14 @@ void task_power(void *) {
       power_kick_watchdog();
       last_kick = t;
     }
+    // The dock gives 15 W for six boxes: what each may draw and charge with
+    // is the box's config (chg_in_ma, chg_ma), applied whenever the charger
+    // has gone back to its own.
+    if (ps.charger_valid &&
+        power_apply_charge_limits((int)config().chg_in_ma, (int)config().chg_ma)) {
+      printf("[power] charger limits set: input %ld mA, charge %ld mA\n",
+             (long)config().chg_in_ma, (long)config().chg_ma);
+    }
 
     if (health_should_try(Dev::Rtc, t)) {
       struct tm tmv;

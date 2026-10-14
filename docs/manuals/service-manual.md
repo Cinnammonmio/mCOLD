@@ -1,9 +1,9 @@
 ---
 name: Service-Manual
 lang: en
-version: 0.4
+version: 0.5
 status: draft
-date: 2026-10-05
+date: 2026-10-14
 firmware: 0.7.0-dev.8
 hardware: foam V1.0.1
 ---
@@ -136,6 +136,12 @@ range and whether it is the default.
 | `tz_offset_min` | −720–840 | 420 | Display time zone (records are UTC) |
 | `epd_inset_t/b/l/r` | 0–20 / 0–30 | 0 | Panel pixels the case hides on each side (`screen cal`) |
 | `buzzer_enabled` | 0–1 | 1 | Alarm sound |
+| `buzzer_volume` | 1–100 | 100 | Alarm sound loudness, % of full drive; settable from the app and the server |
+| `alarm_dwell_s` | 0–3600 | 300 | Seconds outside the limits before an alarm is raised; settable from the app and the server, locked during a trip |
+| `alarm_hyst_c10` | 0–100 | 5 | An alarm clears this far inside the limit, 0.1 °C; settable from the app and the server, locked during a trip |
+| `chg_in_ma` | 100–3200 | 400 | Charger input limit (IINDPM), mA: the most the box draws from USB. 400 mA × 6 boxes × 5 V = 12 W, for the dock's 15 W adapter. The box cannot tell the dock from another USB source, so every source gets it; raise it for a single box on a bench |
+| `chg_ma` | 60–3000 | 300 | Charge current into the cell (ICHG), mA, 60 mA steps. Set again whenever the charger has put its own back (every plug-in) |
+| `uplink_en` | 0–1 | 1 | Bench: 0 keeps the box off the broker (a retained `online` "0" is sent first) |
 | `sleep_en` | 0–1 | 1 | Deep sleep on battery |
 | `idle_wake_s` | 300–86400 | 3600 | Longest sleep with nothing due |
 | `gnss_period_s` | 300–86400 | 1800 | On battery in a trip: one GNSS session this often |

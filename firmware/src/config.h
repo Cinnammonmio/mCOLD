@@ -62,6 +62,9 @@ struct Config {
   int32_t rx_show;            // bench aid, never in the product: what a phone sent, on the glass (rxlog.h)
   int32_t alarm_hyst_c10;     // a temperature alarm clears this far inside the limit, 0.1 C
   int32_t alarm_dwell_s;      // outside the limit this long before the alarm is raised
+  int32_t chg_in_ma;          // charger input current limit (IINDPM), mA: what the box may draw from USB
+  int32_t chg_ma;             // charge current into the cell (ICHG), mA
+  int32_t uplink_en;          // bench: 0 keeps the box off the broker (nothing sent, nothing received)
 
   // Field names are the NVS keys, 15 characters at most; config.cpp
   // refuses to compile a longer one.

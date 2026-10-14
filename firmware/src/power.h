@@ -91,6 +91,14 @@ void power_read(PowerStatus *out);
 // enable, and writing the byte whole turns charging off.
 void power_kick_watchdog(void);
 
+// The charger's limits (decided 2026-10-14, the 6-box dock's 15 W):
+// `in_ma` is the most it may draw from USB (IINDPM, 100 mA steps), `chg_ma`
+// the current into the cell (ICHG, 60 mA steps). Read-modify-write, only
+// when a register differs: the input limit is set again by the charger at
+// every plug-in and the whole register file when its watchdog runs out.
+// Returns true when something was written.
+bool power_apply_charge_limits(int in_ma, int chg_ma);
+
 const char *charge_state_name(ChargeState s);
 const char *vbus_type_name(VbusType v);
 

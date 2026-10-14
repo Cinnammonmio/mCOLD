@@ -39,6 +39,9 @@ const float SHUNT_OHMS = 0.010f;
 // BQ25601
 const uint8_t BQ_REG00 = 0x00;      // input current limit, EN_HIZ in bit 7
 const uint8_t BQ_HIZ = 0x80;
+const uint8_t BQ_IINDPM_MASK = 0x1F;   // REG00 bits 4..0: 100 mA + 100 mA per step
+const uint8_t BQ_REG02 = 0x02;      // charge current: ICHG in bits 5..0, 60 mA per step
+const uint8_t BQ_ICHG_MASK = 0x3F;
 const uint8_t BQ_REG01 = 0x01;      // power-on config, holds the kick bit
 const uint8_t BQ_REG07 = 0x07;      // misc: BATFET_DIS bit 5, BATFET_DLY bit 3
 const uint8_t BQ_BATFET_DIS = 0x20;
@@ -203,6 +206,28 @@ void power_kick_watchdog(void) {
     return;
   }
   i2c_write_reg(Dev::Charger, ADDR_BQ25601, BQ_REG01, (uint8_t)(r | BQ_WD_RST));
+}
+
+bool power_apply_charge_limits(int in_ma, int chg_ma) {
+  int in_code = (in_ma - 100 + 50) / 100;           // rounded to the nearest step
+  if (in_code < 0) in_code = 0;
+  if (in_code > BQ_IINDPM_MASK) in_code = BQ_IINDPM_MASK;
+  int ch_code = (chg_ma + 30) / 60;
+  if (ch_code < 1) ch_code = 1;                     // never 0: that is charging off
+  if (ch_code > BQ_ICHG_MASK) ch_code = BQ_ICHG_MASK;
+  bool wrote = false;
+  uint8_t r = 0;
+  if (i2c_read_reg(Dev::Charger, ADDR_BQ25601, BQ_REG00, &r, 1) == BusErr::Ok &&
+      (r & BQ_IINDPM_MASK) != in_code) {
+    wrote = i2c_write_reg(Dev::Charger, ADDR_BQ25601, BQ_REG00,
+                          (uint8_t)((r & ~BQ_IINDPM_MASK) | in_code)) == BusErr::Ok || wrote;
+  }
+  if (i2c_read_reg(Dev::Charger, ADDR_BQ25601, BQ_REG02, &r, 1) == BusErr::Ok &&
+      (r & BQ_ICHG_MASK) != ch_code) {
+    wrote = i2c_write_reg(Dev::Charger, ADDR_BQ25601, BQ_REG02,
+                          (uint8_t)((r & ~BQ_ICHG_MASK) | ch_code)) == BusErr::Ok || wrote;
+  }
+  return wrote;
 }
 
 const char *charge_state_name(ChargeState s) {

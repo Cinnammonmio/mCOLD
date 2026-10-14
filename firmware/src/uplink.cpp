@@ -691,6 +691,23 @@ void task(void *) {
     g_passes = g_passes + 1;
     // Quick while this wake is still deciding: the chip waits on it.
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(g_ses.on || !pm_is_done(Duty::Uplink) ? 100 : 1000));
+    if (!config().uplink_en) {
+      // Switched off at the console (bench, 2026-10-14): off the broker, and nothing waits on us.
+      if (g_ses.on) {
+        g_ses = {};
+        pm_hold(Hold::Uplink, false);
+        pm_no_light_sleep(false);
+      }
+      if (g_mqtt) {
+        esp_mqtt_client_publish(g_client, t_online, "0", 1, 1, 1);   // said in words: not a lost box
+        vTaskDelay(pdMS_TO_TICKS(150));
+      }
+      stop_client();
+      if (!pm_external_power()) net_want(false);
+      pm_next(Duty::Uplink, 0);
+      pm_done(Duty::Uplink);
+      continue;
+    }
     if (!pm_external_power()) {
       battery_pass();
       continue;
