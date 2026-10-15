@@ -69,3 +69,8 @@ uint32_t epd_last_refresh_ms(void);
 // back around it.
 void epd_probe(void);
 void epd_probe_init(void);
+
+// Bench: the four inks as four bands across the panel (black, white,
+// yellow, red, along the long side), straight into the controller -- the
+// canvas has no yellow. Four-ink panel only; false otherwise or on no answer.
+bool epd_test_inks(void);

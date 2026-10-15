@@ -1865,6 +1865,11 @@ void run_command(char *line) {
     epd_probe();
   } else if (!strcmp(line, "epd probe init")) {
     epd_probe_init();
+  } else if (!strcmp(line, "screen inks")) {
+    const bool shown = epd_test_inks();
+    printf("  %s\n", shown ? "four bands: black, white, yellow, red" : "not a four-ink panel, or it did not answer");
+    printf("  refresh %lu ms; the live screen comes back at its next change ('screen')\n",
+           (unsigned long)epd_last_refresh_ms());
   } else if (!strcmp(line, "rail epd on") || !strcmp(line, "rail epd off")) {
     // Bench: the panel's 3V3_EPD held on (GPIO42) for a meter, until 'off'.
     static bool held = false;

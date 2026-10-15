@@ -3,6 +3,7 @@
 #include <driver/gpio.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <stdio.h>
 #include <string.h>
@@ -29,6 +30,7 @@ const PanelDef PANEL_213_4INK = {
 namespace {
 
 const PanelDef *g_p = nullptr;      // the panel being driven
+SemaphoreHandle_t g_lock = nullptr;  // one refresh at a time: the display task's or the console's
 
 // One frame in the controller's own layout. Mono: ram_w/8 bytes a row, a
 // set bit white. Four-ink: ram_w/4 bytes a row, two bits a pixel, first
@@ -364,6 +366,7 @@ int32_t show_4ink(void) {
 }  // namespace
 
 void epd_init(void) {
+  if (!g_lock) g_lock = xSemaphoreCreateMutex();
   gpio_config_t in = {};
   in.pin_bit_mask = 1ULL << PIN_EPD_BUSY;
   in.mode = GPIO_MODE_INPUT;
@@ -374,6 +377,7 @@ void epd_init(void) {
 const PanelDef *epd_panel(void) { return g_p; }
 
 bool epd_show(const Canvas &c, int rotation) {
+  xSemaphoreTake(g_lock, portMAX_DELAY);
   rail_acquire(Rail::Epd);
   const PanelDef *was = g_p;
   g_p = pick();
@@ -396,6 +400,7 @@ bool epd_show(const Canvas &c, int rotation) {
   g_last_ms = took >= 0 ? (uint32_t)took : 0;
   release_pins();
   rail_release(Rail::Epd);
+  xSemaphoreGive(g_lock);
 
   if (took < 0) {
     health_fail(Dev::Display, -800);
@@ -425,6 +430,31 @@ void trace(const char *what, uint32_t ms) {
   printf(changes > 8 ? ", ... (%d changes)\n" : "\n", changes);
 }
 }  // namespace
+
+bool epd_test_inks(void) {
+  xSemaphoreTake(g_lock, portMAX_DELAY);
+  rail_acquire(Rail::Epd);
+  g_p = pick();
+  bool ok = false;
+  if (g_p->inks == 4) {
+    // Two bits a pixel: 00 black, 01 white, 10 yellow, 11 red. A thin
+    // black line between bands, so each edge is plain to see.
+    const int row = g_p->ram_w / 4;
+    static const uint8_t code[4] = {0x00, 0x55, 0xAA, 0xFF};
+    for (int py = 0; py < g_p->h; py++) {
+      const int band = py * 4 / g_p->h;
+      const bool edge = py > 0 && (py * 4 / g_p->h) != ((py - 1) * 4 / g_p->h);
+      memset(g_ram + py * row, edge ? 0x00 : code[band], row);
+    }
+    const int32_t took = show_4ink();
+    g_last_ms = took >= 0 ? (uint32_t)took : 0;
+    ok = took >= 0;
+  }
+  release_pins();
+  rail_release(Rail::Epd);
+  xSemaphoreGive(g_lock);
+  return ok;
+}
 
 // Bench: each command of the four-ink init alone after a reset, then a
 // power on -- which of them keeps the boost from coming up on this board.

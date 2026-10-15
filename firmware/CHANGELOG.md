@@ -51,8 +51,9 @@ P7, power: in progress.
   That is likely box 002's "power-on never finished" too. `epd_4ink_full
   1` sends them as the reference does. Also the (B) V3 (104 x 212, epd_panel
   4) and V4 (epd_panel 3) sequences, untested on glass. Console: `epd probe`,
-  `epd probe init`, `rail epd on|off` (3V3_EPD held for a meter).
-  0.7.0-dev.58.
+  `epd probe init`, `rail epd on|off` (3V3_EPD held for a meter), `screen
+  inks` (four bands, black, white, yellow, red, straight to the panel; the
+  canvas has no yellow). Refreshes are serialised by a lock. 0.7.0-dev.58.
 
 - **Waveshare 2.13" (B) V4, three inks** (2026-10-16), for box 006:
   `epd_panel 3`. An SSD1680 with a red plane (0x26, a clear bit red; red
