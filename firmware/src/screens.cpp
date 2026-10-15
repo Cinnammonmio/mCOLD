@@ -7,6 +7,7 @@
 #include "fonts_mcold.h"
 #include "fonts_head.h"
 #include "fonts_title20.h"
+#include "epd.h"
 
 namespace {
 
@@ -380,8 +381,12 @@ void footer(Canvas &c, const Foot &f) {
 }
 
 void alarm_frame(Canvas &c) {
-  // The whole frame, not a badge: visible across a warehouse.
-  for (int i = 0; i < 3; i++) c.rect(i, i, W - 2 * i, H - 2 * i, Ink::Accent);
+  // The whole frame, not a badge: visible across a warehouse. Yellow on
+  // the four-ink panel (2026-10-16), round the red reading; red on the
+  // panels that have no yellow, where yellow would come out white.
+  const PanelDef *p = epd_panel();
+  const Ink ink = (p && p->inks == 4) ? Ink::Yellow : Ink::Accent;
+  for (int i = 0; i < 3; i++) c.rect(i, i, W - 2 * i, H - 2 * i, ink);
 }
 
 void unit(Canvas &c, int x, int top, Ink ink) {
@@ -452,9 +457,6 @@ void scr_monitor(Canvas &c, const char *device, const char *clock,
                  const char *hi, const char *note, bool red, bool alarm) {
   begin(c);
   header(c, device, clock);
-  // An alarm fills the body yellow (2026-10-16): the red number and frame
-  // on it, black min/max. Panels without yellow show it white.
-  if (alarm) c.fill_rect(0, BAR, W, RULE - BAR, Ink::Yellow);
   const Ink hero = (red || alarm) ? Ink::Accent : Ink::Black;
   const float unit_w = 13 + width("C", HERO_UNIT);
   const float w_num = width(temp, HERO);

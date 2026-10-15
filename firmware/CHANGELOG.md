@@ -40,8 +40,9 @@ P7, power: in progress.
 
 - **Yellow** (2026-10-16): the canvas's fourth ink, `Ink::Yellow`, sent as
   yellow to the four-ink panel and as white to the mono and three-ink ones
-  (a background only). The alarm screen (A4 ALARM) fills its body yellow
-  under the red reading and frame; the A1 demo page (`screen 0`) draws its
+  (a background only). The alarm screen (A4 ALARM) has its frame yellow on
+  the four-ink panel round the red reading (red elsewhere, where yellow
+  would be white; a yellow body was tried first); the A1 demo page (`screen 0`) draws its
   title red and yellow, all four inks on one page. 0.7.0-dev.59.
 
 - **The four-ink panel draws** (2026-10-16). `epd probe` on box 005 (a

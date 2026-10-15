@@ -17,7 +17,8 @@
 #include "gfxfont.h"
 
 // Accent is the red ink. Yellow (2026-10-16) only the four-ink panel has;
-// the others draw it as white, so it may only ever be a background.
+// the others draw it as white, so it is a background, or drawn only when
+// epd_panel() says the panel has it.
 enum class Ink : uint8_t { White = 0, Black = 1, Accent = 2, Yellow = 3 };
 
 static const int CANVAS_W = 250;
