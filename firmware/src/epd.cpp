@@ -16,6 +16,9 @@
 const PanelDef PANEL_213_MONO = {
     "2.13 mono SSD1680 (GxEPD2_213_B74)", 128, 122, 250, true, 10000, 1,
 };
+const PanelDef PANEL_213_3INK = {
+    "2.13 three-ink SSD1680 (Waveshare 2.13 B V4)", 128, 122, 250, true, 40000, 3,
+};
 const PanelDef PANEL_213_4INK = {
     "2.13 four-ink GDEY0213F51 (GxEPD2_213c_GDEY0213F51)", 128, 122, 250, false, 40000, 4,
 };
@@ -108,6 +111,24 @@ void to_native_mono(const Canvas &c, int rotation) {
   }
 }
 
+// Two planes of ram_w/8 bytes a row: black (a set bit white) in the first
+// half of g_ram, red (a clear bit red) in the second. A red pixel is white
+// in the black plane.
+const size_t PLANE3 = 128 / 8 * 250;
+void to_native_3ink(const Canvas &c, int rotation) {
+  const int row = g_p->ram_w / 8;
+  memset(g_ram, 0xFF, 2 * PLANE3);
+  uint8_t *red = g_ram + PLANE3;
+  for (int py = 0; py < g_p->h; py++) {
+    for (int px = 0; px < g_p->visible_w; px++) {
+      const Ink k = at(c, rotation, px, py);
+      if (k == Ink::White) continue;
+      uint8_t *plane = k == Ink::Accent ? red : g_ram;
+      plane[py * row + px / 8] &= (uint8_t)~(0x80 >> (px & 7));
+    }
+  }
+}
+
 void to_native_4ink(const Canvas &c, int rotation) {
   const int row = g_p->ram_w / 4;
   memset(g_ram, 0x55, (size_t)row * g_p->h);   // all white
@@ -149,6 +170,7 @@ const PanelDef *pick(void) {
   const int32_t want = config().epd_panel;
   if (want == 1) return &PANEL_213_MONO;
   if (want == 2) return &PANEL_213_4INK;
+  if (want == 3) return &PANEL_213_3INK;
   hw_reset(10);
   vTaskDelay(pdMS_TO_TICKS(250));
   return gpio_get_level((gpio_num_t)PIN_EPD_BUSY) ? &PANEL_213_4INK : &PANEL_213_MONO;
@@ -193,6 +215,34 @@ int32_t show_mono(void) {
     wait_ready(1000);
     cmd1(0x10, 0x01);
   }
+  return took;
+}
+
+// Waveshare's EPD_2in13b_V4.c: init, both planes, refresh, deep sleep.
+// -1: no answer; the step that failed is said on the console.
+int32_t show_3ink(void) {
+  hw_reset(2);
+  vTaskDelay(pdMS_TO_TICKS(20));
+  bool ok = wait_ready(1000) >= 0 && cmd(0x12);   // software reset
+  ok = ok && wait_ready(1000) >= 0;
+  if (!ok) {
+    printf("[display] three-ink: no answer after reset\n");
+    return -1;
+  }
+  static const uint8_t drv[3] = {0xF9, 0x00, 0x00};   // 250 gate lines
+  static const uint8_t upd[2] = {0x80, 0x80};         // red RAM inverted, as Waveshare
+  ok = cmd(0x01, drv, 3) && cmd1(0x11, 0x03) && ram_window_mono() && cmd1(0x3C, 0x05) &&
+       cmd1(0x18, 0x80) && cmd(0x21, upd, 2) && wait_ready(1000) >= 0;
+  ok = ok && cmd(0x24, g_ram, PLANE3) && cmd(0x26, g_ram + PLANE3, PLANE3);
+  int32_t took = -1;
+  if (ok && cmd(0x20)) {             // update with the panel's own sequence
+    vTaskDelay(pdMS_TO_TICKS(10));
+    took = wait_ready(g_p->refresh_max_ms);
+  }
+  if (!ok) printf("[display] three-ink: init or image not sent\n");
+  else if (took < 0) printf("[display] three-ink: refresh did not finish\n");
+  cmd1(0x10, 0x01);                  // deep sleep; the image stays on the glass
+  vTaskDelay(pdMS_TO_TICKS(100));
   return took;
 }
 
@@ -272,6 +322,9 @@ bool epd_show(const Canvas &c, int rotation) {
   if (g_p->inks == 4) {
     to_native_4ink(c, rotation);
     took = show_4ink();
+  } else if (g_p->inks == 3) {
+    to_native_3ink(c, rotation);
+    took = show_3ink();
   } else {
     to_native_mono(c, rotation);
     took = show_mono();

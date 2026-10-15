@@ -62,7 +62,7 @@ struct Config {
   int32_t rx_show;            // bench aid, never in the product: what a phone sent, on the glass (rxlog.h)
   int32_t alarm_hyst_c10;     // a temperature alarm clears this far inside the limit, 0.1 C
   int32_t alarm_dwell_s;      // outside the limit this long before the alarm is raised
-  int32_t epd_panel;          // 0 find out (BUSY after reset), 1 mono SSD1680, 2 four-ink GDEY0213F51 (epd.h)
+  int32_t epd_panel;          // 0 find out (BUSY after reset), 1 mono SSD1680, 2 four-ink GDEY0213F51, 3 three-ink 2.13 (B) V4 (epd.h)
   int32_t chg_in_ma;          // charger input current limit (IINDPM), mA: what the box may draw from USB
   int32_t chg_ma;             // charge current into the cell (ICHG), mA
   int32_t uplink_en;          // bench: 0 keeps the box off the broker (nothing sent, nothing received)

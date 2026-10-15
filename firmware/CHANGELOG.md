@@ -38,6 +38,12 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Waveshare 2.13" (B) V4, three inks** (2026-10-16), for box 006:
+  `epd_panel 3`. An SSD1680 with a red plane (0x26, a clear bit red; red
+  RAM inverted by 0x21 80 80), black plane 0x24, update by 0x20 alone,
+  all as Waveshare's EPD_2in13b_V4.c. BUSY high like the mono panel, so
+  it is never found by itself. The canvas's accent goes red. 0.7.0-dev.57.
+
 - **The four-ink panel** (2026-10-15): box 002 got the panel the board was
   designed for, GDEY0213F51 (black, white, yellow, red), and the mono
   SSD1680 driver "refreshed" it in 0 ms -- BUSY of the other polarity.

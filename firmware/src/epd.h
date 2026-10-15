@@ -11,6 +11,11 @@
 // (config epd_panel 0); epd_panel 1 or 2 names the panel outright. Both
 // sequences are GxEPD2's, byte for byte.
 //
+// A third: Waveshare's 2.13" e-Paper (B) V4, black, white and red, tried
+// on box 006 (2026-10-16). Also an SSD1680, BUSY high like the mono one,
+// so nothing tells the two apart from outside: it is epd_panel 3, never
+// found by itself. Waveshare's EPD_2in13b_V4.c sequence.
+//
 // Every refresh is a full one and powers the panel down afterwards: the
 // image stays on the glass with no power at all, and partial refresh is
 // not something the four-ink panel can do, so the product never relies
@@ -34,6 +39,7 @@ struct PanelDef {
 
 extern const PanelDef PANEL_213_MONO;
 extern const PanelDef PANEL_213_4INK;
+extern const PanelDef PANEL_213_3INK;
 
 // The panel the last refresh drove; nullptr before the first one.
 const PanelDef *epd_panel(void);
