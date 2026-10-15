@@ -40,10 +40,13 @@ P7, power: in progress.
 
 - **No battery, no green** (2026-10-15): a board without a cell flashed the
   side light green now and then, the charger trying to charge nothing. Now
-  a box whose gauge does not answer (it runs off the cell) and whose
-  battery current is under 15 mA either way shows "input, not charging"
-  (violet blink) whatever the charger's state; a cell the gauge reads, or
-  current into one, is untouched. Not yet seen on a board. 0.7.0-dev.54.
+  the charger saying pre-charge or fast charge while under 15 mA goes
+  into the cell shows "input, not charging" (violet blink); "done" does
+  too when there is no cell (no gauge reading, or one off the charger's
+  own output, and no current). The gauge alone could not tell: on 007 it
+  read 80 %+ off the charger driving the empty cell node (dev.54 first
+  tried that, and 007 still went green 9 times in 4 minutes). A cell
+  being charged takes 60 mA or more. 0.7.0-dev.55.
 
 - **Charger limits for the 6-box dock** (2026-10-14): the dock's adapter
   gives 15 W (about 13.5 W at the 5 V rail), 2.25 W a slot. Until now the
