@@ -1,12 +1,15 @@
 // E-paper panel driver.
 //
-// The board was designed for a four-ink 2.13" panel (GDEY0213F51) that
-// is not in hand; the panel fitted today is a mono 2.13" SSD1680 module,
-// what GxEPD2 calls GxEPD2_213_B74. This driver runs the mono panel with
-// the command sequence GxEPD2 uses for it, which bring-up proved on this
-// board. The four-ink panel needs a different sequence, and -- the trap
-// that cost bring-up an afternoon -- the OPPOSITE BUSY polarity. Both
-// live in the PanelDef, so the swap is one table entry, not a rewrite.
+// Two panels fit the board. The one it was designed for is the four-ink
+// 2.13" GDEY0213F51 (black, white, yellow, red; GxEPD2_213c_GDEY0213F51),
+// first fitted to box 002 on 2026-10-15; bench boards carried a mono 2.13"
+// SSD1680 module (GxEPD2_213_B74) before that. Their command sets have
+// nothing in common, and -- the trap that cost bring-up an afternoon --
+// their BUSY lines are of OPPOSITE polarity: the mono panel holds it high
+// while busy, the four-ink one low. That is also how they are told apart:
+// after a reset the four-ink panel's BUSY rests high, the mono one's low
+// (config epd_panel 0); epd_panel 1 or 2 names the panel outright. Both
+// sequences are GxEPD2's, byte for byte.
 //
 // Every refresh is a full one and powers the panel down afterwards: the
 // image stays on the glass with no power at all, and partial refresh is
@@ -29,19 +32,22 @@ struct PanelDef {
   uint8_t inks;            // 1: black only; accent drawn black
 };
 
-// The panel fitted now.
 extern const PanelDef PANEL_213_MONO;
+extern const PanelDef PANEL_213_4INK;
+
+// The panel the last refresh drove; nullptr before the first one.
+const PanelDef *epd_panel(void);
 
 void epd_init(void);
 
 // Draws the canvas and refreshes the whole panel. Blocks for the
-// refresh (about 3.6 s on the mono panel). `rotation` is GxEPD2's: 1 or
+// refresh (about 3.6 s on the mono panel, 21 s on the four-ink one). `rotation` is GxEPD2's: 1 or
 // 3, the two landscape orientations. Returns false if the panel never
 // signalled ready -- with the wrong BUSY polarity this is what happens,
 // and it looks exactly like dead hardware.
 bool epd_show(const Canvas &c, int rotation);
 
 // How long the last refresh kept BUSY asserted, ms. The mono panel takes
-// about 3,600; a number far from that is the first sign of a wrong
-// driver or a wrong polarity.
+// about 3,600, the four-ink one about 21,000; a number far from that (0,
+// say) is the first sign of a wrong driver or a wrong polarity.
 uint32_t epd_last_refresh_ms(void);

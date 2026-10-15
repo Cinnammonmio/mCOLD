@@ -38,6 +38,21 @@ To cut a release:
 
 P7, power: in progress.
 
+- **The four-ink panel** (2026-10-15): box 002 got the panel the board was
+  designed for, GDEY0213F51 (black, white, yellow, red), and the mono
+  SSD1680 driver "refreshed" it in 0 ms -- BUSY of the other polarity.
+  epd.cpp now drives both, GxEPD2's sequences byte for byte (four-ink:
+  2 bits a pixel, 128 x 250, BUSY low while busy, full refresh about 21 s,
+  the canvas's accent in red). Which one is found at each refresh from
+  BUSY 250 ms after a reset (high: four-ink), or set with `epd_panel`
+  (0 find out, 1 mono, 2 four-ink; console only). On box 002 the panel
+  answers its reset and takes the init, then never finishes power-on
+  (BUSY low past 10 s) -- the controller waiting for its boost. Same
+  with GxEPD2's CS framing, Waveshare's reset timing and its init, which
+  is the same sequence. So far the hardware: the boost differs from
+  Waveshare's reference (requirements 4.7: L7, R33, R44, FPC pin 4).
+  The console says which step failed. 0.7.0-dev.56.
+
 - **No battery, no green** (2026-10-15): a board without a cell flashed the
   side light green now and then, the charger trying to charge nothing. Now
   the charger saying pre-charge or fast charge while under 15 mA goes
