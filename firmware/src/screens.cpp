@@ -603,7 +603,17 @@ void scr_demo(Canvas &c, int p) {
   const char *dev = "MCOLD-0117";
   // trip, wifi, cloud, gnss, shock, charging, batt, mem
   switch (p) {
-    case 0: scr_ready(c, dev, {false, false, false, false, false, false, 78, 2}, false); break;
+    case 0: {
+      scr_ready(c, dev, {false, false, false, false, false, false, 78, 2}, false);
+      // Ink test (2026-10-16): the two title lines again over themselves,
+      // red and yellow, so one page shows all four inks on the four-ink
+      // panel (black and white are the rest). Yellow lettering on white is
+      // for this test, not a design.
+      const float x = M + PICT_TAP.w + 10;
+      text(c, x, 56, "SCAN TO", TITLE_S, Ink::Accent);
+      text(c, x, 77, "START TRIP", TITLE_S, Ink::Yellow);
+      break;
+    }
     case 1: scr_monitor(c, dev, "14:32", {true, true, true, true, false, false, 78, 6},
                         "4.2", "2.8", "6.1", nullptr, false, false); break;
     case 2: scr_monitor(c, dev, "14:32", {true, true, true, true, false, false, 78, 6},
