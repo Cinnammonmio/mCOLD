@@ -38,6 +38,13 @@ To cut a release:
 
 P7, power: in progress.
 
+- **No battery, no green** (2026-10-15): a board without a cell flashed the
+  side light green now and then, the charger trying to charge nothing. Now
+  a box whose gauge does not answer (it runs off the cell) and whose
+  battery current is under 15 mA either way shows "input, not charging"
+  (violet blink) whatever the charger's state; a cell the gauge reads, or
+  current into one, is untouched. Not yet seen on a board. 0.7.0-dev.54.
+
 - **Charger limits for the 6-box dock** (2026-10-14): the dock's adapter
   gives 15 W (about 13.5 W at the 5 V rail), 2.25 W a slot. Until now the
   charger was left at its own defaults. Now the box sets, on USB power and

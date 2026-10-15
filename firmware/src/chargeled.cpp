@@ -108,6 +108,16 @@ void chargeled_update(const PowerStatus &ps) {
     m = ChargeLed::Off;
   } else if (ps.fault_reg & (REG09_CHRG_FAULT | REG09_BAT_FAULT)) {
     m = ChargeLed::Fault;
+  } else if (ps.cell_absent ||
+             (!ps.cell_valid &&
+              (!ps.current_valid || fabsf(ps.battery_ma) < CHARGELED_NO_CELL_MA))) {
+    // No battery (decided 2026-10-15). With nothing on the cell terminals
+    // the charger keeps trying -- a moment of pre-charge, fast charge or
+    // "done" every so often -- and the light went green now and then with
+    // no cell to charge (boards on the dock without one). A cell that is
+    // there powers the gauge, or takes current when it charges; with
+    // neither, this is power in and nothing charging.
+    m = ChargeLed::NotCharging;
   } else {
     switch (ps.charge) {
       case ChargeState::PreCharge:

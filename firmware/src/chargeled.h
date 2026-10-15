@@ -38,3 +38,6 @@ const char *chargeled_name(ChargeLed m);
 // yellow-to-green change is taken from the fuel gauge. The gauge reads
 // low after a deep discharge until it has seen a full cycle.
 static const float CHARGELED_TAPER_SOC = 80.0f;
+// Below this, in either direction, nothing is going into a cell: with the
+// gauge silent too, there is no battery (chargeled.cpp).
+static const float CHARGELED_NO_CELL_MA = 15.0f;
