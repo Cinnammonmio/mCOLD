@@ -452,6 +452,9 @@ void scr_monitor(Canvas &c, const char *device, const char *clock,
                  const char *hi, const char *note, bool red, bool alarm) {
   begin(c);
   header(c, device, clock);
+  // An alarm fills the body yellow (2026-10-16): the red number and frame
+  // on it, black min/max. Panels without yellow show it white.
+  if (alarm) c.fill_rect(0, BAR, W, RULE - BAR, Ink::Yellow);
   const Ink hero = (red || alarm) ? Ink::Accent : Ink::Black;
   const float unit_w = 13 + width("C", HERO_UNIT);
   const float w_num = width(temp, HERO);

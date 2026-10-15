@@ -108,8 +108,9 @@ void to_native_mono(const Canvas &c, int rotation) {
   memset(g_ram, 0xFF, (size_t)row * g_p->h);
   for (int py = 0; py < g_p->h; py++) {
     for (int px = 0; px < g_p->visible_w; px++) {
-      // One ink: accent is printed in black.
-      if (at(c, rotation, px, py) != Ink::White) {
+      // One ink: accent is printed in black, yellow (a background) left white.
+      const Ink k = at(c, rotation, px, py);
+      if (k != Ink::White && k != Ink::Yellow) {
         g_ram[py * row + px / 8] &= (uint8_t)~(0x80 >> (px & 7));
       }
     }
@@ -127,7 +128,7 @@ void to_native_3ink(const Canvas &c, int rotation) {
   for (int py = 0; py < g_p->h; py++) {
     for (int px = 0; px < g_p->visible_w; px++) {
       const Ink k = at(c, rotation, px, py);
-      if (k == Ink::White) continue;
+      if (k == Ink::White || k == Ink::Yellow) continue;   // no yellow ink: white
       uint8_t *plane = k == Ink::Accent ? red : g_ram;
       plane[py * row + px / 8] &= (uint8_t)~(0x80 >> (px & 7));
     }
@@ -146,7 +147,7 @@ void to_native_v3(const Canvas &c, int rotation) {
       const int cx = ox + (rotation == 3 ? 211 - py : py);
       const int cy = oy + (rotation == 3 ? px : 103 - px);
       const Ink k = c.get(cx, cy);
-      if (k == Ink::White) continue;
+      if (k == Ink::White || k == Ink::Yellow) continue;   // no yellow ink: white
       uint8_t *plane = k == Ink::Accent ? red : g_ram;
       plane[py * row + px / 8] &= (uint8_t)~(0x80 >> (px & 7));
     }
@@ -161,7 +162,7 @@ void to_native_4ink(const Canvas &c, int rotation) {
       const Ink k = at(c, rotation, px, py);
       if (k == Ink::White) continue;
       // Accent is the red ink: what the screens mark in it is an alarm.
-      const uint8_t v = k == Ink::Accent ? 0x3 : 0x0;
+      const uint8_t v = k == Ink::Accent ? 0x3 : k == Ink::Yellow ? 0x2 : 0x0;
       const int sh = 6 - 2 * (px & 3);
       uint8_t &b = g_ram[py * row + px / 4];
       b = (uint8_t)((b & ~(0x3 << sh)) | (v << sh));

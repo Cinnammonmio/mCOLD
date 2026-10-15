@@ -16,7 +16,9 @@
 
 #include "gfxfont.h"
 
-enum class Ink : uint8_t { White = 0, Black = 1, Accent = 2 };
+// Accent is the red ink. Yellow (2026-10-16) only the four-ink panel has;
+// the others draw it as white, so it may only ever be a background.
+enum class Ink : uint8_t { White = 0, Black = 1, Accent = 2, Yellow = 3 };
 
 static const int CANVAS_W = 250;
 static const int CANVAS_H = 122;
