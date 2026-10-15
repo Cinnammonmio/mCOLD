@@ -16,6 +16,11 @@
 // so nothing tells the two apart from outside: it is epd_panel 3, never
 // found by itself. Waveshare's EPD_2in13b_V4.c sequence.
 //
+// And the (B) V3 before it, which is what box 005 turned out to carry: a
+// UC8151-type controller (BUSY low while busy, power on with 0x04) and a
+// smaller glass, 104 x 212. epd_panel 4. The screens are drawn 250 x 122,
+// so it shows their middle: 19 px off each end, 9 off top and bottom.
+//
 // Every refresh is a full one and powers the panel down afterwards: the
 // image stays on the glass with no power at all, and partial refresh is
 // not something the four-ink panel can do, so the product never relies
@@ -40,6 +45,7 @@ struct PanelDef {
 extern const PanelDef PANEL_213_MONO;
 extern const PanelDef PANEL_213_4INK;
 extern const PanelDef PANEL_213_3INK;
+extern const PanelDef PANEL_213B_V3;
 
 // The panel the last refresh drove; nullptr before the first one.
 const PanelDef *epd_panel(void);
@@ -57,3 +63,9 @@ bool epd_show(const Canvas &c, int rotation);
 // about 3,600, the four-ink one about 21,000; a number far from that (0,
 // say) is the first sign of a wrong driver or a wrong polarity.
 uint32_t epd_last_refresh_ms(void);
+
+// Bench (2026-10-16): what BUSY does through a reset and a software reset,
+// printed, for a panel that does not answer. The rail is taken and given
+// back around it.
+void epd_probe(void);
+void epd_probe_init(void);

@@ -1861,6 +1861,19 @@ void run_command(char *line) {
       printf("  asked; 'ota' shows how it goes\n");
     }
   }
+  else if (!strcmp(line, "epd probe")) {
+    epd_probe();
+  } else if (!strcmp(line, "epd probe init")) {
+    epd_probe_init();
+  } else if (!strcmp(line, "rail epd on") || !strcmp(line, "rail epd off")) {
+    // Bench: the panel's 3V3_EPD held on (GPIO42) for a meter, until 'off'.
+    static bool held = false;
+    const bool on = !strcmp(line, "rail epd on");
+    if (on && !held) rail_acquire(Rail::Epd);
+    if (!on && held) rail_release(Rail::Epd);
+    held = on;
+    printf("  3V3_EPD %s (held by the console: %s)\n", on ? "on" : "back to its users", held ? "yes" : "no");
+  }
   else if (!strcmp(line, "ble on")) {
     ble_enable(true);
     ble_window(BLE_TAP_WINDOW_MS);

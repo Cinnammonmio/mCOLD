@@ -38,6 +38,22 @@ To cut a release:
 
 P7, power: in progress.
 
+- **The four-ink panel draws** (2026-10-16). `epd probe` on box 005 (a
+  panel bought as Waveshare's 2.13" (B)) showed a UC/JD-type controller:
+  BUSY low 66 ms after reset, power on (0x04) in 132 ms with the
+  controller's defaults, and a refresh only as "0x12 0x00" -- the four-ink
+  protocol, not the (B) V3 nor V4 one. `epd probe init` then sent each
+  command of the four-ink init alone before a power on: two of them, 0x01
+  (power setting 07 00) and 0x06 (boost soft start 05 00 3F 0A 25 12 1A),
+  each keep the boost from ever coming up on this board -- it is not
+  Waveshare's reference boost (requirements 4.7: R33 0.47 vs 2.2 ohm, L7
+  68 vs 47 uH, R44 10k vs 1M). Without them the panel refreshes, 15.2 s.
+  That is likely box 002's "power-on never finished" too. `epd_4ink_full
+  1` sends them as the reference does. Also the (B) V3 (104 x 212, epd_panel
+  4) and V4 (epd_panel 3) sequences, untested on glass. Console: `epd probe`,
+  `epd probe init`, `rail epd on|off` (3V3_EPD held for a meter).
+  0.7.0-dev.58.
+
 - **Waveshare 2.13" (B) V4, three inks** (2026-10-16), for box 006:
   `epd_panel 3`. An SSD1680 with a red plane (0x26, a clear bit red; red
   RAM inverted by 0x21 80 80), black plane 0x24, update by 0x20 alone,
