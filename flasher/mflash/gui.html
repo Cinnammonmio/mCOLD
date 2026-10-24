@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mCOLD Station</title>
+<style>
+@font-face { font-family: "Plex Thai"; font-weight: 400; src: url(/fonts/IBMPlexSansThai-Regular.ttf); }
+@font-face { font-family: "Plex Thai"; font-weight: 500; src: url(/fonts/IBMPlexSansThai-Medium.ttf); }
+@font-face { font-family: "Plex Thai"; font-weight: 600; src: url(/fonts/IBMPlexSansThai-SemiBold.ttf); }
+@font-face { font-family: "Plex Thai"; font-weight: 700; src: url(/fonts/IBMPlexSansThai-Bold.ttf); }
+
+:root {
+  --bg: #eef1f4; --panel: #ffffff; --ink: #17202a; --muted: #5d6b7a; --line: #d7dde3;
+  --chip: #eef1f4;
+  --idle: #8a96a3; --run: #1f6fd1; --run-bg: #e8f1fd;
+  --ask: #b86e00; --ask-bg: #fff4dc;
+  --pass: #138a4a; --pass-bg: #e3f6eb;
+  --fail: #c62828; --fail-bg: #fdeaea;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1419; --panel: #182029; --ink: #e6ebf0; --muted: #93a1b0; --line: #2a3542;
+    --chip: #222c37;
+    --run-bg: #14273f; --ask-bg: #33270f; --pass-bg: #10301f; --fail-bg: #3a1616;
+    --run: #5aa2ff; --ask: #f0a73a; --pass: #3ccf7f; --fail: #ff6b6b; --idle: #6f7d8b;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.45 "Plex Thai", "Leelawadee UI", Tahoma, system-ui, sans-serif;
+  display: flex; flex-direction: column;
+}
+button, select, input { font: inherit; color: inherit; }
+button {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 8px;
+  padding: 7px 14px; cursor: pointer; font-weight: 500;
+}
+button:hover:not(:disabled) { border-color: var(--muted); }
+button:disabled { opacity: .4; cursor: default; }
+button.primary { background: var(--run); border-color: var(--run); color: #fff; }
+select, input[type=text] {
+  border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 10px;
+}
+
+/* ---- top bar ---- */
+.top {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+  padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 700; font-size: 17px; letter-spacing: .2px; margin-right: 6px; }
+.brand small { font-weight: 500; color: var(--muted); margin-left: 6px; font-size: 13px; }
+.field { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.field select, .field input { color: var(--ink); font-size: 14px; max-width: 100%; }
+.field { min-width: 0; max-width: 100%; }
+#stage { max-width: min(360px, 70vw); }
+.fw { display: flex; gap: 6px; flex-wrap: wrap; }
+.fwchip {
+  font-size: 12.5px; padding: 3px 9px; border-radius: 999px; background: var(--pass-bg);
+  color: var(--pass); white-space: nowrap; font-weight: 500;
+}
+.fwchip.bad { background: var(--fail-bg); color: var(--fail); white-space: normal; }
+.spacer { flex: 1; }
+.counts { font-size: 14px; color: var(--muted); white-space: nowrap; }
+.counts b.p { color: var(--pass); } .counts b.f { color: var(--fail); }
+.menu { position: relative; }
+.menu-list {
+  position: absolute; right: 0; top: calc(100% + 4px); z-index: 5; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15);
+  padding: 6px; display: none; min-width: 220px;
+}
+.menu.open .menu-list { display: block; }
+.menu-list button { display: block; width: 100%; text-align: left; border: 0; }
+.menu-list button:hover { background: var(--chip); }
+.banner { padding: 7px 16px; font-size: 14px; font-weight: 500; }
+.banner.demo { background: var(--ask-bg); color: var(--ask); }
+.banner.err { background: var(--fail-bg); color: var(--fail); }
+
+/* ---- slots ---- */
+.grid {
+  flex: 1; display: grid; gap: 12px; padding: 12px 16px 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr);
+  min-height: 0;
+}
+@media (max-width: 1180px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: auto; } }
+@media (max-width: 720px) { .grid { grid-template-columns: 1fr; padding: 10px 16px; } }
+
+.slot {
+  --c: var(--idle); --cbg: var(--panel);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+  box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 300px;
+  overflow: hidden; position: relative;
+}
+.slot::before { content: ""; height: 6px; background: var(--c); flex: none; }
+.slot[data-state=running] { --c: var(--run); --cbg: var(--run-bg); }
+.slot[data-state=ask] { --c: var(--ask); --cbg: var(--ask-bg); border-color: var(--ask); }
+.slot[data-state=pass] { --c: var(--pass); --cbg: var(--pass-bg); }
+.slot[data-state=fail], .slot[data-state=stopped] { --c: var(--fail); --cbg: var(--fail-bg); }
+.slot[data-state=empty] { background: transparent; border-style: dashed; box-shadow: none; }
+.slot[data-state=empty] .body > :not(.emptynote) { display: none; }
+.slot:not([data-state=empty]) .emptynote { display: none; }
+
+.head { display: flex; align-items: center; gap: 10px; padding: 10px 14px 6px; }
+.num {
+  width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
+  background: var(--chip); font-weight: 700; font-size: 17px; flex: none;
+}
+.slot[data-state=pass] .num, .slot[data-state=fail] .num, .slot[data-state=running] .num,
+.slot[data-state=ask] .num, .slot[data-state=stopped] .num { background: var(--c); color: #fff; }
+.title { min-width: 0; flex: 1; }
+.title b { display: block; font-size: 15px; }
+.port { color: var(--muted); font-size: 12.5px; font-family: var(--mono); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; display: block; }
+.badge {
+  font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  background: var(--cbg); color: var(--c); white-space: nowrap; border: 1px solid transparent;
+}
+.slot[data-state=ready] .badge, .slot[data-state=empty] .badge { background: var(--chip); color: var(--muted); }
+
+.body { padding: 0 14px; display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0;
+  overflow-y: auto; }
+.emptynote { color: var(--muted); margin: auto; text-align: center; font-size: 14px; }
+.ids { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; font-size: 13px; }
+.ids span:nth-child(odd) { color: var(--muted); }
+.ids span:nth-child(even) { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.stages { display: flex; gap: 4px; list-style: none; margin: 2px 0 0; padding: 0; }
+.stages li {
+  flex: 1; font-size: 12px; text-align: center; padding: 4px 2px; border-radius: 6px;
+  background: var(--chip); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stages li.running { background: var(--run); color: #fff; }
+.stages li.PASS { background: var(--pass-bg); color: var(--pass); font-weight: 600; }
+.stages li.FAIL { background: var(--fail); color: #fff; font-weight: 600; }
+.stages li.PASS::before { content: "✓ "; }
+.stages li.FAIL::before { content: "✗ "; }
+
+.now { font-size: 13.5px; }
+.stepline { display: flex; gap: 8px; justify-content: space-between; }
+.stepname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stepcount { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar { height: 6px; border-radius: 3px; background: var(--chip); margin-top: 4px; overflow: hidden; }
+.bar i { display: block; height: 100%; width: 0; background: var(--c); transition: width .3s; }
+
+.ask {
+  background: var(--ask-bg); border: 1px solid var(--ask); border-radius: 10px; padding: 10px 12px;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--ask) 25%, transparent); } }
+.ask p { margin: 0 0 8px; font-weight: 600; font-size: 15.5px; }
+.ask .btns { display: flex; gap: 8px; }
+.ask .btns button { flex: 1; padding: 10px; font-size: 16px; font-weight: 600; }
+.ask .yes { background: var(--pass); border-color: var(--pass); color: #fff; }
+.ask .no { background: var(--panel); border-color: var(--fail); color: var(--fail); }
+.ask input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 15px; }
+
+.fail { background: var(--fail-bg); border-radius: 10px; padding: 8px 12px; font-size: 13.5px; }
+.fail b { color: var(--fail); display: block; }
+.fail .fdetail { font-family: var(--mono); font-size: 12.5px; word-break: break-word; }
+.fail .fhelp { margin-top: 4px; }
+.passnote { background: var(--pass-bg); color: var(--pass); border-radius: 10px; padding: 10px 12px;
+  font-weight: 600; text-align: center; }
+
+.log {
+  margin: 0; font: 11.5px/1.4 var(--mono); background: var(--chip); border-radius: 8px;
+  padding: 8px; overflow: auto; max-height: 160px; min-height: 80px; white-space: pre-wrap; flex: none;
+  word-break: break-word;
+}
+.foot { display: flex; gap: 6px; align-items: center; padding: 10px 14px 12px; margin-top: auto; }
+.foot .elapsed { margin-left: auto; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+[hidden] { display: none !important; }
+
+/* ---- history ---- */
+dialog {
+  border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink);
+  width: min(1100px, calc(100vw - 32px)); max-height: 80vh; padding: 0;
+}
+dialog::backdrop { background: rgba(0,0,0,.35); }
+dialog header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+dialog header b { flex: 1; }
+.tablewrap { overflow: auto; max-height: calc(80vh - 60px); }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 500; }
+td.PASS { color: var(--pass); font-weight: 600; } td.FAIL { color: var(--fail); font-weight: 600; }
+td.mono { font-family: var(--mono); }
+
+.toast {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--fail);
+  color: #fff; padding: 10px 18px; border-radius: 10px; font-weight: 500; max-width: 90vw;
+  box-shadow: 0 6px 20px rgba(0,0,0,.2); z-index: 20;
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="brand">mCOLD<small>สถานีผลิต</small></div>
+  <label class="field">สินค้า <select id="product"></select></label>
+  <label class="field">ขั้น <select id="stage"></select></label>
+  <label class="field">ผู้ทำ <input id="operator" type="text" size="10" placeholder="ชื่อ"></label>
+  <div class="fw" id="fw"></div>
+  <div class="spacer"></div>
+  <div class="counts" id="counts"></div>
+  <button class="primary" id="startall">เริ่มทุกช่องที่พร้อม</button>
+  <div class="menu" id="menu">
+    <button id="menubtn" aria-haspopup="true">⋯</button>
+    <div class="menu-list">
+      <button id="history">ประวัติการทำงาน</button>
+      <button id="savelayout">บันทึกตำแหน่งช่อง (dock)</button>
+      <button id="forgetlayout">ล้างตำแหน่งช่อง</button>
+    </div>
+  </div>
+</div>
+<div class="banner demo" id="demo" hidden>โหมดสาธิต: บอร์ดจำลอง 5 ตัวใน 6 ช่อง (ช่อง 6 เป็นบอร์ดที่โพรบลอย จะไม่ผ่านขั้นทดสอบ) · ไม่มีอะไรถูก flash จริง</div>
+<div class="banner err" id="err" hidden></div>
+<main class="grid" id="grid"></main>
+
+<dialog id="hist">
+  <header><b>ประวัติการทำงาน (ล่าสุด 40 รายการ)</b><button id="histclose">ปิด</button></header>
+  <div class="tablewrap"><table>
+    <thead><tr><th>#</th><th>เวลา</th><th>ขั้น</th><th>ผล</th><th>SN</th><th>MAC</th><th>firmware</th><th>ผู้ทำ</th></tr></thead>
+    <tbody id="histbody"></tbody>
+  </table></div>
+</dialog>
+
+<template id="slot-tpl">
+  <section class="slot" data-state="empty">
+    <div class="head">
+      <div class="num"></div>
+      <div class="title"><b></b><span class="port"></span></div>
+      <span class="badge"></span>
+    </div>
+    <div class="body">
+      <div class="emptynote">ว่าง · เสียบบอร์ดที่ช่องนี้</div>
+      <div class="ids"><span>SN</span><span class="sn">—</span><span>MAC</span><span class="mac">—</span><span>FW</span><span class="fwv">—</span></div>
+      <ol class="stages"></ol>
+      <div class="now">
+        <div class="stepline"><span class="stepname"></span><span class="stepcount"></span></div>
+        <div class="bar"><i></i></div>
+      </div>
+      <div class="ask" hidden></div>
+      <div class="passnote" hidden>ผ่านทุกขั้น · ถอดบอร์ดออกได้</div>
+      <div class="fail" hidden><b class="fstep"></b><div class="fdetail"></div><div class="fhelp"></div></div>
+      <pre class="log" hidden></pre>
+    </div>
+    <div class="foot">
+      <button class="primary b-start">เริ่ม</button>
+      <button class="b-stop">หยุด</button>
+      <button class="b-clear">ล้าง</button>
+      <button class="b-log">log</button>
+      <span class="elapsed"></span>
+    </div>
+  </section>
+</template>
+
+<script>
+"use strict";
+const BADGE = { empty: "ว่าง", ready: "พร้อม", running: "กำลังทำ", ask: "รอคำตอบ",
+                pass: "ผ่าน", fail: "ไม่ผ่าน", stopped: "หยุดแล้ว" };
+const KIND = { firmware: "firmware", usj: "ROM / ทดสอบ", rom: "download mode" };
+const grid = document.getElementById("grid");
+const openLogs = new Set();
+const cards = [];
+let state = null, failures = 0, lastQ = 0, audio = null;
+
+function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+const op = document.getElementById("operator");
+op.value = load("mflash.operator");
+op.addEventListener("input", () => store("mflash.operator", op.value));
+
+function toast(msg) {
+  const t = document.createElement("div");
+  t.className = "toast"; t.textContent = msg; document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4500);
+}
+async function post(path, body) {
+  try {
+    const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify(body || {}) });
+    const j = await r.json();
+    if (j.error) toast(j.error);
+    return j;
+  } catch (e) { toast("ติดต่อโปรแกรมไม่ได้: " + e); return {}; }
+}
+function beep() {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain();
+    o.frequency.value = 880; g.gain.value = 0.08;
+    o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.15);
+  } catch (e) {}
+}
+function fmtTime(s) { const m = Math.floor(s / 60); return m + ":" + String(s % 60).padStart(2, "0"); }
+function text(el, v) { if (el.textContent !== v) el.textContent = v; }
+
+function makeCard(i) {
+  const el = document.getElementById("slot-tpl").content.firstElementChild.cloneNode(true);
+  const q = (s) => el.querySelector(s);
+  const c = { el, i, qid: 0, stagesKey: "",
+    num: q(".num"), title: q(".title b"), port: q(".port"), badge: q(".badge"),
+    sn: q(".sn"), mac: q(".mac"), fwv: q(".fwv"), stages: q(".stages"),
+    stepname: q(".stepname"), stepcount: q(".stepcount"), bar: q(".bar i"), now: q(".now"),
+    ask: q(".ask"), pass: q(".passnote"), fail: q(".fail"), fstep: q(".fstep"), fdetail: q(".fdetail"),
+    fhelp: q(".fhelp"), log: q(".log"), start: q(".b-start"), stop: q(".b-stop"),
+    clear: q(".b-clear"), logbtn: q(".b-log"), elapsed: q(".elapsed") };
+  c.num.textContent = i + 1;
+  c.title.textContent = "ช่อง " + (i + 1);
+  c.start.onclick = () => post("/api/start", { slot: i, operator: op.value });
+  c.stop.onclick = () => post("/api/stop", { slot: i });
+  c.clear.onclick = () => post("/api/clear", { slot: i });
+  c.logbtn.onclick = () => { openLogs.has(i) ? openLogs.delete(i) : openLogs.add(i); c.log.hidden = !openLogs.has(i); };
+  grid.appendChild(el);
+  return c;
+}
+
+function renderAsk(c, s) {
+  const q = s.question;
+  if (!q) { c.ask.hidden = true; c.qid = 0; c.ask.innerHTML = ""; return; }
+  if (c.qid === q.id) return;
+  c.qid = q.id; c.ask.hidden = false; c.ask.innerHTML = "";
+  const p = document.createElement("p"); p.textContent = q.text; c.ask.appendChild(p);
+  const row = document.createElement("div"); row.className = "btns"; c.ask.appendChild(row);
+  const send = (v) => post("/api/answer", { slot: c.i, qid: q.id, value: v });
+  if (q.kind === "yn") {
+    const y = document.createElement("button"); y.className = "yes"; y.textContent = "✓ ใช่ / ผ่าน";
+    const n = document.createElement("button"); n.className = "no"; n.textContent = "✗ ไม่ผ่าน";
+    y.onclick = () => send(true); n.onclick = () => send(false);
+    row.append(y, n);
+  } else {
+    const inp = document.createElement("input"); inp.type = "text"; inp.value = q.default || "";
+    inp.placeholder = "สแกนบาร์โค้ด หรือพิมพ์ แล้วกด Enter";
+    const ok = document.createElement("button"); ok.className = "yes"; ok.textContent = "ตกลง";
+    ok.style.flex = "0 0 auto";
+    const go = () => { if (inp.value.trim()) send(inp.value.trim()); };
+    ok.onclick = go; inp.onkeydown = (e) => { if (e.key === "Enter") go(); };
+    row.append(inp, ok);
+    if (!document.activeElement || document.activeElement.tagName !== "INPUT") setTimeout(() => inp.focus(), 0);
+  }
+}
+
+function renderSlot(c, s) {
+  if (c.el.dataset.state !== s.state) c.el.dataset.state = s.state;
+  text(c.badge, s.stopping ? "กำลังหยุด…" : BADGE[s.state] || s.state);
+  text(c.port, s.port ? s.port + " · " + (KIND[s.port_kind] || "") : (s.location ? "USB " + s.location : "ยังไม่ได้ผูกตำแหน่ง"));
+  text(c.sn, s.sn || "—"); text(c.mac, s.mac || "—"); text(c.fwv, s.firmware || "—");
+  const key = s.stages.map((x) => x.name).join(",");
+  if (c.stagesKey !== key) {
+    c.stagesKey = key; c.stages.innerHTML = "";
+    for (const x of s.stages) { const li = document.createElement("li"); li.textContent = x.label; li.title = x.label; c.stages.appendChild(li); }
+  }
+  s.stages.forEach((x, k) => { const li = c.stages.children[k]; const cls = x.result || ""; if (li && li.className !== cls) li.className = cls; });
+  const active = s.state === "running" || s.state === "ask";
+  c.now.hidden = !active;
+  if (active) {
+    text(c.stepname, s.step_name || s.stage_label || "");
+    text(c.stepcount, s.step_total ? Math.min(s.step_idx + 1, s.step_total) + "/" + s.step_total : "");
+    c.bar.style.width = s.step_total ? (100 * s.step_idx / s.step_total) + "%" : "0";
+  }
+  renderAsk(c, s);
+  c.pass.hidden = s.state !== "pass";
+  const f = s.fail;
+  c.fail.hidden = !(f && (s.state === "fail" || s.state === "stopped"));
+  if (f) {
+    text(c.fstep, "ไม่ผ่าน: " + (f.step || f.stage));
+    text(c.fdetail, f.detail || ""); text(c.fhelp, f.help || "");
+    c.fhelp.hidden = !f.help;
+  }
+  if (s.log && !c.log.hidden) {
+    const t = s.log.join("\n");
+    if (c.log.textContent !== t) {
+      const atEnd = c.log.scrollTop + c.log.clientHeight >= c.log.scrollHeight - 8;
+      c.log.textContent = t; if (atEnd) c.log.scrollTop = c.log.scrollHeight;
+    }
+  }
+  c.start.disabled = !(s.state === "ready" && s.port) || !!state.profile_error || state.firmware.some((x) => !x.ok);
+  c.start.hidden = active || s.state !== "ready";
+  c.stop.hidden = !active; c.stop.disabled = s.stopping;
+  c.clear.hidden = active || s.state === "empty" || s.state === "ready";
+  c.logbtn.hidden = s.state === "empty";
+  text(c.elapsed, s.elapsed ? fmtTime(s.elapsed) : "");
+}
+
+function fillSelect(sel, opts, value) {
+  const key = opts.map((o) => o.value + ":" + o.label).join("|");
+  if (sel.dataset.key !== key) {
+    sel.dataset.key = key; sel.innerHTML = "";
+    for (const o of opts) { const e = document.createElement("option"); e.value = o.value; e.textContent = o.label; sel.appendChild(e); }
+  }
+  if (document.activeElement !== sel && sel.value !== value) sel.value = value;
+}
+
+function render() {
+  const st = state;
+  fillSelect(document.getElementById("product"), st.products.map((p) => ({ value: p, label: p })), st.product);
+  fillSelect(document.getElementById("stage"), st.stage_options, st.stage);
+  document.getElementById("product").disabled = st.busy;
+  document.getElementById("stage").disabled = st.busy;
+  const fw = document.getElementById("fw"); fw.innerHTML = "";
+  for (const f of st.firmware) {
+    const e = document.createElement("span"); e.className = "fwchip" + (f.ok ? "" : " bad");
+    e.textContent = f.ok ? `${f.kind} ${f.version} ✓ ${f.by}` : `${f.kind}: ${f.msg}`;
+    e.title = f.ok ? f.id : f.msg; fw.appendChild(e);
+  }
+  document.getElementById("counts").innerHTML =
+    `ผ่าน <b class="p">${st.counts.pass}</b> · ไม่ผ่าน <b class="f">${st.counts.fail}</b>`;
+  document.getElementById("demo").hidden = !st.demo;
+  const err = document.getElementById("err");
+  const msg = st.profile_error || (st.incomplete.length ? "profile ยังไม่ครบ: " + st.incomplete.join(" · ") : "");
+  err.hidden = !msg; text(err, msg);
+  while (cards.length < st.slots.length) cards.push(makeCard(cards.length));
+  st.slots.forEach((s, i) => renderSlot(cards[i], s));
+  const asks = st.slots.filter((s) => s.question).length;
+  const maxQ = Math.max(0, ...st.slots.map((s) => s.question ? s.question.id : 0));
+  if (maxQ > lastQ) { lastQ = maxQ; beep(); }
+  document.title = (asks ? `(${asks}) ` : "") + "mCOLD Station";
+  document.getElementById("startall").disabled = !st.slots.some((s) => s.state === "ready" && s.port);
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/api/state?log=" + [...openLogs].join(","), { cache: "no-store" });
+    state = await r.json(); failures = 0;
+    render();
+  } catch (e) {
+    if (++failures === 3) { const err = document.getElementById("err"); err.hidden = false; err.textContent = "ติดต่อโปรแกรม mflash ไม่ได้ (ปิดไปแล้ว?)"; }
+  }
+  setTimeout(poll, 500);
+}
+
+document.getElementById("product").onchange = (e) => post("/api/config", { product: e.target.value });
+document.getElementById("stage").onchange = (e) => post("/api/config", { stage: e.target.value });
+document.getElementById("startall").onclick = () => { beep(); post("/api/start_all", { operator: op.value }); };
+const menu = document.getElementById("menu");
+document.getElementById("menubtn").onclick = (e) => { e.stopPropagation(); menu.classList.toggle("open"); };
+document.addEventListener("click", () => menu.classList.remove("open"));
+document.getElementById("savelayout").onclick = async () => {
+  const j = await post("/api/layout/save"); if (j.saved) toast("บันทึกตำแหน่งช่องแล้ว: " + j.saved);
+};
+document.getElementById("forgetlayout").onclick = () => post("/api/layout/forget");
+const hist = document.getElementById("hist");
+document.getElementById("histclose").onclick = () => hist.close();
+document.getElementById("history").onclick = async () => {
+  const rows = await (await fetch("/api/history")).json();
+  const tb = document.getElementById("histbody"); tb.innerHTML = "";
+  for (const r of rows) {
+    const tr = document.createElement("tr");
+    const cells = [["#" + r.id], [(r.started || "").replace("T", " ").slice(0, 19)], [r.stage],
+      [r.result || "…", r.result || ""], [r.sn || "", "mono"], [r.mac || "", "mono"],
+      [(r.firmware || "") + (r.unapproved ? " (ไม่ได้อนุมัติ)" : "")], [r.operator || ""]];
+    for (const [v, cls] of cells) { const td = document.createElement("td"); td.textContent = v; if (cls) td.className = cls; tr.appendChild(td); }
+    tb.appendChild(tr);
+  }
+  hist.showModal();
+};
+poll();
+</script>
+</body>
+</html>

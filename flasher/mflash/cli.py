@@ -8,6 +8,8 @@
     mflash run mcold verify --all-ports           every box on the bus at once
     mflash history mCDV1-L0169-1069-001
     mflash export records.csv
+    mflash gui                                    the six-slot window
+    mflash gui --demo                             the window with simulated boxes
 """
 from __future__ import annotations
 
@@ -263,6 +265,12 @@ def cmd_backup(a) -> None:
     esp.reset(port.device, otg)
 
 
+def cmd_gui(a) -> None:
+    from .gui import serve
+    serve(a.product, host=a.host, port=a.http_port, demo=a.demo, browser=not a.no_browser,
+          db_path=a.db, site_path=a.site, speed=a.speed)
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="mflash", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -327,6 +335,15 @@ def main(argv=None) -> None:
     s.add_argument("--parts", default="nvs,log_meta,trip_log,coredump")
     s.add_argument("--out", default=os.path.join(proflib.FLASHER, "backups"))
     s.set_defaults(fn=cmd_backup)
+
+    s = sub.add_parser("gui", help="the six-slot station window")
+    s.add_argument("product", nargs="?", default="mcold")
+    s.add_argument("--demo", action="store_true", help="simulated boxes, nothing is flashed")
+    s.add_argument("--speed", type=float, default=0.4, help="demo: delays x this (1 = real time)")
+    s.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to reach it from a tablet")
+    s.add_argument("--http-port", type=int, default=8765)
+    s.add_argument("--no-browser", action="store_true", help="do not open a window")
+    s.set_defaults(fn=cmd_gui)
 
     a = ap.parse_args(argv)
     a.fn(a)

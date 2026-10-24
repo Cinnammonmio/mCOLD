@@ -156,7 +156,6 @@ def _runner(tmp_path, box, answers, site=None, sn=""):
     db = Db(str(tmp_path / "rec.db"))
     ui = ScriptedUi(answers)
     r = Runner(p, db, ui, site or Site(), hw=fakes.FakeHardware(box), operator="t", sn=sn)
-    r.esp = fakes.FakeEsp(box)
     return r, db, ui
 
 

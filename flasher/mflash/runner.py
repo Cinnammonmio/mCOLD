@@ -63,6 +63,9 @@ class Hardware:
     def sleep(self, s: float) -> None:
         time.sleep(s)
 
+    def esp(self, chip: str, flash: dict) -> Esp:
+        return Esp(chip, flash, log=lambda m: None)
+
 
 def fill(s: str, ctx: dict, escape: bool = False) -> str:
     """{sn} and {mac} in a command or a pattern; other braces (JSON) are left alone."""
@@ -78,7 +81,7 @@ def fill(s: str, ctx: dict, escape: bool = False) -> str:
 class Runner:
     def __init__(self, profile: Profile, db: Db, ui: Ui, site: Site, hw: Hardware | None = None,
                  firmware_choice: dict | None = None, allow_unapproved: bool = False,
-                 operator: str = "", station: str = "", sn: str = ""):
+                 operator: str = "", station: str = "", sn: str = "", should_stop=None):
         self.p, self.db, self.ui, self.site = profile, db, ui, site
         self.hw = hw or Hardware()
         self.ids = UsbIds(profile.usb)
@@ -87,9 +90,10 @@ class Runner:
         self.operator = operator
         self.station = station or site.station
         self.preset_sn = sn
+        self.should_stop = should_stop or (lambda: False)
         self.baud = profile.console.get("baud", 115200)
         self.eol = profile.console.get("eol", "\r\n")
-        self.esp = Esp(profile.chip, profile.flash, log=lambda m: None)
+        self.esp = self.hw.esp(profile.chip, profile.flash)
         self._secrets = site.secrets()
 
     # ---- finding the box ----------------------------------------------
@@ -199,9 +203,16 @@ class Runner:
         run_id = self.db.start_run(self.p.product, stage, box.mac, box.sn, self.station,
                                    self.operator, unapproved=self.allow_unapproved)
         self.ui.info(box.label, f"== {stage} ({len(steps)} steps)  {box.mac or ''} {box.sn}")
+        self.ui.stage_started(box.label, stage, len(steps))
         ok = True
         for i, st in enumerate(steps):
             name = st["name"]
+            if self.should_stop():
+                self.db.add_step(run_id, i, name, st["type"], FAIL, "stopped by the operator", "")
+                self.ui.info(box.label, f"  [stop] {name}")
+                ok = False
+                break
+            self.ui.step_started(box.label, i, name)
             if st.get("enabled", True) is False:
                 res = StepResult(SKIP, "disabled in the profile")
             else:
@@ -210,6 +221,8 @@ class Runner:
                              self._masked(res.output))
             mark = {"PASS": "ok  ", "FAIL": "FAIL", "SKIP": "skip"}[res.result]
             self.ui.info(box.label, f"  [{mark}] {name}" + (f" -- {res.detail}" if res.detail else ""))
+            self.ui.step_done(box.label, i, name, res.result, self._masked(res.detail),
+                              st.get("help", "") if res.result == FAIL else "")
             if res.result == FAIL:
                 if st.get("help"):
                     self.ui.info(box.label, f"         {st['help']}")
@@ -219,12 +232,15 @@ class Runner:
         result = PASS if ok else FAIL
         self.db.finish_run(run_id, result, box.mac, box.sn)
         self.ui.info(box.label, f"== {stage}: {result}")
+        self.ui.stage_done(box.label, stage, result)
         return ok
 
     def _attempt(self, box: Box, st: dict, run_id: int) -> StepResult:
         tries = int(st.get("retries", 0)) + 1
         last = StepResult(FAIL, "not run")
         for n in range(tries):
+            if n and self.should_stop():
+                break
             try:
                 handler = getattr(self, "step_" + st["type"])
                 last = handler(box, st, run_id) or StepResult(PASS)
