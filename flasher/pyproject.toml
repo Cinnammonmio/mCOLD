@@ -1,0 +1,19 @@
+[project]
+name = "mflash"
+version = "0.1.0"
+description = "Factory station for mCOLD: test, flash, provision and verify ESP32 boxes"
+requires-python = ">=3.10"
+dependencies = ["esptool>=4.7", "pyserial>=3.5", "PyYAML>=6.0"]
+
+[project.scripts]
+mflash = "mflash.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["mflash"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,233 @@
+# mCOLD Foam V.1 -- the station's profile.
+#
+# Stages run in `sequence` order. A step that fails ends its stage unless
+# it is `optional`. Every pattern below is taken from the source that
+# prints it: bringup/src/main.cpp for the test firmware, firmware/src/
+# main.cpp (firmware/p7-power) for the product firmware.
+#
+# Why the setup comes after the real firmware, not before: bringup is an
+# Arduino build with Arduino's partition table (default_16MB.csv); the
+# product has its own (firmware/partitions.csv). Anything set before the
+# product's table is laid down -- and the whole chip erased under it --
+# would be lost or sit where the product does not look. And the product
+# firmware already has every setup command, so there is no separate
+# "setup firmware" to write or keep in step.
+
+product: mcold
+name: mCOLD Foam V.1 (ESP32-S3-WROOM-1U-N16R8)
+chip: esp32s3
+
+# What firmware/tools/usb_first_flash.py writes and was proven with:
+# dio/80m in the header; the bootloader switches the flash to QIO itself.
+flash: {size: 16MB, mode: dio, freq: 80m}
+
+usb:
+  vid: 0x303A
+  usj_pid: 0x1001        # USB-Serial-JTAG: blank chip, ROM, bringup, firmware <= 0.6.0
+  rom_pids: [0x1001, 0x0009]
+  app_pids: [0x4003]     # the product firmware's TinyUSB drive + console (0.7.0-dev.12 on)
+  app_serial_unset: "MCOLD-{mac4}"   # its USB serial before `sn set`
+
+console:
+  baud: 115200
+  eol: "\r\n"
+  download_command: flash
+  boot_wait_s: 3
+
+sn:
+  # logrow.cpp sn_pattern_ok(): product+V+version, L+lot+year, month+year, unit
+  pattern: '[A-Za-z]{3}V\d-L\d{4}-(0[1-9]|1[0-2])\d{2}-\d{3}'
+  example: mCDV1-L0169-1069-001
+
+chip_expect:
+  flash_size: 16MB
+
+firmware:
+  test:
+    description: bringup -- one rail, one chip at a time (bringup/README.md)
+    project: bringup
+    env: mcold
+    console: usj
+    images:
+      - {offset: 0x0,     file: bootloader.bin}
+      - {offset: 0x8000,  file: partitions.bin}
+      - {offset: 0x10000, file: firmware.bin}
+  production:
+    description: the product firmware (firmware/)
+    project: firmware
+    env: mcold
+    console: app
+    partitions_csv: firmware/partitions.csv
+    # `flash` (download mode without a BOOT button), `sn set` and `ota base`
+    # first came together in 0.7.0-dev.5 (firmware/p7-power); 0.6.0 has none
+    min_version: 0.7.0-dev.5
+    images:
+      - {offset: 0x0,     file: bootloader.bin}
+      - {offset: 0x8000,  file: partitions.bin}
+      - {offset: 0xD000,  file: ota_data_initial.bin}
+      - {offset: 0x20000, file: firmware.bin}
+
+sequence: [test, production, setup, verify]
+
+stages:
+  # ---- 1. test the board, module by module, with bringup --------------
+  test:
+    - name: ส่องบอร์ดด้วยตา (ขาติดกัน, tombstone, flux) โดยเฉพาะ U12, U4
+      type: confirm
+      ask: "ตรวจด้วยตาแล้วไม่พบปัญหา?"
+    - name: 3V3_MAIN ↔ GND ไม่ช็อต (ก่อนจ่ายไฟ)
+      type: confirm
+      ask: "วัด 3V3_MAIN ↔ GND ได้หลัก kΩ ขึ้นไป (ไม่ใกล้ 0 Ω)?"
+    - name: CELL_PLUS ↔ GND ไม่ช็อต (ก่อนเสียบแบต)
+      type: confirm
+      ask: "วัด CELL_PLUS ↔ GND ไม่ใกล้ 0 Ω, เสียบแบตและ USB แล้ว?"
+    - name: ชิปคือ ESP32-S3 flash 16 MB
+      type: chip
+      help: "esptool คุยไม่ได้: เช็กสาย USB, ห้ามใช้ USB isolator (ทำบอร์ด brownout)"
+    - name: ลง firmware ทดสอบ (bringup)
+      type: flash
+      firmware: test
+      erase: true
+    - name: MCU บูตและเป็น N16R8 จริง
+      type: console
+      send: info
+      expect: ['flash\s+16 MB', 'psram\s+8 MB']
+      retries: 2
+      retry_wait: 2
+    - name: I2C ตอบครบ 8 address
+      type: console
+      send: scan
+      expect: ['8 of 8 expected']
+      forbid: ['NO ANSWER']
+      help: "ไม่มีใครตอบเลย: SDA/SCL, pull-up, 3V3_MAIN · MAX17048 (0x36) ต้องมีแบตเสียบ"
+    - name: ชิป I2C คุยได้จริง (identity register)
+      type: console
+      send: id
+      expect: ['WHO_AM_I\s+0x44\s+correct', 'MANUF_ID\s+0x5449', 'DIE_ID\s+0x2260\s+correct',
+               'PCF8523\s+SECONDS\s+0x[0-9A-F]{2}\s+OS=0']
+      forbid: ['no answer', 'EXPECTED 0x']
+      help: "PCF8523 OS=1 = คริสตัลไม่เคยเดิน · MAX17048 no answer = ไม่มีแบต"
+    - name: เทอร์โมคัปเปิลอ่านค่าได้ (เสียบโพรบ)
+      type: confirm
+      ask: "เสียบโพรบ thermocouple แล้ว?"
+    - name: MAX6675 อ่านอุณหภูมิ
+      type: console
+      send: temp
+      expect: ['temperature\s+-?\d+\.\d+ C']
+      forbid: ['no data', 'THERMOCOUPLE OPEN']
+      help: "0x0000/0xFFFF = ชิปไม่มีไฟหรือสาย MISO ตาย (ราง EPD_TK)"
+    - name: ถอดโพรบ
+      type: confirm
+      ask: "ถอดโพรบออกแล้ว?"
+    - name: ถอดโพรบแล้วต้องได้ OPEN ไม่ใช่ตัวเลข
+      type: console
+      send: temp
+      expect: ['THERMOCOUPLE OPEN']
+      help: "ได้ ~44 °C ตอนถอดโพรบ = T− ไม่ลง GND · ต้อง rework (service manual §9) ไม่งั้นโพรบหลุดจะ log ค่าปลอม"
+    - name: GNSS ส่ง NMEA ที่ checksum ถูก (115200)
+      type: nmea
+      send: gnss {seconds}
+      seconds: 15
+      min_good: 3
+      help: "ไม่มีไบต์เลย: ราง SD/GNSS, MCU RX = GPIO18 · มีไบต์แต่ checksum ผิด = baud ผิด"
+    - name: เปิดราง LED
+      type: console
+      send: rail led on
+    - name: LED 4 ดวงต่อถูกลำดับ
+      type: confirm
+      send: walk
+      timeout: 8
+      ask: "ไฟเขียวไล่ทีละดวง: ดวงข้างเครื่อง → สินค้า → ทำงานปกติ → เครื่องมีปัญหา?"
+    - name: ปิดราง LED
+      type: console
+      send: rail led off
+    - name: Buzzer ดัง
+      type: confirm
+      send: buzz 200
+      ask: "ได้ยินเสียง beep สั้น ๆ?"
+      help: "เสียงเบา: R34 1 kΩ → 330 Ω (README)"
+    - name: เปิดการชาร์จ
+      type: console
+      send: chg on
+      expect: ['charging allowed']
+    - name: Charger ทำงาน (BQ25601 REG08)
+      type: console
+      send: power
+      expect: ['state: (pre-charge|fast charging|termination done)']
+      retries: 3
+      retry_wait: 3
+      help: "not charging: ดู input (ต้องมี USB), REG09 faults"
+
+  # ---- 2. the real firmware, on a chip erased whole -----------------------
+  production:
+    - name: ลง firmware จริง (ลบทั้งชิปก่อน)
+      type: flash
+      firmware: production
+      erase: true
+      boot_timeout: 60
+    - name: เวอร์ชันตรงกับไฟล์ที่อนุมัติ
+      type: version
+      firmware: production
+
+  # ---- 3. this box's settings ---------------------------------------------
+  setup:
+    - name: SN จากฉลาก
+      type: input_sn
+      ask: "สแกน/พิมพ์ SN จากฉลาก"
+    - name: ตั้ง SN แล้วรีบูต
+      type: set_sn
+    - name: Wi-Fi, broker, OTA และค่าตั้งต้นของ site (site.ini)
+      type: provision
+      require: []
+    - name: สอบเทียบอุณหภูมิ 1 จุด
+      type: calibrate
+      enabled: false        # not yet tried on a board; turn on once checked
+      settle_s: 10
+      samples: 5
+      interval: 6
+      max_offset_c: 5
+
+  # ---- 4. the box as it will ship --------------------------------------
+  verify:
+    - name: เวอร์ชันตรงกับไฟล์ที่อนุมัติ
+      type: version
+      firmware: production
+    - name: อุปกรณ์บนบอร์ด ok ครบ
+      type: health
+      # service manual section 6: pd, buzzer and sd stay unknown until used
+      states:
+        pd: [ok, unknown]
+        buzzer: [ok, unknown]
+        sd: [ok, unknown, absent]
+      temperature: true
+      temp_range: [-40, 85]
+      retries: 3
+      retry_wait: 10
+      help: "failed = ไม่เคยทำงาน (ประกอบผิด) · degraded = เคยทำงานแล้วหลุด"
+    - name: นาฬิกาใช้ได้ (ntp, gnss หรือ rtc)
+      type: health
+      default: [ok, unknown, failed, degraded, absent]
+      clock_usable: true
+      optional: true
+    - name: Trip log ทนไฟดับ (logtest 14 ข้อ)
+      type: console
+      send: logtest
+      until: 'all passed|FAILURES above'
+      timeout: 180
+      expect: ['all passed']
+    - name: ไฟทุกดวง
+      type: confirm
+      send: ledtest
+      timeout: 30
+      ask: "ไฟทุกดวงติดครบทุกสี?"
+    - name: เสียง
+      type: confirm
+      send: beep 150
+      ask: "ได้ยินเสียง beep?"
+    - name: ต่อ Wi-Fi และ broker ได้
+      type: console
+      send: sync
+      expect: ['broker\s+\S+, connected']
+      retries: 6
+      retry_wait: 10
+      optional: true
