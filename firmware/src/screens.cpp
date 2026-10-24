@@ -303,8 +303,10 @@ int icon(Canvas &c, const Icon &ic, int x, int bottom, Ink ink, bool off = false
     // One strike for every icon, the same length and angle whatever the
     // icon's width (2026-10-04): drawn corner to corner it came out steep
     // across the narrow GNSS pin and shallow across Wi-Fi and the cloud.
+    // Red (2026-10-24): what is wrong is seen at a glance; black on the
+    // mono panel, where red is drawn black.
     const int cx = x + ic.w / 2;
-    c.line(cx - 8, top + ic.h, cx + 8, top - 1, ink);
+    c.line(cx - 8, top + ic.h, cx + 8, top - 1, Ink::Accent);
   }
   return ic.w;
 }

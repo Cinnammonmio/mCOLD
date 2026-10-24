@@ -38,6 +38,9 @@ To cut a release:
 
 P7, power: in progress.
 
+- The strike through a footer icon (no Wi-Fi, no server, no GNSS) is red
+  (2026-10-24). 0.7.0-dev.60.
+
 - **Yellow** (2026-10-16): the canvas's fourth ink, `Ink::Yellow`, sent as
   yellow to the four-ink panel and as white to the mono and three-ink ones
   (a background only). The alarm screen (A4 ALARM) has its frame yellow on
