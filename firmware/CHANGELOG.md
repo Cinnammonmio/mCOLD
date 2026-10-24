@@ -38,8 +38,15 @@ To cut a release:
 
 P7, power: in progress.
 
-- The strike through a footer icon (no Wi-Fi, no server, no GNSS) is red
-  (2026-10-24). 0.7.0-dev.60.
+- A footer icon that is off (no Wi-Fi, no server, no GNSS) is drawn red
+  instead of struck through on panels with red (2026-10-24; a red strike
+  was tried first), still struck on the mono panel. 0.7.0-dev.61.
+- **GNSS when the box is moved** (2026-10-24): a trip started indoors gave
+  up its first session after 60 s with nothing heard and set the next
+  one an hour off, so a box carried into the open had its receiver off
+  for the whole walk (10 minutes, no satellites). Now, on battery during
+  a trip, motion after a session without a fix brings the next one
+  forward to a minute later; at most once in ten minutes. 0.7.0-dev.61.
 
 - **Yellow** (2026-10-16): the canvas's fourth ink, `Ink::Yellow`, sent as
   yellow to the four-ink panel and as white to the mono and three-ink ones

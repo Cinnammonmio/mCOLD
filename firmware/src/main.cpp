@@ -171,9 +171,37 @@ struct GnssPlan {
   uint32_t magic;
   uint32_t next_at;         // mono_ms(); 0: due now
   uint8_t misses;           // sessions in a row without a fix
+  uint32_t motion_at;       // mono_ms() of the last try motion brought forward; 0: none
 };
-const uint32_t GNSS_PLAN_MAGIC = 0x47504C31;   // "GPL1"
+const uint32_t GNSS_PLAN_MAGIC = 0x47504C32;   // "GPL2"
 RTC_DATA_ATTR GnssPlan g_gnss_plan;
+
+// Motion after a session that found nothing (decided 2026-10-24). A trip
+// started indoors finds no sky; the session gives up and the next is a
+// period away, doubled -- an hour -- so a box then carried out into the
+// open had its receiver off the whole walk (a ten-minute walk with no
+// satellites, 2026-10-24). Now, on battery during a trip, motion after a
+// failed session brings the next one forward to a minute from then: time
+// to get outside. At most once in ten minutes, so a box jolting in a van
+// does not keep the receiver on.
+const uint32_t GNSS_MOTION_DELAY_MS = 60000;
+const uint32_t GNSS_MOTION_GAP_MS = 600000;
+void gnss_note_motion(void) {
+  if (g_gnss_plan.magic != GNSS_PLAN_MAGIC || !g_gnss_plan.misses || pm_external_power()) return;
+  TripStatus s;
+  trip_status(&s);
+  if (!s.active) return;
+  const uint32_t t = now_ms();
+  if (g_gnss_plan.motion_at && (uint32_t)(t - g_gnss_plan.motion_at) < GNSS_MOTION_GAP_MS) return;
+  uint32_t at = t + GNSS_MOTION_DELAY_MS;
+  if (!at) at = 1;
+  if (g_gnss_plan.next_at && (int32_t)(g_gnss_plan.next_at - at) <= 0) return;   // sooner anyway
+  g_gnss_plan.next_at = at;
+  g_gnss_plan.motion_at = t ? t : 1;
+  pm_next(Duty::Gnss, at);
+  printf("[gnss] moved after a session without a fix: next try in %lu s\n",
+         (unsigned long)(GNSS_MOTION_DELAY_MS / 1000));
+}
 // On battery: a module that had a fix in the last four hours keeps its
 // ephemeris in the backup domain (GNSS VBAT is on 3V3_MAIN) and fixes in
 // seconds; a minute and a half is plenty. Without one, three minutes.
@@ -355,6 +383,7 @@ void task_sensors(void *) {
         } else {
           report_motion(ev, "");
           trip_note_motion(ev);
+          gnss_note_motion();
           handle_tap(ev);
         }
       }
@@ -416,7 +445,7 @@ bool gnss_wanted(bool battery) {
 }
 
 void task_gnss(void *) {
-  if (!pm_warm() || g_gnss_plan.magic != GNSS_PLAN_MAGIC) g_gnss_plan = {GNSS_PLAN_MAGIC, 0, 0};
+  if (!pm_warm() || g_gnss_plan.magic != GNSS_PLAN_MAGIC) g_gnss_plan = {GNSS_PLAN_MAGIC, 0, 0, 0};
   for (;;) {
     beat(Job::Gnss);
     const bool battery = !pm_external_power();
@@ -1502,6 +1531,7 @@ void before_sleep(void) {
     AccelEvent ev;
     if (accel_take_event(&ev) && !buzzer_recent(BUZZER_BLANK_MS)) {
       trip_note_motion(ev);
+      gnss_note_motion();
       handle_tap(ev);    // a knock that came just before sleep (tap_test)
     }
   }
@@ -2130,6 +2160,7 @@ extern "C" void app_main(void) {
     // Latched while the chip slept (that is what woke it) or before a
     // reset: motion all the same, and the trip counts it.
     trip_note_motion(pending);
+    gnss_note_motion();
   }
   handle_tap(pending);   // a double tap that woke the box (tap_test)
   printf("type: help\n");

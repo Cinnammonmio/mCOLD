@@ -288,10 +288,15 @@ void pict(Canvas &c, const Pict &p, int x, int top, Ink ink) {
   }
 }
 
-// `off` strikes the icon through instead of hiding it: a frame persists
-// on the glass after power is gone, and "not connected" must not look
-// like "not refreshed".
+// `off` marks the icon instead of hiding it: a frame persists on the glass
+// after power is gone, and "not connected" must not look like "not
+// refreshed". On a panel with red the icon is drawn red (2026-10-24, in
+// place of a strike, red was seen better); on the mono panel, where red is
+// black, it is struck through.
 int icon(Canvas &c, const Icon &ic, int x, int bottom, Ink ink, bool off = false) {
+  const PanelDef *p = epd_panel();
+  const bool red = !p || p->inks >= 3;
+  if (off && red) ink = Ink::Accent;
   const int top = bottom - ic.h;
   for (int r = 0; r < ic.h && ic.rows[r]; r++) {
     const char *row = ic.rows[r];
@@ -299,14 +304,12 @@ int icon(Canvas &c, const Icon &ic, int x, int bottom, Ink ink, bool off = false
       if (row[k] == '#') c.pixel(x + k, top + r, ink);
     }
   }
-  if (off) {
+  if (off && !red) {
     // One strike for every icon, the same length and angle whatever the
     // icon's width (2026-10-04): drawn corner to corner it came out steep
     // across the narrow GNSS pin and shallow across Wi-Fi and the cloud.
-    // Red (2026-10-24): what is wrong is seen at a glance; black on the
-    // mono panel, where red is drawn black.
     const int cx = x + ic.w / 2;
-    c.line(cx - 8, top + ic.h, cx + 8, top - 1, Ink::Accent);
+    c.line(cx - 8, top + ic.h, cx + 8, top - 1, ink);
   }
   return ic.w;
 }
