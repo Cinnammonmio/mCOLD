@@ -41,6 +41,11 @@ P7, power: in progress.
 - A footer icon that is off (no Wi-Fi, no server, no GNSS) is drawn red
   instead of struck through on panels with red (2026-10-24; a red strike
   was tried first), still struck on the mono panel. 0.7.0-dev.61.
+- **Back to the READY page within five minutes** (2026-10-24): a closed
+  trip's summary (C1) stays five minutes, not an hour, then the READY
+  page; on battery the box wakes for it. A page put up from the console
+  (`screen N`, `screen cal`, `screen inks`) goes back to the live picture
+  after five minutes. 0.7.0-dev.62.
 - **GNSS when the box is moved** (2026-10-24): a trip started indoors gave
   up its first session after 60 s with nothing heard and set the next
   one an hour off, so a box carried into the open had its receiver off

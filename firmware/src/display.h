@@ -33,7 +33,8 @@ void display_note_power(const PowerStatus &ps);
 // Redraw now, whatever the policy says (console).
 void display_refresh(void);
 
-// Pause the live display, for showing the design's demo pages.
+// Pause the live display, for showing the design's demo pages. For
+// five minutes at most: then the live picture comes back by itself.
 void display_hold(bool on);
 
 // 1 or 3: the two landscape orientations (GxEPD2's rotation numbers).

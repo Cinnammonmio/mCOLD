@@ -1425,7 +1425,7 @@ void screen_command(const char *args) {
     scr_calibrate(g_canvas);
     const bool ok = display_show(g_canvas);
     printf("  %s: count the frames on each side; inset = (6 - frames) x 3 px\n"
-           "  config set epd_inset_t|b|l|r N, then 'screen' to go back\n",
+           "  config set epd_inset_t|b|l|r N, then 'screen' to go back (or wait 5 min)\n",
            ok ? "calibration frames shown" : "PANEL DID NOT ANSWER");
     return;
   }
@@ -1440,12 +1440,13 @@ void screen_command(const char *args) {
            SCR_DEMO_PAGES - 1);
     return;
   }
-  // Demo pages hold the live display off until 'screen' or 'screen live'.
+  // Demo pages hold the live display off until 'screen' or 'screen live',
+  // or for five minutes (display.h).
   display_hold(true);
   scr_demo(g_canvas, p);
   const uint32_t t0 = now_ms();
   const bool ok = display_show(g_canvas);
-  printf("  %s: %s, BUSY %lu ms, %lu ms in all  (screen live to go back)\n",
+  printf("  %s: %s, BUSY %lu ms, %lu ms in all  (screen live to go back, or wait 5 min)\n",
          scr_demo_name(p), ok ? "shown" : "PANEL DID NOT ANSWER",
          (unsigned long)epd_last_refresh_ms(), (unsigned long)(now_ms() - t0));
 }
@@ -1896,9 +1897,10 @@ void run_command(char *line) {
   } else if (!strcmp(line, "epd probe init")) {
     epd_probe_init();
   } else if (!strcmp(line, "screen inks")) {
+    display_hold(true);
     const bool shown = epd_test_inks();
     printf("  %s\n", shown ? "four bands: black, white, yellow, red" : "not a four-ink panel, or it did not answer");
-    printf("  refresh %lu ms; the live screen comes back at its next change ('screen')\n",
+    printf("  refresh %lu ms; the live screen comes back in 5 min, or now with 'screen'\n",
            (unsigned long)epd_last_refresh_ms());
   } else if (!strcmp(line, "rail epd on") || !strcmp(line, "rail epd off")) {
     // Bench: the panel's 3V3_EPD held on (GPIO42) for a meter, until 'off'.

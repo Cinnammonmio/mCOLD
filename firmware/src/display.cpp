@@ -30,7 +30,15 @@ namespace {
 
 const uint32_t PASS_MS = 5000;
 const uint32_t FIRST_DRAW_MS = 6000;      // after boot: let readings arrive
-const uint32_t SUMMARY_MS = 3600000;      // a closed trip's summary, this long
+// A closed trip's summary, this long; then the READY page (decided
+// 2026-10-24: five minutes, from an hour -- the next person to pick the
+// box up wants "scan to start", not the last trip).
+const uint32_t SUMMARY_MS = 300000;
+// A page put up from the console (demo, calibration, inks) holds the live
+// display off this long from when it went up, then the box goes back
+// to its own picture (2026-10-24): a test page left on the glass would
+// otherwise stay there for good.
+const uint32_t HOLD_MS = 300000;
 const uint32_t GNSS_FRESH_MS = 30 * 60000;
 const uint32_t CLOUD_FRESH_MS = 10 * 60000;
 // Icon and USB changes redraw at once, but not more often than this: a
@@ -54,6 +62,7 @@ uint32_t g_rx_gen = 0, g_rx_drawn_at = 0;
 uint8_t g_rx_link = 0xFF;
 bool g_rx_on = false;
 volatile bool g_hold = false;
+volatile uint32_t g_hold_at = 0;   // when display_hold() was set; 0: for good
 
 PowerStatus g_pwr = {};
 bool g_have_pwr = false;
@@ -79,6 +88,8 @@ const int READY_BATT_STEP = 5;
 RTC_DATA_ATTR int g_ready_batt = -1;    // % on the glass; -1 none
 int g_draw_batt = -1;                   // what build() just used
 bool g_draw_ready = false;              // build() drew the READY page
+bool g_draw_summary = false;            // build() drew a closed trip's summary
+RTC_DATA_ATTR bool g_shown_summary = false;
 
 // The trip that just ended, for its summary page.
 RTC_DATA_ATTR TripStatus g_closed = {};
@@ -168,6 +179,7 @@ void build(const TripStatus &s, const char *clock) {
   portEXIT_CRITICAL(&g_mux);
   const Foot f = footer_state(s, p, have_p);
   g_draw_ready = false;
+  g_draw_summary = false;
 
   char temp[12];
   if (s.temp_ok) snprintf(temp, sizeof(temp), "%.1f", s.temp_c);
@@ -209,6 +221,7 @@ void build(const TripStatus &s, const char *clock) {
     else snprintf(alarms, sizeof(alarms), "none");
     snprintf(samples, sizeof(samples), "%lu", (unsigned long)g_closed.samples);
     const Row rows[] = {{"Samples", samples}, {"Temperature", range}, {"Alarms", alarms}};
+    g_draw_summary = true;
     // Whether the server has it yet: sent over Wi-Fi, or by the app.
     scr_detail(g_draw, g_sn, clock, f, title,
                uplink_fully_acked(g_closed.id) ? "SENT" : "NOT SENT", rows, 3);
@@ -259,6 +272,17 @@ void task(void *) {
     }
     if (s.active) g_closed_at = 0;
     prev = s;
+    // On battery the box sleeps after the summary is drawn; it wakes when
+    // the summary's time is up, to put the READY page back.
+    const bool summary = !s.active && g_closed_at && now_ms() - g_closed_at < SUMMARY_MS;
+    pm_next(Duty::Display, summary ? g_closed_at + SUMMARY_MS : 0);
+
+    if (g_hold && g_hold_at && now_ms() - g_hold_at >= HOLD_MS) {
+      g_hold = false;
+      g_force = true;
+      printf("[display] a console page up %lu min: back to the live picture\n",
+             (unsigned long)(HOLD_MS / 60000));
+    }
 
     // rx_show (bench): the screen is the BLE link's state and what a phone
     // sent, for as long as rx_show is on (decided 2026-10-07: the tester
@@ -314,9 +338,13 @@ void task(void *) {
                               now_ms() - g_icons_drawn_at >= ICON_REDRAW_GAP_MS);
       const bool usb_changed = icons_due && ((icons ^ g_shown_icons) & ICON_USB) &&
                                g_shown_icons != 0xFF;
+      // The summary's end as well, at its time: the five minutes are up
+      // as the refresh that drew it is done, a little short of the
+      // DISPLAY_MIN_S since it was drawn.
       const bool urgent = s.active != g_shown_active ||
                           s.alarms_active != g_shown_alarms ||
-                          s.acked != g_shown_acked || icons_due;
+                          s.acked != g_shown_acked || icons_due ||
+                          g_draw_summary != g_shown_summary;
       const bool due = !g_shown_at ||
                        now_ms() - g_shown_at >= DISPLAY_MIN_S * 1000;
       if (g_force || usb_changed || (content != g_shown_hash && (urgent || due))) {
@@ -330,6 +358,7 @@ void task(void *) {
         pm_no_light_sleep(false);
         if (shown) {
           if (g_draw_ready) g_ready_batt = g_draw_batt;
+          g_shown_summary = g_draw_summary;
           g_shown_hash = content;
           g_shown_at = now_ms();
           g_shown_active = s.active;
@@ -380,7 +409,10 @@ void display_refresh(void) {
   g_force = true;
 }
 
-void display_hold(bool on) { g_hold = on; }
+void display_hold(bool on) {
+  g_hold_at = on ? (now_ms() ? now_ms() : 1) : 0;
+  g_hold = on;
+}
 
 void display_set_rotation(int r) {
   if (r == 1 || r == 3) g_rot = r;
@@ -392,7 +424,8 @@ bool display_show(const Canvas &c) { return g_epd ? show(c) : false; }
 
 void display_battery_off(float cell_volts) {
   if (!g_epd) return;
-  g_hold = true;                // nothing else draws after this
+  g_hold_at = 0;
+  g_hold = true;                // nothing else draws after this, ever
   TripStatus s;
   trip_status(&s);
   PowerStatus p;

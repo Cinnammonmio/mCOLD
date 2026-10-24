@@ -170,7 +170,7 @@ A5 รวม PROBE FAULT กับ STALE SAMPLE เป็นหน้าเด�
 | B5 | CRITICAL BATTERY | กรอบแดง |
 | B6 | FAULT / RECOVERY | หัวข้อแดง ไม่ตีกรอบ |
 
-**C — Detail** 3 แถว label/value · C1 TRIP SUMMARY (อัตโนมัติหลัง STOP_TRIP) ·
+**C — Detail** 3 แถว label/value · C1 TRIP SUMMARY (อัตโนมัติหลัง STOP_TRIP 5 นาที แล้วกลับ A1) ·
 C2 DEVICE DETAIL (NFC tap หรือ BLE)
 
 ## Refresh policy
