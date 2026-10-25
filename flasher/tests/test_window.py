@@ -30,7 +30,11 @@ def station(tmp_path, monkeypatch):
     st.on_clear = bus.replace
     st.bus = bus
     st.refresh()
+    st.set_lot(LOT)
     return st
+
+
+LOT = "mCDV1-L0169-1069"
 
 
 def answer_until_idle(st, no_for=(), timeout=30):
@@ -67,13 +71,14 @@ def test_all_slots_run_at_once(station):
     states = [s.state for s in station.slots]
     assert states == ["pass", "pass", "pass", "empty", "pass", "fail"]
     assert station.counts == {"pass": 4, "fail": 1}
-    assert station.slots[5].fail["step"].startswith("ถอดโพรบแล้ว")
-    assert "T−" in station.slots[5].fail["help"]
-    sns = {s.box.sn for s in station.slots[:3]}
-    assert len(sns) == 3                                  # each its own SN
+    assert station.slots[5].fail["step"].startswith("GNSS")
+    assert "GPIO18" in station.slots[5].fail["help"]
+    # the lot's prefix and each slot's own unit number, never asked for
+    assert [s.box.sn for s in (station.slots[0], station.slots[1], station.slots[2], station.slots[4])] == \
+        [f"{LOT}-001", f"{LOT}-002", f"{LOT}-003", f"{LOT}-004"]
     st = station.state()
     assert st["slots"][0]["stages"][-1] == {"name": "verify", "label": "ตรวจก่อนส่ง", "result": "PASS"}
-    assert st["slots"][0]["firmware"].endswith("production 0.7.0-demo")
+    assert st["slots"][0]["firmware"] == "0.7.0-demo"          # what it runs now
 
 
 def test_a_no_fails_the_box(station):
@@ -95,7 +100,7 @@ def test_stop_while_waiting_for_an_answer(station):
     assert station.slots[1].state == "stopped"
     run = station.db.history()[0]
     assert run["result"] == "FAIL"
-    assert station.db.steps(run["id"])[0]["detail"] == "stopped by the operator"
+    assert station.db.steps(run["id"])[-1]["detail"] == "stopped by the operator"
     with pytest.raises(RuntimeError, match="ตอบไปแล้ว"):
         station.answer(1, 999, True)
 
@@ -157,8 +162,76 @@ def test_http_api(station):
         assert post("/api/config", {"product": "mcold"})["status"] == 409  # while running
         station.stop(0)
         station.slots[0].thread.join(5)
+        assert post("/api/lot", {"lot": "bad"})["status"] == 409
+        assert post("/api/unit", {"slot": 1, "unit": 77}) == {"ok": True}
+        assert post("/api/unit", {"slot": 2, "unit": 77})["status"] == 409
+        assert post("/api/unit", {"slot": 2, "step": 1}) == {"ok": True}
+        sm = json.load(urllib.request.urlopen(base + "/api/summary?lot=" + LOT))
+        assert sm["lot"] == LOT and "rows" in sm
+        resp = urllib.request.urlopen(base + "/api/summary.csv?lot=" + LOT)
+        assert resp.headers["Content-Disposition"] == f'attachment; filename="SN_{LOT}.csv"'
+        assert resp.read().decode("utf-8-sig").startswith("sn,unit,result")
         assert urllib.request.urlopen(base + "/fonts/IBMPlexSansThai-Regular.ttf").status == 200
         with pytest.raises(urllib.error.HTTPError):
             urllib.request.urlopen(base + "/fonts/../../site.ini")
     finally:
         srv.shutdown()
+
+
+def test_lot_and_unit_numbers(station):
+    with pytest.raises(RuntimeError, match="ไม่ตรงรูปแบบ"):
+        station.set_lot("mCDV1-L0169-1369")             # month 13
+    assert [s.unit for s in station.slots] == [1, 2, 3, None, 4, 5]
+    st = station.state()
+    assert st["lot"] == LOT and st["slots"][0]["sn"] == f"{LOT}-001" and st["slots"][0]["sn_planned"]
+    assert st["slots"][0]["mac"]                         # from the chip's USB serial, before any run
+    with pytest.raises(RuntimeError, match="ใช้แล้ว: ช่อง 2"):
+        station.set_unit(0, 2)
+    station.set_unit(0, 42)
+    assert station.slots[0].unit == 42 and not station.slots[0].unit_auto
+    station.step_unit(1, 1)                              # 3 is slot 3's, 4 slot 5's, 5 slot 6's
+    assert station.slots[1].unit == 6
+    station.step_unit(1, -1)
+    assert station.slots[1].unit == 2
+
+
+def test_a_used_number_is_refused_and_the_next_box_gets_the_next_free_one(station):
+    station.start(0)
+    answer_until_idle(station)
+    assert station.slots[0].box.sn == f"{LOT}-001"
+    station.clear(0)                                     # a new blank box in slot 1
+    station.refresh()
+    assert station.slots[0].unit == 6                    # 1 is in the record, 2-5 in other slots
+    with pytest.raises(RuntimeError, match="ใช้แล้ว"):
+        station.set_unit(0, 1)
+
+
+def test_sn_summary(station):
+    assert station.start_all("somchai") == 5
+    answer_until_idle(station)
+    sm = station.summary()
+    assert sm["lot"] == LOT and sm["counts"] == {"PASS": 4, "FAIL": 1, "INCOMPLETE": 0}
+    with_sn = [r for r in sm["rows"] if r["sn"]]
+    assert [r["unit"] for r in with_sn] == [1, 2, 3, 4]
+    r = with_sn[0]
+    assert r["result"] == "PASS" and r["firmware"] == "0.7.0-demo" and r["operator"] == "somchai"
+    assert r["stages"] == {"test": "PASS", "production": "PASS", "setup": "PASS", "verify": "PASS"}
+    bad = [r for r in sm["rows"] if r["result"] == "FAIL"][0]
+    assert bad["sn"] == "" and bad["fail"]["stage"] == "test" and bad["fail"]["step"].startswith("GNSS")
+    assert sm["missing"] == []
+    csv_text = station.summary_csv()
+    assert csv_text.splitlines()[0].startswith("sn,unit,result,mac,firmware,test,production")
+    assert f"{LOT}-002,2,PASS" in csv_text
+    # another lot: nothing of this one
+    assert [r for r in station.summary("mCDV1-L0270-1170")["rows"] if r["sn"]] == []
+
+
+def test_cli_summary(station, capsys, tmp_path):
+    from mflash.cli import main
+    station.start(0, "somchai")
+    answer_until_idle(station)
+    main(["--db", station.db.path, "summary", "mcold", LOT])
+    out = capsys.readouterr().out
+    assert f"lot {LOT}: 1 SNs, 1 passed" in out and f"{LOT}-001" in out and "somchai" in out
+    main(["--db", station.db.path, "summary", "mcold", LOT, "--csv", str(tmp_path / "s.csv")])
+    assert (tmp_path / "s.csv").read_text(encoding="utf-8-sig").count(f"{LOT}-001") == 1

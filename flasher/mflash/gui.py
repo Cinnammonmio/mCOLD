@@ -60,6 +60,22 @@ def make_handler(station: Station):
                 self._json(station.state(log_slots=logs))
             elif u.path == "/api/history":
                 self._json(station.history())
+            elif u.path in ("/api/summary", "/api/summary.csv"):
+                lot = parse_qs(u.query).get("lot", [None])[0]
+                try:
+                    if u.path.endswith(".csv"):
+                        body = station.summary_csv(lot).encode("utf-8-sig")
+                        name = f"SN_{lot or station.lot or 'all'}.csv"
+                        self.send_response(200)
+                        self.send_header("Content-Type", "text/csv; charset=utf-8")
+                        self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+                        self.send_header("Content-Length", str(len(body)))
+                        self.end_headers()
+                        self.wfile.write(body)
+                    else:
+                        self._json(station.summary(lot))
+                except RuntimeError as e:
+                    self._json({"error": str(e)}, 409)
             elif u.path.startswith("/fonts/") and os.path.basename(u.path) in FONT_FILES:
                 path = os.path.join(FONTS, os.path.basename(u.path))
                 if os.path.isfile(path):
@@ -93,6 +109,13 @@ def make_handler(station: Station):
                         station.set_product(a["product"])
                     if a.get("stage"):
                         station.set_stage(a["stage"])
+                elif path == "/api/lot":
+                    station.set_lot(str(a.get("lot", "")))
+                elif path == "/api/unit":
+                    if "step" in a:
+                        station.step_unit(int(a["slot"]), 1 if int(a["step"]) > 0 else -1)
+                    else:
+                        station.set_unit(int(a["slot"]), int(a["unit"]))
                 elif path == "/api/layout/save":
                     return self._json({"saved": station.save_layout()})
                 elif path == "/api/layout/forget":
@@ -135,6 +158,7 @@ def serve(product: str = "mcold", host: str = "127.0.0.1", port: int = 8765, dem
         for i, s in enumerate(station.slots):     # a dock whose bays have been saved
             s.location = f"1-1.{i + 1}"
         station.on_clear = bus.replace
+        station.set_lot("mCDV1-L0169-1069")
     else:
         station = Station(product, Db(db_path), sitelib.load(site_path))
     station.watch()

@@ -13,7 +13,9 @@ once without taking turns.
 """
 from __future__ import annotations
 
+import csv
 import datetime as dt
+import io
 import json
 import os
 import threading
@@ -24,7 +26,7 @@ from dataclasses import dataclass, field
 from . import firmware as fwlib
 from . import profile as proflib
 from .db import Db
-from .ports import Port, UsbIds
+from .ports import Port, UsbIds, norm_mac
 from .runner import Box, Hardware, Runner, StepFailed
 from .site import Site
 from .ui import Ui
@@ -74,6 +76,12 @@ class Slot:
         self.started = 0.0
         self.finished = 0.0
         self.left = False         # the finished box has been taken out
+        self.unit: int | None = None   # the unit number this slot gives its box
+        self.unit_auto = True          # suggested by the station, not typed
+        self.existing_sn = ""          # the box came with an SN already (a rework)
+
+    def forget_unit(self) -> None:
+        self.unit, self.unit_auto, self.existing_sn = None, True, ""
 
     @property
     def busy(self) -> bool:
@@ -159,6 +167,7 @@ class Station:
         self.lock = threading.RLock()
         self.layout_path = layout_path or os.path.join(proflib.FLASHER, "records", "slots.json")
         self.stage_choice = "all"
+        self.lot = ""
         self.counts = {"pass": 0, "fail": 0}
         self.questions_asked = 0
         self.profile: proflib.Profile | None = None
@@ -224,20 +233,152 @@ class Station:
                 out.append({"kind": k, "ok": False, "msg": str(e)})
         return out
 
-    def _load_layout(self) -> None:
+    def _read_settings(self) -> dict:
         try:
             with open(self.layout_path, encoding="utf-8") as f:
-                saved = json.load(f).get("slots", [])
+                return json.load(f)
         except (OSError, ValueError):
-            return
-        for s, loc in zip(self.slots, saved):
+            return {}
+
+    def _write_settings(self, **kw) -> None:
+        d = self._read_settings()
+        d.update(kw)
+        os.makedirs(os.path.dirname(os.path.abspath(self.layout_path)), exist_ok=True)
+        with open(self.layout_path, "w", encoding="utf-8") as f:
+            json.dump(d, f, indent=2, ensure_ascii=False)
+
+    def _load_layout(self) -> None:
+        d = self._read_settings()
+        for s, loc in zip(self.slots, d.get("slots", [])):
             s.location = loc or ""
+        lot = d.get("lot", "")
+        if lot and self.profile and self.profile.lot_ok(lot):
+            self.lot = lot
 
     def save_layout(self) -> str:
-        os.makedirs(os.path.dirname(self.layout_path), exist_ok=True)
-        with open(self.layout_path, "w", encoding="utf-8") as f:
-            json.dump({"slots": [s.location for s in self.slots]}, f, indent=2)
+        self._write_settings(slots=[s.location for s in self.slots])
         return self.layout_path
+
+    # ---- the lot and the unit numbers --------------------------------------
+
+    def set_lot(self, lot: str) -> None:
+        lot = lot.strip()
+        if not self.profile:
+            raise RuntimeError(self.profile_error)
+        if lot and not self.profile.lot_ok(lot):
+            raise RuntimeError(f"เลขล็อต '{lot}' ไม่ตรงรูปแบบ (เช่น {self.profile.sn.get('lot_example', '')})")
+        with self.lock:
+            if lot != self.lot:
+                self.lot = lot
+                for s in self.slots:
+                    if not s.busy and s.state not in ("pass", "fail", "stopped"):
+                        s.unit, s.unit_auto = None, True
+                self._suggest_units()
+        self._write_settings(lot=self.lot)
+
+    def _used_units(self, but: Slot | None = None) -> dict[int, str]:
+        """unit -> who has it: an SN in the record, or another slot."""
+        used: dict[int, str] = {}
+        if not self.lot or not self.profile:
+            return used
+        prefix = self.profile.make_sn(self.lot, 0)[:-int(self.profile.sn.get("unit_digits", 3))]
+        for r in self.db.q("SELECT sn, mac FROM device WHERE product=? AND sn LIKE ?",
+                           (self.profile.product, prefix + "%")):
+            u = self.profile.unit_of(r["sn"], self.lot)
+            if u is not None:
+                used[u] = f"{r['sn']} (เครื่อง {r['mac']})"
+        for o in self.slots:
+            if o is not but and o.unit is not None:
+                used.setdefault(o.unit, f"ช่อง {o.index + 1}")
+            if o is not but and o.box and o.box.sn:
+                u = self.profile.unit_of(o.box.sn, self.lot)
+                if u is not None:
+                    used.setdefault(u, f"ช่อง {o.index + 1}")
+        return used
+
+    def _suggest_units(self) -> None:
+        """Every ready slot without a unit gets the smallest one nobody has."""
+        if not self.lot or not self.profile:
+            return
+        for s in self.slots:
+            if s.state == "ready" and s.unit is None and not s.existing_sn:
+                used = self._used_units(but=s)
+                n = next((u for u in range(1, self.profile.unit_max + 1) if u not in used), None)
+                s.unit, s.unit_auto = n, True
+
+    def set_unit(self, i: int, unit: int) -> None:
+        if not self.profile:
+            raise RuntimeError(self.profile_error)
+        with self.lock:
+            s = self.slots[i]
+            if s.busy:
+                raise RuntimeError(f"ช่อง {i + 1} กำลังทำงานอยู่")
+            if not self.lot:
+                raise RuntimeError("กรอกเลขล็อตก่อน")
+            if not 1 <= unit <= self.profile.unit_max:
+                raise RuntimeError(f"เลขเครื่องต้องอยู่ระหว่าง 1–{self.profile.unit_max}")
+            who = self._used_units(but=s).get(unit)
+            if who:
+                raise RuntimeError(f"เลข {unit:0{int(self.profile.sn.get('unit_digits', 3))}d} ใช้แล้ว: {who}")
+            s.unit, s.unit_auto = unit, False
+
+    def step_unit(self, i: int, delta: int) -> None:
+        """The next unit number nobody has, up (+1) or down (-1) from the slot's."""
+        if not self.profile or not self.lot:
+            raise RuntimeError("กรอกเลขล็อตก่อน")
+        with self.lock:
+            s = self.slots[i]
+            used = self._used_units(but=s)
+            u = (s.unit or 0) + delta
+            while 1 <= u <= self.profile.unit_max and u in used:
+                u += delta
+            if not 1 <= u <= self.profile.unit_max:
+                raise RuntimeError("ไม่มีเลขว่างทางนั้นแล้ว")
+            self.set_unit(i, u)
+
+    def planned_sn(self, s: Slot) -> str:
+        if s.existing_sn:
+            return s.existing_sn
+        if self.lot and s.unit is not None and self.profile:
+            return self.profile.make_sn(self.lot, s.unit)
+        return ""
+
+    def summary(self, lot: str | None = None) -> dict:
+        """The lot so far: every SN, its box, its result, and the unit numbers not yet used."""
+        if not self.profile:
+            raise RuntimeError(self.profile_error)
+        lot = self.lot if lot is None else lot.strip()
+        p = self.profile
+        prefix = p.make_sn(lot, 0)[:-int(p.sn.get("unit_digits", 3))] if lot else ""
+        today = dt.datetime.now().astimezone().replace(hour=0, minute=0, second=0,
+                                                       microsecond=0).isoformat(timespec="seconds")
+        rows = self.db.summary(p.product, list(p.sequence), prefix=prefix, since=today)
+        for r in rows:
+            r["unit"] = p.unit_of(r["sn"], lot) if lot else None
+            r["stage_labels"] = {k: stage_label(k) for k in r["stages"]}
+            if r["fail"]:
+                r["fail"]["stage_label"] = stage_label(r["fail"]["stage"])
+        units = sorted(r["unit"] for r in rows if r["unit"] is not None)
+        missing = [u for u in range(1, units[-1]) if u not in set(units)] if units else []
+        counts = {k: sum(1 for r in rows if r["result"] == k) for k in ("PASS", "FAIL", "INCOMPLETE")}
+        return {"lot": lot, "product": p.product, "rows": rows, "counts": counts, "missing": missing,
+                "sequence": [{"name": x, "label": stage_label(x)} for x in p.sequence],
+                "made": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
+
+    def summary_csv(self, lot: str | None = None) -> str:
+        sm = self.summary(lot)
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["sn", "unit", "result", "mac", "firmware", *[s["name"] for s in sm["sequence"]],
+                    "failed_stage", "failed_step", "failed_detail", "finished", "operator", "station",
+                    "unapproved_firmware"])
+        for r in sm["rows"]:
+            f = r["fail"] or {}
+            w.writerow([r["sn"], r["unit"] if r["unit"] is not None else "", r["result"], r["mac"],
+                        r["firmware"], *[r["stages"].get(s["name"], "") for s in sm["sequence"]],
+                        f.get("stage", ""), f.get("step", ""), f.get("detail", ""), r["finished"],
+                        r["operator"], r["station"], "yes" if r["unapproved"] else ""])
+        return buf.getvalue()
 
     def forget_layout(self) -> None:
         with self.lock:
@@ -277,9 +418,17 @@ class Station:
                         s.left = True
                     elif s.left:             # a new box where the finished one was
                         s.reset()
+                        s.forget_unit()
                         s.state = "ready"
                     continue
                 s.state = "ready" if p else "empty"
+                if not p:
+                    s.forget_unit()
+                elif self.profile and self.ids.is_app(p) and self.profile.sn_ok(p.serial):
+                    s.existing_sn, s.unit = p.serial, None      # it has its SN already
+                else:
+                    s.existing_sn = ""
+            self._suggest_units()
 
     def watch(self, every: float = 1.0) -> None:
         """Keep the slots up to date with the bus, from a thread of its own."""
@@ -319,6 +468,10 @@ class Station:
             bad = [f for f in self.firmware_status() if not f["ok"]]
             if bad:
                 raise RuntimeError(bad[0]["msg"])
+            if s.unit is not None and not s.existing_sn:
+                who = self._used_units(but=s).get(s.unit)
+                if who:
+                    raise RuntimeError(f"ช่อง {i + 1}: เลข {s.unit} ใช้แล้ว ({who}) เลือกเลขใหม่")
             s.reset()
             s.stages = self.stages()
             s.results = {st: "" for st in s.stages}
@@ -339,7 +492,7 @@ class Station:
     def _work(self, s: Slot, operator: str) -> None:
         r = Runner(self.profile, self.db, self.ui, self.site, hw=self.hw,
                    operator=operator or "station", station=self.site.station or "gui",
-                   should_stop=s.stop.is_set)
+                   should_stop=s.stop.is_set, sn=self.planned_sn(s), keep_existing_sn=True)
         ok = False
         try:
             ok = r.run(s.box, s.stages)
@@ -362,6 +515,7 @@ class Station:
             if s.busy:
                 raise RuntimeError(f"ช่อง {i + 1} กำลังทำงานอยู่")
             s.reset()
+            s.forget_unit()
             if self.on_clear:
                 self.on_clear(i)
             s.state = "ready" if s.port else "empty"
@@ -382,13 +536,23 @@ class Station:
             port = (box.port if box and box.port and s.busy else s.port)
             fw = ""
             if box and box.flashed:
-                fw = ", ".join(f"{k} {m['version']}" for k, m in box.flashed.items())
+                # what the box runs now, not everything it ran on the way
+                m = box.flashed.get(box.running) or list(box.flashed.values())[-1]
+                fw = m["version"] + (" (ทดสอบ)" if m.get("kind") == "test" else "")
             q = s.question
             slots.append({
                 "index": s.index, "location": s.location, "state": s.state,
                 "port": port.device if port else "", "port_kind": self.port_kind(port),
                 "port_serial": port.serial if port else "",
-                "mac": box.mac if box else "", "sn": box.sn if box else "", "firmware": fw,
+                # what is known about the box, kept on show for as long as it is in the slot:
+                # before a run the MAC comes from the chip's USB serial, the SN is the one
+                # it will get (or already has)
+                "mac": (box.mac if box and box.mac else
+                        (norm_mac(port.serial) if port and self.ids.is_usj(port) and port.serial else "")),
+                "sn": (box.sn if box and box.sn else self.planned_sn(s)),
+                "sn_planned": not (box and box.sn) and not s.existing_sn and bool(self.planned_sn(s)),
+                "unit": s.unit, "unit_auto": s.unit_auto, "existing_sn": s.existing_sn,
+                "firmware": fw,
                 # before a run, the stages it would go through, so the slot shows the plan
                 "stages": [{"name": st, "label": stage_label(st), "result": s.results.get(st, "")}
                            for st in (s.stages or (self.stages() if s.state == "ready" else []))],
@@ -408,6 +572,11 @@ class Station:
             "incomplete": p.incomplete if p else [],
             "products": proflib.list_profiles(),
             "stage": self.stage_choice,
+            "lot": self.lot,
+            "lot_example": p.sn.get("lot_example", "") if p else "",
+            "sn_example": p.sn.get("example", "") if p else "",
+            "unit_digits": int(p.sn.get("unit_digits", 3)) if p else 3,
+            "unit_max": p.unit_max if p else 999,
             "stage_options": ([{"value": "all", "label": f"ทุกขั้น ({len(p.sequence)} ขั้น)"}]
                 + [{"value": x, "label": stage_label(x)} for x in p.stages]) if p else [],
             "firmware": self.firmware_status(),

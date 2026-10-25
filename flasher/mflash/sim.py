@@ -77,7 +77,7 @@ DURATION = {"logtest": 4.0, "walk": 3.6, "ledtest": 3.0, "gnss": 3.0, "power": 0
 
 class SimBox:
     def __init__(self, mac: str = MAC, slot: int = 0, probe_reads_open: bool = True,
-                 version: str = "0.7.0", elf16: str = "aabbccddeeff0011"):
+                 version: str = "0.7.0", elf16: str = "aabbccddeeff0011", gnss_dead: bool = False):
         self.mac = mac
         self.slot = slot
         self.state = "rom"            # rom | bringup | app
@@ -88,6 +88,7 @@ class SimBox:
         self.probe_reads_open = probe_reads_open
         self.version, self.elf16 = version, elf16
         self.config: dict[str, int] = {}
+        self.gnss_dead = gnss_dead    # a GNSS that sends nothing: wiring or the rail
         self.sent: list[str] = []
 
     # what is on the bus
@@ -122,6 +123,8 @@ class SimBox:
                 return ("  raw         0x0B04\n  THERMOCOUPLE OPEN -- probe not connected\n"
                         if self.probe_reads_open else "  raw         0x0B00\n  temperature 44.00 C\n")
             if line.startswith("gnss"):
+                if self.gnss_dead:
+                    return "  listening on GPIO18 at 115200 for 15 s\n\n  0 bytes\n  nothing received\n"
                 return GNSS
             return BRINGUP.get(line, f"  unknown command '{line}'\n")
         if self.state == "app":
@@ -184,7 +187,8 @@ class SimBus:
             self._made = n
             mac = "28:84:85:%02X:%02X:%02X" % (0x30 + n, 0x10 + slot, 0x70 + slot)
             self.boxes[self.boxes.index(old[0])] = SimBox(mac=mac, slot=slot,
-                                                          probe_reads_open=old[0].probe_reads_open)
+                                                          probe_reads_open=old[0].probe_reads_open,
+                                                          gnss_dead=old[0].gnss_dead)
 
     def box_on(self, device: str) -> SimBox | None:
         for b in self.boxes:
@@ -343,7 +347,7 @@ def build_dir(path: str, version: str, kind: str, repo: str) -> str:
 
 def demo_setup(root: str, speed: float = 0.4) -> SimBus:
     """A library with approved demo images in `root`, and five boxes in six slots:
-    slot 4 empty, slot 5 a board whose probe input floats (it fails the test stage)."""
+    slot 4 empty, slot 6 a box whose GNSS sends nothing (it fails the test stage)."""
     from . import firmware as fwlib
     from . import profile as proflib
     os.environ["MFLASH_LIBRARY"] = os.path.join(root, "library")
@@ -356,5 +360,5 @@ def demo_setup(root: str, speed: float = 0.4) -> SimBus:
     boxes = []
     for slot in (0, 1, 2, 4, 5):
         mac = "28:84:85:27:%02X:%02X" % (0x10 + slot, 0x70 + slot)
-        boxes.append(SimBox(mac=mac, slot=slot, probe_reads_open=slot != 5))
+        boxes.append(SimBox(mac=mac, slot=slot, gnss_dead=slot == 5))
     return SimBus(boxes, speed=speed)

@@ -64,6 +64,24 @@ class Profile:
         pat = self.sn.get("pattern")
         return bool(re.fullmatch(pat, sn)) if pat else bool(sn)
 
+    # A lot is the SN without its unit number; a slot adds the unit.
+    def lot_ok(self, lot: str) -> bool:
+        pat = self.sn.get("lot_pattern")
+        return bool(lot) and (bool(re.fullmatch(pat, lot)) if pat else True)
+
+    @property
+    def unit_max(self) -> int:
+        return 10 ** int(self.sn.get("unit_digits", 3)) - 1
+
+    def make_sn(self, lot: str, unit: int) -> str:
+        return f"{lot}{self.sn.get('unit_sep', '-')}{unit:0{int(self.sn.get('unit_digits', 3))}d}"
+
+    def unit_of(self, sn: str, lot: str) -> int | None:
+        """The unit number of `sn` if it belongs to `lot`, else None."""
+        head = lot + self.sn.get("unit_sep", "-")
+        tail = sn[len(head):] if sn and sn.startswith(head) else ""
+        return int(tail) if tail.isdigit() and len(tail) == int(self.sn.get("unit_digits", 3)) else None
+
 
 def list_profiles() -> list[str]:
     if not os.path.isdir(PROFILES):

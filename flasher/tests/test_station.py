@@ -189,14 +189,39 @@ def test_full_sequence_on_a_blank_board(lib, tmp_path):
     assert SN in out.read_text(encoding="utf-8-sig")
 
 
-def test_open_probe_that_reads_a_temperature_fails_the_board(lib, tmp_path):
+def test_a_probe_that_reads_open_fails_the_box(lib, tmp_path):
+    """Soldered in, the probe is not pulled on the line: OPEN means it came loose."""
     _import(tmp_path, "test", "1.0-bringup")
-    box = fakes.FakeBox(probe_reads_open=False)
+    box = fakes.FakeBox()
+    box.probe = False
     r, db, ui = _runner(tmp_path, box, [True] * 30)
     assert not r.run(Box(label="1", port=box.port()), ["test"])
     steps = db.steps(db.history()[0]["id"])
-    assert steps[-1]["result"] == "FAIL" and "OPEN" in steps[-1]["name"]
-    assert any("T−" in x for x in ui.log)
+    assert steps[-1]["result"] == "FAIL" and steps[-1]["name"] == "เทอร์โมคัปเปิลอ่านค่าได้"
+    assert any("โพรบหลุด" in x for x in ui.log)
+
+
+def test_the_test_stage_asks_only_what_an_assembled_box_needs(lib, tmp_path):
+    _import(tmp_path, "test", "1.0-bringup")
+    box = fakes.FakeBox()
+    r, db, ui = _runner(tmp_path, box, [True] * 30)
+    assert r.run(Box(label="1", port=box.port()), ["test"])
+    asked = [x for x in ui.log if "] ? " in x]
+    assert len(asked) == 2                          # the LEDs and the buzzer, nothing else
+    assert "chg on" not in box.sent and box.sent.count("temp") == 1
+
+
+def test_a_box_that_has_its_sn_keeps_it(lib, tmp_path):
+    prod = _import(tmp_path, "production", "0.7.0")
+    box = fakes.FakeBox(elf16=prod["elf_sha256"][:16])
+    box.flash, box.state, box.sn = {0x20000: "firmware.bin"}, "app", SN
+    p = proflib.load("mcold")
+    db = Db(str(tmp_path / "rec.db"))
+    r = Runner(p, db, ScriptedUi([]), Site(), hw=fakes.FakeHardware(box), sn="mCDV1-L0169-1069-009",
+               keep_existing_sn=True)
+    b = Box(label="1", port=box.port())
+    assert r.run(b, ["setup"])
+    assert b.sn == SN and box.sn == SN
 
 
 def test_unapproved_firmware_is_refused(lib, tmp_path):

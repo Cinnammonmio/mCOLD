@@ -8,6 +8,7 @@
     mflash run mcold verify --all-ports           every box on the bus at once
     mflash history mCDV1-L0169-1069-001
     mflash export records.csv
+    mflash summary mcold mCDV1-L0169-1069         every SN of a lot, its box and its result
     mflash gui                                    the six-slot window
     mflash gui --demo                             the window with simulated boxes
 """
@@ -265,6 +266,36 @@ def cmd_backup(a) -> None:
     esp.reset(port.device, otg)
 
 
+def cmd_summary(a) -> None:
+    from .station import Station
+    p = _profile(a.product)
+    st = Station(p.product, Db(a.db), sitelib.load(a.site), hw=_NoBus())
+    if a.lot and not p.lot_ok(a.lot):
+        sys.exit(f"'{a.lot}' is not a lot of {p.product} (e.g. {p.sn.get('lot_example', '')})")
+    if a.csv:
+        with open(a.csv, "w", encoding="utf-8-sig", newline="") as f:
+            f.write(st.summary_csv(a.lot or ""))
+        print(f"-> {a.csv}")
+        return
+    sm = st.summary(a.lot or "")
+    print(f"{p.product} lot {sm['lot'] or '(all)'}: {sum(1 for r in sm['rows'] if r['sn'])} SNs, "
+          f"{sm['counts']['PASS']} passed, {sm['counts']['FAIL']} failed, "
+          f"{sm['counts']['INCOMPLETE']} incomplete")
+    if sm["missing"]:
+        print("unit numbers skipped: " + ", ".join(str(u) for u in sm["missing"]))
+    for r in sm["rows"]:
+        why = f"{r['fail']['stage']}: {r['fail']['step']}" if r["fail"] else ""
+        print(f"  {r['sn'] or '(no SN)':<22} {r['result']:<10} {r['mac']:<18} {r['firmware'] or '-':<14} "
+              f"{(r['finished'] or '')[:16]:<16} {r['operator'] or '':<10} {why}")
+
+
+class _NoBus:
+    """A station that only reads its record touches no port."""
+
+    def scan(self):
+        return []
+
+
 def cmd_gui(a) -> None:
     from .gui import serve
     serve(a.product, host=a.host, port=a.http_port, demo=a.demo, browser=not a.no_browser,
@@ -335,6 +366,12 @@ def main(argv=None) -> None:
     s.add_argument("--parts", default="nvs,log_meta,trip_log,coredump")
     s.add_argument("--out", default=os.path.join(proflib.FLASHER, "backups"))
     s.set_defaults(fn=cmd_backup)
+
+    s = sub.add_parser("summary", help="every SN of a lot: box, firmware, result")
+    s.add_argument("product")
+    s.add_argument("lot", nargs="?", help="e.g. mCDV1-L0169-1069; none = every lot")
+    s.add_argument("--csv", help="write it as CSV instead")
+    s.set_defaults(fn=cmd_summary)
 
     s = sub.add_parser("gui", help="the six-slot station window")
     s.add_argument("product", nargs="?", default="mcold")

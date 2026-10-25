@@ -81,7 +81,8 @@ def fill(s: str, ctx: dict, escape: bool = False) -> str:
 class Runner:
     def __init__(self, profile: Profile, db: Db, ui: Ui, site: Site, hw: Hardware | None = None,
                  firmware_choice: dict | None = None, allow_unapproved: bool = False,
-                 operator: str = "", station: str = "", sn: str = "", should_stop=None):
+                 operator: str = "", station: str = "", sn: str = "", should_stop=None,
+                 keep_existing_sn: bool = False):
         self.p, self.db, self.ui, self.site = profile, db, ui, site
         self.hw = hw or Hardware()
         self.ids = UsbIds(profile.usb)
@@ -91,6 +92,9 @@ class Runner:
         self.station = station or site.station
         self.preset_sn = sn
         self.should_stop = should_stop or (lambda: False)
+        # a box that already carries a valid SN keeps it (a rework), whatever
+        # number its slot was going to give it
+        self.keep_existing_sn = keep_existing_sn
         self.baud = profile.console.get("baud", 115200)
         self.eol = profile.console.get("eol", "\r\n")
         self.esp = self.hw.esp(profile.chip, profile.flash)
@@ -420,6 +424,10 @@ class Runner:
                           out[-3000:])
 
     def step_input_sn(self, box: Box, st: dict, run_id: int) -> StepResult:
+        if self.keep_existing_sn and box.sn and self.p.sn_ok(box.sn):
+            owner = self.db.sn_owner(self.p.product, box.sn)
+            if not owner or not box.mac or owner == box.mac:
+                return StepResult(PASS, f"{box.sn} (SN เดิมของเครื่อง)")
         default = box.sn or ""
         sn = self.preset_sn or self.ui.text(box.label, st.get("ask", "สแกน SN จากฉลาก"), default)
         sn = sn.strip()

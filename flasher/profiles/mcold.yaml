@@ -38,6 +38,12 @@ sn:
   # logrow.cpp sn_pattern_ok(): product+V+version, L+lot+year, month+year, unit
   pattern: '[A-Za-z]{3}V\d-L\d{4}-(0[1-9]|1[0-2])\d{2}-\d{3}'
   example: mCDV1-L0169-1069-001
+  # A lot shares everything but the unit: the station takes the lot once
+  # (`mCDV1-L0169-1069`) and each slot only its unit number.
+  lot_pattern: '[A-Za-z]{3}V\d-L\d{4}-(0[1-9]|1[0-2])\d{2}'
+  lot_example: mCDV1-L0169-1069
+  unit_sep: '-'
+  unit_digits: 3
 
 chip_expect:
   flash_size: 16MB
@@ -70,17 +76,11 @@ firmware:
 sequence: [test, production, setup, verify]
 
 stages:
-  # ---- 1. test the board, module by module, with bringup --------------
+  # ---- 1. test the modules of an assembled box, with bringup ------------
+  # The line works a lot at a time on boxes already built: the power stage
+  # was tested before assembly and the sensors are soldered in, so there is
+  # no multimeter check, no charger test and no pulling the probe here.
   test:
-    - name: ส่องบอร์ดด้วยตา (ขาติดกัน, tombstone, flux) โดยเฉพาะ U12, U4
-      type: confirm
-      ask: "ตรวจด้วยตาแล้วไม่พบปัญหา?"
-    - name: 3V3_MAIN ↔ GND ไม่ช็อต (ก่อนจ่ายไฟ)
-      type: confirm
-      ask: "วัด 3V3_MAIN ↔ GND ได้หลัก kΩ ขึ้นไป (ไม่ใกล้ 0 Ω)?"
-    - name: CELL_PLUS ↔ GND ไม่ช็อต (ก่อนเสียบแบต)
-      type: confirm
-      ask: "วัด CELL_PLUS ↔ GND ไม่ใกล้ 0 Ω, เสียบแบตและ USB แล้ว?"
     - name: ชิปคือ ESP32-S3 flash 16 MB
       type: chip
       help: "esptool คุยไม่ได้: เช็กสาย USB, ห้ามใช้ USB isolator (ทำบอร์ด brownout)"
@@ -107,23 +107,12 @@ stages:
                'PCF8523\s+SECONDS\s+0x[0-9A-F]{2}\s+OS=0']
       forbid: ['no answer', 'EXPECTED 0x']
       help: "PCF8523 OS=1 = คริสตัลไม่เคยเดิน · MAX17048 no answer = ไม่มีแบต"
-    - name: เทอร์โมคัปเปิลอ่านค่าได้ (เสียบโพรบ)
-      type: confirm
-      ask: "เสียบโพรบ thermocouple แล้ว?"
-    - name: MAX6675 อ่านอุณหภูมิ
+    - name: เทอร์โมคัปเปิลอ่านค่าได้
       type: console
       send: temp
       expect: ['temperature\s+-?\d+\.\d+ C']
       forbid: ['no data', 'THERMOCOUPLE OPEN']
-      help: "0x0000/0xFFFF = ชิปไม่มีไฟหรือสาย MISO ตาย (ราง EPD_TK)"
-    - name: ถอดโพรบ
-      type: confirm
-      ask: "ถอดโพรบออกแล้ว?"
-    - name: ถอดโพรบแล้วต้องได้ OPEN ไม่ใช่ตัวเลข
-      type: console
-      send: temp
-      expect: ['THERMOCOUPLE OPEN']
-      help: "ได้ ~44 °C ตอนถอดโพรบ = T− ไม่ลง GND · ต้อง rework (service manual §9) ไม่งั้นโพรบหลุดจะ log ค่าปลอม"
+      help: "OPEN = โพรบหลุดหรือบัดกรีไม่ติด · 0x0000/0xFFFF = MAX6675 ไม่มีไฟหรือสาย MISO ตาย (ราง EPD_TK)"
     - name: GNSS ส่ง NMEA ที่ checksum ถูก (115200)
       type: nmea
       send: gnss {seconds}
@@ -146,17 +135,6 @@ stages:
       send: buzz 200
       ask: "ได้ยินเสียง beep สั้น ๆ?"
       help: "เสียงเบา: R34 1 kΩ → 330 Ω (README)"
-    - name: เปิดการชาร์จ
-      type: console
-      send: chg on
-      expect: ['charging allowed']
-    - name: Charger ทำงาน (BQ25601 REG08)
-      type: console
-      send: power
-      expect: ['state: (pre-charge|fast charging|termination done)']
-      retries: 3
-      retry_wait: 3
-      help: "not charging: ดู input (ต้องมี USB), REG09 faults"
 
   # ---- 2. the real firmware, on a chip erased whole -----------------------
   production:
@@ -171,7 +149,7 @@ stages:
 
   # ---- 3. this box's settings ---------------------------------------------
   setup:
-    - name: SN จากฉลาก
+    - name: SN (ล็อต + เลขเครื่องของช่อง)
       type: input_sn
       ask: "สแกน/พิมพ์ SN จากฉลาก"
     - name: ตั้ง SN แล้วรีบูต

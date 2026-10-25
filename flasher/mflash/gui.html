@@ -35,7 +35,7 @@
   --cta-ink: #0a0e16;
   --shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 20px 40px -24px rgba(0,0,0,.6);
   --mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, Consolas, monospace;
-  --radius: 20px;
+  --radius: 18px;
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -93,20 +93,19 @@ svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .btn:hover:not(:disabled) { border-color: var(--muted); color: var(--ink); }
 .btn:active:not(:disabled) { transform: translateY(1px); }
 .btn:disabled { opacity: .35; cursor: default; }
-.btn.cta { background: var(--cta-bg); color: var(--cta-ink); border-color: transparent; font-weight: 600; }
-.btn.cta:hover:not(:disabled) { filter: brightness(.95); color: var(--cta-ink); }
 .btn.go { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--on-accent);
   border-color: transparent; font-weight: 600; }
 .btn.go:hover:not(:disabled) { color: var(--on-accent); filter: brightness(1.05); }
 .btn.ghost { background: transparent; }
+a.btn { text-decoration: none; }
 .btn.icon { width: 38px; padding: 0; }
+.btn.sm { height: 30px; padding: 0 10px; font-size: 13px; border-radius: 9px; gap: 6px; }
+.btn.sm.icon { width: 30px; padding: 0; }
+.btn.sm svg.i { width: 16px; height: 16px; }
 
 /* ---- header ---- */
-.top {
-  display: flex; align-items: center; gap: 14px 22px; flex-wrap: wrap;
-  padding: 14px 28px 12px;
-}
-.brand { display: flex; align-items: center; gap: 12px; margin-right: 6px; }
+.top { display: flex; align-items: center; gap: 12px 18px; flex-wrap: wrap; padding: 14px 28px 12px; }
+.brand { display: flex; align-items: center; gap: 12px; margin-right: 4px; }
 .mark {
   width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
   background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--on-accent);
@@ -114,10 +113,12 @@ svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 }
 .mark svg.i { width: 22px; height: 22px; stroke-width: 2; }
 .brand-text b { display: block; font-size: 17px; letter-spacing: .2px; font-weight: 700; }
-.brand-text span { display: block; font-size: 12.5px; color: var(--muted); margin-top: -2px; }
+.brand-text { min-width: 0; }
+.brand-text span { display: block; font-size: 12.5px; color: var(--muted); margin-top: -2px;
+  max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .ctl {
-  display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 6px 0 12px;
+  display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 12px;
   background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
   backdrop-filter: blur(12px); min-width: 0; max-width: 100%;
 }
@@ -127,8 +128,14 @@ svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
   height: 36px; min-width: 0; max-width: 100%;
 }
 .ctl select option { background: var(--surface-solid); color: var(--ink); }
-.ctl input { width: 110px; }
+.ctl input { width: 90px; }
 .ctl:focus-within { border-color: var(--accent); }
+#stage { max-width: min(360px, 70vw); }
+.ctl.lot { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.ctl.lot input { width: 160px; font-family: var(--mono); font-size: 14px; letter-spacing: .2px; }
+.ctl.lot .suffix { font-family: var(--mono); color: var(--muted); font-size: 14px; margin-left: -6px; }
+.ctl.lot.bad { border-color: var(--fail); }
+.ctl.lot.empty { border-color: var(--ask); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ask) 20%, transparent); }
 .spacer { flex: 1; }
 .clock { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 14px; letter-spacing: .5px; }
 .menu { position: relative; }
@@ -145,63 +152,66 @@ svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .menu-list button:hover { background: var(--surface-2); color: var(--ink); }
 
 /* ---- overview strip ---- */
-.overview { display: flex; gap: 12px; padding: 0 28px 14px; flex-wrap: wrap; align-items: stretch; }
+.overview { display: flex; gap: 12px; padding: 0 28px 12px; flex-wrap: wrap; align-items: stretch; }
 .kpi {
-  flex: 1 1 120px; min-width: 110px; padding: 8px 14px; border-radius: 14px;
+  flex: 1 1 120px; min-width: 110px; padding: 7px 14px; border-radius: 14px;
   background: var(--surface); border: 1px solid var(--line); backdrop-filter: blur(12px);
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
 }
 .kpi span { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .kpi span::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--faint)); }
-.kpi b { font-size: 22px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.kpi b { font-size: 20px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .kpi.k-run { --c: var(--run); } .kpi.k-ask { --c: var(--ask); } .kpi.k-pass { --c: var(--pass); }
 .kpi.k-fail { --c: var(--fail); } .kpi.k-ready { --c: var(--accent); }
 .kpi.k-ask.hot { border-color: var(--ask); background: color-mix(in srgb, var(--ask) 12%, var(--surface)); }
 .kpi.k-ask.hot b { color: var(--ask); }
 .fwbox {
-  flex: 2 1 300px; padding: 7px 14px; border-radius: 14px; background: var(--surface);
-  border: 1px solid var(--line); display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  flex: 2 1 300px; padding: 6px 14px; border-radius: 14px; background: var(--surface);
+  border: 1px solid var(--line); display: flex; flex-direction: column; justify-content: center; gap: 3px;
   backdrop-filter: blur(12px); min-width: 0;
 }
 .fwbox > span { font-size: 11.5px; color: var(--muted); }
 .fwrow { display: flex; gap: 8px; flex-wrap: wrap; }
 .fwchip {
   display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500;
-  padding: 3px 10px 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--pass) 14%, transparent);
+  padding: 2px 10px 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--pass) 14%, transparent);
   color: var(--pass); max-width: 100%;
 }
 .fwchip small { color: var(--muted); font-weight: 400; }
 .fwchip.bad { background: color-mix(in srgb, var(--fail) 14%, transparent); color: var(--fail); white-space: normal; }
 .fwchip svg.i { width: 14px; height: 14px; }
 
-.guide.quiet { display: none; }
 .guide {
-  display: flex; gap: 6px 18px; flex-wrap: wrap; align-items: center; padding: 0 28px 14px;
+  display: flex; gap: 6px 18px; flex-wrap: wrap; align-items: center; padding: 0 28px 12px;
   color: var(--muted); font-size: 13px;
 }
+.guide.quiet { display: none; }
 .guide b { color: var(--ink-2); font-weight: 500; }
 .guide i { font-style: normal; display: inline-grid; place-items: center; width: 20px; height: 20px;
   border-radius: 50%; background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; margin-right: 6px; }
-.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 4px 0 2px; vertical-align: 0; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 4px 0 2px; }
 
 .banner {
-  margin: 0 28px 14px; padding: 10px 16px; border-radius: 14px; font-size: 14px; font-weight: 500;
+  margin: 0 28px 12px; padding: 9px 16px; border-radius: 14px; font-size: 14px; font-weight: 500;
   display: flex; gap: 10px; align-items: center;
 }
 .banner.demo { background: color-mix(in srgb, var(--accent-2) 14%, transparent); color: var(--ink-2);
   border: 1px solid color-mix(in srgb, var(--accent-2) 30%, transparent); }
 .banner.err { background: color-mix(in srgb, var(--fail) 14%, transparent); color: var(--fail);
   border: 1px solid color-mix(in srgb, var(--fail) 35%, transparent); }
+.banner.warn { background: color-mix(in srgb, var(--ask) 12%, transparent); color: var(--ask);
+  border: 1px solid color-mix(in srgb, var(--ask) 35%, transparent); }
 
 /* ---- the six slots ---- */
 .grid {
-  flex: 1; display: grid; gap: 16px; padding: 0 28px 18px;
+  flex: 1; display: grid; gap: 14px; padding: 0 28px 18px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   /* rows share the screen, but never shrink below what a slot holds:
      a slot never scrolls inside, the page does if the screen is too short */
   grid-auto-rows: minmax(min-content, 1fr);
 }
 @media (max-width: 1240px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1640px) { .clock { display: none; } .ctl label[for=operator], .ctl label[for=product] { display: none; } }
 @media (max-width: 760px) {
   .grid { grid-template-columns: 1fr; padding: 0 16px 16px; }
   .top, .overview, .guide { padding-left: 16px; padding-right: 16px; }
@@ -211,16 +221,18 @@ svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 
 .slot {
   --c: var(--faint);
-  position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0;
+  padding: 14px 16px 14px; overflow: hidden;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow); backdrop-filter: blur(16px);
   transition: border-color .25s, box-shadow .25s;
 }
 .slot::after {        /* a soft wash of the state's colour from the top edge */
-  content: ""; position: absolute; inset: 0 0 auto 0; height: 120px; pointer-events: none;
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 110px; pointer-events: none;
   background: linear-gradient(180deg, color-mix(in srgb, var(--c) 12%, transparent), transparent);
   opacity: 0; transition: opacity .3s;
 }
+.slot > * { position: relative; z-index: 1; }
 .slot[data-state=ready] { --c: var(--accent); }
 .slot[data-state=running] { --c: var(--run); }
 .slot[data-state=ask] { --c: var(--ask); border-color: color-mix(in srgb, var(--ask) 70%, transparent);
@@ -229,65 +241,59 @@ svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .slot[data-state=fail], .slot[data-state=stopped] { --c: var(--fail); border-color: color-mix(in srgb, var(--fail) 50%, transparent); }
 .slot:not([data-state=empty]):not([data-state=ready])::after { opacity: 1; }
 .slot[data-state=empty] { background: transparent; border: 1.5px dashed var(--line-2); box-shadow: none; backdrop-filter: none;
-  min-height: 220px; }
+  min-height: 200px; }
+.slot[data-state=empty] > :not(.head):not(.emptynote) { display: none; }
+.slot:not([data-state=empty]) .emptynote { display: none; }
+.emptynote { margin: auto; text-align: center; color: var(--muted); display: flex; flex-direction: column;
+  align-items: center; gap: 10px; font-size: 14px; }
+.emptynote .plug { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
+  background: var(--surface-2); color: var(--faint); }
+.emptynote .plug svg.i { width: 24px; height: 24px; }
 
-.head { display: flex; align-items: center; gap: 12px; padding: 14px 18px 0; position: relative; z-index: 1; }
-.num { font-size: 30px; font-weight: 300; letter-spacing: -1px; line-height: 1; color: var(--ink);
-  font-variant-numeric: tabular-nums; }
+/* header: who, where, state, time, and the small tools */
+.head { display: flex; align-items: center; gap: 12px; }
+.num { font-size: 28px; font-weight: 300; letter-spacing: -1px; line-height: 1; font-variant-numeric: tabular-nums; }
 .title { min-width: 0; flex: 1; }
-.title b { display: block; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: .3px; }
+.title b { display: block; font-size: 12.5px; font-weight: 500; color: var(--muted); }
 .port { display: block; font-size: 12px; color: var(--faint); font-family: var(--mono);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.status { display: flex; align-items: center; gap: 8px; }
 .badge {
-  display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 11px; border-radius: 999px;
   font-size: 13px; font-weight: 600; color: var(--c); white-space: nowrap;
   background: color-mix(in srgb, var(--c) 14%, transparent);
 }
 .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
 .slot[data-state=running] .badge::before, .slot[data-state=ask] .badge::before { animation: blink 1.2s ease-in-out infinite; }
 @keyframes blink { 50% { opacity: .25; } }
+.elapsed { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; display: inline-flex; align-items: center; gap: 5px; }
+.elapsed svg.i { width: 13px; height: 13px; }
+.tools { display: flex; gap: 6px; align-self: flex-start; }
 
-.body { position: relative; z-index: 1; flex: 1; padding: 10px 18px 0;
-  display: flex; flex-direction: column; gap: 12px; }
-.emptynote { margin: auto; text-align: center; color: var(--muted); display: flex; flex-direction: column;
-  align-items: center; gap: 10px; font-size: 14px; }
-.emptynote .plug { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center;
-  background: var(--surface-2); color: var(--faint); }
-.emptynote .plug svg.i { width: 26px; height: 26px; }
-.slot[data-state=empty] .body > :not(.emptynote) { display: none; }
-.slot:not([data-state=empty]) .emptynote { display: none; }
-
-/* hero: the ring and what to do now */
-.hero { display: flex; align-items: center; gap: 16px; min-height: 66px; }
-.ring { position: relative; width: 66px; height: 66px; flex: none; }
-.ring svg { width: 66px; height: 66px; transform: rotate(-90deg); }
-.ring circle { fill: none; stroke-width: 6; }
-.ring .track { stroke: var(--line-2); }
-.ring .val { stroke: var(--c); stroke-linecap: round; transition: stroke-dashoffset .5s ease, stroke .3s; }
-.ring .mid { position: absolute; inset: 0; display: grid; place-items: center; font-size: 16px; font-weight: 600;
-  font-variant-numeric: tabular-nums; color: var(--ink); }
-.ring .mid svg.i { width: 28px; height: 28px; stroke-width: 2.4; color: var(--c); transform: none; }
-.headline { min-width: 0; flex: 1; }
-.headline b { display: block; font-size: 19px; font-weight: 600; line-height: 1.3; }
-.headline span { display: block; color: var(--muted); font-size: 13.5px; margin-top: 2px;
-  overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.slot[data-state=pass] .headline b { color: var(--pass); }
-.slot[data-state=fail] .headline b, .slot[data-state=stopped] .headline b { color: var(--fail); }
-.slot[data-state=ask] .headline b { color: var(--ask); }
+/* the box: always on show while it is in the slot */
+.ids { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; padding: 7px 12px;
+  border-radius: 12px; background: var(--surface-2); }
+.idrow { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.idrow .k { color: var(--faint); font-size: 11px; letter-spacing: .4px; flex: none; width: 30px; }
+.idrow.two .mac { flex: none; }
+.idrow.two .k:nth-of-type(2) { width: auto; margin-left: 10px; }
+.idrow span:not(.k) { font-family: var(--mono); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ids .sn { color: var(--ink) !important; font-weight: 600; font-size: 13.5px; }
+.ids .sn em { font-style: normal; font-family: "Plex Thai", sans-serif; font-weight: 500; font-size: 11px;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
+  padding: 1px 7px; border-radius: 999px; margin-left: 8px; vertical-align: 1px; }
 
 /* stepper */
 .stages { list-style: none; margin: 0; padding: 0; display: flex; }
-.stages li { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px;
+.stages li { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px;
   font-size: 11.5px; color: var(--faint); text-align: center; min-width: 0; }
-.stages li::before {             /* the line to the previous node */
-  content: ""; position: absolute; top: 10px; right: 50%; width: 100%; height: 2px; background: var(--surface-2);
-  z-index: 0;
-}
+.stages li::before { content: ""; position: absolute; top: 9px; right: 50%; width: 100%; height: 2px;
+  background: var(--line-2); z-index: 0; }
 .stages li:first-child::before { display: none; }
 .stages li.PASS::before, .stages li.running::before, .stages li.FAIL::before { background: color-mix(in srgb, var(--pass) 60%, transparent); }
-.stages li .node { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; z-index: 1;
+.stages li .node { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; z-index: 1;
   background: var(--surface-solid); border: 2px solid var(--line-2); color: transparent; }
-.stages li .node svg.i { width: 13px; height: 13px; stroke-width: 3; }
+.stages li .node svg.i { width: 12px; height: 12px; stroke-width: 3; }
 .stages li .lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; padding: 0 2px; }
 .stages li.running { color: var(--ink); font-weight: 600; }
 .stages li.running .node { border-color: var(--run); box-shadow: 0 0 0 4px color-mix(in srgb, var(--run) 25%, transparent); }
@@ -297,18 +303,42 @@ svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .stages li.FAIL { color: var(--fail); font-weight: 600; }
 .stages li.FAIL .node { background: var(--fail); border-color: var(--fail); color: #fff; }
 
-/* the question */
-.ask {
-  border-radius: 16px; padding: 12px 14px; position: relative;
-  background: color-mix(in srgb, var(--ask) 12%, var(--surface-solid));
-  border: 1px solid color-mix(in srgb, var(--ask) 55%, transparent);
+/* the action area: one place, kept free, for what happens now */
+.act { flex: 1; min-height: 92px; display: flex; flex-direction: column; justify-content: center;
+  border-radius: 14px; padding: 10px 12px; background: color-mix(in srgb, var(--c) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--c) 22%, transparent); }
+.act > div { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.act .grow { flex: 1; min-width: 0; }
+.act .t1 { font-weight: 600; font-size: 16.5px; line-height: 1.35; }
+.act .t2 { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* running: ring and the step */
+.ring { position: relative; width: 52px; height: 52px; flex: none; }
+.ring svg { width: 52px; height: 52px; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 5; }
+.ring .track { stroke: var(--line-2); }
+.ring .val { stroke: var(--c); stroke-linecap: round; transition: stroke-dashoffset .5s ease, stroke .3s; }
+.ring .mid { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 600;
+  font-variant-numeric: tabular-nums; }
+
+/* ready: the unit number */
+.unitpick { display: flex; align-items: center; gap: 4px; flex: none; }
+.unitpick label { font-size: 12px; color: var(--muted); margin-right: 4px; white-space: nowrap; }
+.unitpick input {
+  width: 64px; height: 38px; text-align: center; border-radius: 10px; border: 1.5px solid var(--line-2);
+  background: var(--surface-solid); font-family: var(--mono); font-size: 17px; font-weight: 600; outline: none;
 }
-.ask .qlabel { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ask); font-weight: 600;
-  letter-spacing: .3px; margin-bottom: 4px; }
-.ask p { margin: 0 0 10px; font-weight: 600; font-size: 17px; line-height: 1.4; color: var(--ink); }
+.unitpick input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.unitpick .btn { width: 30px; height: 38px; padding: 0; border-radius: 10px; font-size: 18px; }
+.act .note { color: var(--muted); font-size: 13px; }
+
+/* ask */
+.slot[data-state=ask] .act { background: color-mix(in srgb, var(--ask) 12%, var(--surface-solid)); border-color: color-mix(in srgb, var(--ask) 55%, transparent); }
+.ask { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
+.ask p { margin: 0; font-weight: 600; font-size: 16px; line-height: 1.4; }
 .ask .btns { display: flex; gap: 10px; }
 .ask .btns button {
-  flex: 1; height: 46px; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer;
+  flex: 1; height: 42px; border-radius: 11px; font-size: 15.5px; font-weight: 600; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent;
 }
 .ask .yes { background: var(--pass); color: #04150d; }
@@ -316,53 +346,56 @@ svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor;
 .ask .no { background: transparent; color: var(--fail); border-color: color-mix(in srgb, var(--fail) 60%, transparent) !important; }
 .ask .no:hover { background: color-mix(in srgb, var(--fail) 10%, transparent); }
 .ask input {
-  flex: 1; min-width: 0; height: 48px; border-radius: 12px; padding: 0 14px; font-family: var(--mono);
-  font-size: 16px; background: var(--surface-solid); border: 1.5px solid var(--line-2); color: var(--ink); outline: none;
+  flex: 1; min-width: 0; height: 42px; border-radius: 11px; padding: 0 12px; font-family: var(--mono);
+  font-size: 15px; background: var(--surface-solid); border: 1.5px solid var(--line-2); color: var(--ink); outline: none;
 }
 .ask input:focus { border-color: var(--ask); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ask) 22%, transparent); }
-.ask .yes.ok { flex: 0 0 auto; padding: 0 22px; }
+.ask .yes.ok { flex: 0 0 auto; padding: 0 20px; }
 
-.fail { border-radius: 14px; padding: 12px 14px; background: color-mix(in srgb, var(--fail) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--fail) 30%, transparent); font-size: 13.5px; }
-.fail b { display: block; color: var(--fail); font-size: 14px; }
-.fail .fdetail { display: none; }   /* the console's own words: in the Log window */
-.fail .fhelp { display: flex; gap: 8px; margin-top: 8px; color: var(--ink-2); }
-.fail .fhelp svg.i { color: var(--ask); margin-top: 2px; width: 16px; height: 16px; }
-.passnote { display: none; }
+/* pass / fail */
+.big { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); }
+.big svg.i { width: 24px; height: 24px; stroke-width: 2.6; }
+.slot[data-state=pass] .t1 { color: var(--pass); }
+.slot[data-state=fail] .t1, .slot[data-state=stopped] .t1 { color: var(--fail); }
+.failwhy .t2 { white-space: normal; color: var(--ink-2); }
+.failwhy .hint { display: flex; gap: 6px; font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
+.failwhy .hint svg.i { color: var(--ask); width: 15px; height: 15px; margin-top: 2px; }
 
-/* asking or failed, the question or the reason is the whole point: the
-   stepper and the IDs step aside (the headline already names the stage) */
-.slot[data-state=ready] .meta,          /* nothing known about the box yet */
-.slot[data-state=ask] .meta, .slot[data-state=ask] .stages,
-.slot[data-state=fail] .stages, .slot[data-state=stopped] .stages { display: none; }
-.meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12.5px; margin-top: auto; }
-.meta span:nth-child(odd) { color: var(--faint); }
-.meta span:nth-child(even) { font-family: var(--mono); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.meta .sn { color: var(--ink) !important; font-weight: 600; }
-
-.logview { margin: 0; font: 12px/1.6 var(--mono); color: var(--ink-2); padding: 14px 20px;
-  overflow: auto; height: min(560px, calc(82vh - 70px)); white-space: pre-wrap; word-break: break-word; }
-
-.foot { position: relative; z-index: 1; display: flex; gap: 8px; align-items: center; padding: 12px 18px 14px; }
-.foot .elapsed { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums;
-  display: inline-flex; align-items: center; gap: 6px; }
-.foot .elapsed svg.i { width: 15px; height: 15px; }
-
-/* ---- history ---- */
+/* ---- dialogs ---- */
 dialog {
   border: 1px solid var(--line-2); border-radius: 20px; background: var(--surface-solid); color: var(--ink);
-  width: min(1120px, calc(100vw - 32px)); max-height: 82vh; padding: 0; box-shadow: 0 40px 80px -20px rgba(0,0,0,.5);
+  width: min(1180px, calc(100vw - 32px)); max-height: 86vh; padding: 0; box-shadow: 0 40px 80px -20px rgba(0,0,0,.5);
 }
 dialog::backdrop { background: rgba(5, 8, 14, .55); backdrop-filter: blur(4px); }
-dialog header { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+dialog header { display: flex; align-items: center; gap: 10px; padding: 14px 20px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 dialog header b { flex: 1; font-size: 16px; }
-.tablewrap { overflow: auto; max-height: calc(82vh - 70px); }
+.tablewrap { overflow: auto; max-height: calc(86vh - 140px); }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-th { position: sticky; top: 0; background: var(--surface-solid); color: var(--muted); font-weight: 500; font-size: 12px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--surface-solid); color: var(--muted); font-weight: 500; font-size: 12px; z-index: 1; }
 td.PASS, td.FAIL { font-weight: 600; }
 td.PASS { color: var(--pass); } td.FAIL { color: var(--fail); }
 td.mono { font-family: var(--mono); color: var(--ink-2); }
+td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
+.logview { margin: 0; font: 12px/1.6 var(--mono); color: var(--ink-2); padding: 14px 20px;
+  overflow: auto; height: min(560px, calc(82vh - 70px)); white-space: pre-wrap; word-break: break-word; }
+
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; }
+.pill.PASS { background: color-mix(in srgb, var(--pass) 15%, transparent); color: var(--pass); }
+.pill.FAIL { background: color-mix(in srgb, var(--fail) 15%, transparent); color: var(--fail); }
+.pill.INCOMPLETE { background: color-mix(in srgb, var(--ask) 15%, transparent); color: var(--ask); }
+.sdots { display: inline-flex; gap: 4px; }
+.sdots i { width: 9px; height: 9px; border-radius: 50%; background: var(--line-2); }
+.sdots i.PASS { background: var(--pass); } .sdots i.FAIL { background: var(--fail); }
+.sumbar { display: flex; gap: 10px; flex-wrap: wrap; padding: 12px 20px; border-bottom: 1px solid var(--line); align-items: center; }
+.sumbar .kpi { flex: 0 1 auto; min-width: 120px; }
+.sumbar .missing { font-size: 13px; color: var(--muted); }
+.sumbar .missing b { color: var(--ask); font-family: var(--mono); font-weight: 500; }
+.sumctl { display: flex; gap: 8px; align-items: center; }
+.sumctl input { height: 34px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface-2);
+  padding: 0 10px; font-family: var(--mono); width: 190px; outline: none; }
+.empty-row td { text-align: center; color: var(--muted); padding: 30px; }
 
 .toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 30; max-width: 90vw;
@@ -372,32 +405,25 @@ td.mono { font-family: var(--mono); color: var(--ink-2); }
 }
 .toast.ok { border-color: color-mix(in srgb, var(--pass) 50%, transparent); }
 
-/* ---- short screens: a laptop, or Windows display scaling; last, so it wins ---- */
+/* ---- short screens (a laptop, Windows display scaling): last, so it wins ---- */
 @media (max-height: 860px) {
   .top { padding-top: 10px; padding-bottom: 8px; }
   .overview { padding-bottom: 10px; gap: 10px; }
-  .kpi { padding: 5px 12px; } .kpi b { font-size: 18px; }
-  .fwbox { padding: 5px 12px; }
-  .guide { padding-bottom: 10px; }
-  .banner { margin-bottom: 10px; padding: 7px 14px; font-size: 13px; }
-  .grid { gap: 12px; padding-bottom: 14px; }
-  .head { padding-top: 10px; }
-  .num { font-size: 24px; }
-  .body { gap: 9px; padding-top: 8px; }
-  .hero { min-height: 54px; gap: 12px; }
-  .ring, .ring svg { width: 54px; height: 54px; }
-  .ring .mid { font-size: 13.5px; } .ring .mid svg.i { width: 22px; height: 22px; }
-  .headline b { font-size: 16.5px; } .headline span { font-size: 12.5px; }
-  .ask { padding: 10px 12px; } .ask p { font-size: 15.5px; margin-bottom: 8px; }
-  .ask .btns button, .ask input { height: 42px; font-size: 15px; }
-  .meta { font-size: 12px; }
-  .foot { padding: 10px 18px 12px; }
-  .btn { height: 34px; }
-  /* a short screen: a slot that asks shows the question alone (its badge
-     says why), a failed one the reason alone, so two rows of slots fit */
-  .slot[data-state=ask] .hero, .slot[data-state=fail] .meta, .slot[data-state=stopped] .meta { display: none; }
-  .ask .qlabel { display: none; }
+  .kpi { padding: 4px 12px; } .kpi b { font-size: 17px; }
+  .fwbox { padding: 4px 12px; }
   .guide { display: none; }
+  .banner { margin-bottom: 10px; padding: 6px 14px; font-size: 13px; }
+  .grid { gap: 10px; padding-bottom: 8px; }
+  .slot { gap: 6px; padding: 9px 14px 10px; }
+  .stages li { gap: 2px; }
+  .num { font-size: 24px; }
+  .ids { padding: 6px 10px; }
+  .act { min-height: 76px; padding: 7px 10px; }
+  .act .t1 { font-size: 15.5px; }
+  .ask p { font-size: 15px; }
+  .ask .btns button, .ask input { height: 38px; font-size: 14.5px; }
+  .unitpick input, .unitpick .btn { height: 34px; }
+  .btn { height: 34px; }
 }
 </style>
 </head>
@@ -405,15 +431,19 @@ td.mono { font-family: var(--mono); color: var(--ink-2); }
 <header class="top">
   <div class="brand">
     <div class="mark" data-icon="snow"></div>
-    <div class="brand-text"><b>mCOLD Station</b><span id="subtitle">สถานีผลิต · ทดสอบ ลง firmware ตั้งค่า ตรวจ</span></div>
+    <div class="brand-text"><b>mCOLD Station</b><span id="subtitle">สถานีผลิต</span></div>
   </div>
   <div class="controls">
+    <div class="ctl lot" id="lotctl" title="SN ส่วนที่เหมือนกันทั้งล็อต แต่ละช่องเติมเลขเครื่องเอง">
+      <label for="lot">ล็อต SN</label><input id="lot" type="text" autocomplete="off" spellcheck="false"><span class="suffix" id="lotsuffix">-###</span>
+    </div>
     <div class="ctl"><label for="product">สินค้า</label><select id="product"></select></div>
     <div class="ctl"><label for="stage">ขั้น</label><select id="stage"></select></div>
     <div class="ctl"><label for="operator">ผู้ทำ</label><input id="operator" type="text" placeholder="ชื่อ"></div>
   </div>
   <div class="spacer"></div>
   <span class="clock" id="clock"></span>
+  <button class="btn" id="summary"><span data-icon="list"></span>สรุป SN</button>
   <button class="btn icon ghost" id="theme" title="สว่าง / มืด" aria-label="สลับธีม"></button>
   <div class="menu" id="menu">
     <button class="btn icon ghost" id="menubtn" aria-haspopup="true" aria-label="เมนู"></button>
@@ -423,7 +453,7 @@ td.mono { font-family: var(--mono); color: var(--ink-2); }
       <button id="forgetlayout"><span data-icon="reset"></span>ล้างตำแหน่งช่อง</button>
     </div>
   </div>
-  <button class="btn go" id="startall"><span data-icon="play"></span>เริ่มทุกช่องที่พร้อม</button>
+  <button class="btn go" id="startall" title="เริ่มทุกช่องที่พร้อม"><span data-icon="play"></span>เริ่มทุกช่อง</button>
 </header>
 
 <section class="overview">
@@ -436,20 +466,35 @@ td.mono { font-family: var(--mono); color: var(--ink-2); }
 </section>
 
 <div class="guide" id="guide">
-  <span><i>1</i><b>เสียบบอร์ด</b> ลงช่องของ Dock</span>
-  <span><i>2</i><b>กดเริ่ม</b> ทีละช่อง หรือทุกช่อง</span>
-  <span><i>3</i><b>ตอบคำถาม</b> เมื่อช่องเป็น<span class="dot" style="background:var(--ask)"></span>สีเหลือง</span>
+  <span><i>1</i><b>กรอกล็อต SN</b> ครั้งเดียวต่อล็อต</span>
+  <span><i>2</i><b>เสียบกล่อง</b> แต่ละช่องได้เลขเครื่องถัดไปเอง (แก้ได้)</span>
+  <span><i>3</i><b>กดเริ่ม</b> แล้ว<b>ตอบ</b>เมื่อช่องเป็น<span class="dot" style="background:var(--ask)"></span>สีเหลือง</span>
   <span><i>4</i><span class="dot" style="background:var(--pass)"></span><b>เขียว</b> = ผ่าน ถอดได้ ·
     <span class="dot" style="background:var(--fail)"></span><b>แดง</b> = ไม่ผ่าน ดูสาเหตุในช่อง</span>
 </div>
 
-<div class="banner demo" id="demo" hidden><span data-icon="info"></span>โหมดสาธิต: บอร์ดจำลอง 5 ตัวใน 6 ช่อง · ช่อง 6 คือบอร์ดที่โพรบลอย จะไม่ผ่านขั้นทดสอบ · ไม่มีอะไรถูก flash จริง · กด "ล้าง" เพื่อใส่บอร์ดใหม่</div>
+<div class="banner demo" id="demo" hidden><span data-icon="info"></span>โหมดสาธิต: กล่องจำลอง 5 ตัวใน 6 ช่อง · ช่อง 6 คือกล่องที่ GNSS ไม่ส่งข้อมูล จะไม่ผ่านขั้นทดสอบ · ไม่มีอะไรถูก flash จริง · กด "ล้าง" เพื่อใส่กล่องใหม่</div>
+<div class="banner warn" id="lotwarn" hidden><span data-icon="info"></span>ยังไม่ได้กรอกล็อต SN: กรอกที่ช่อง "ล็อต SN" ด้านบนก่อน ไม่งั้นโปรแกรมจะถามทั้งหมายเลขในแต่ละช่อง</div>
 <div class="banner err" id="err" hidden></div>
 
 <main class="grid" id="grid"></main>
 
+<dialog id="sumdlg">
+  <header>
+    <span data-icon="list"></span><b id="sumtitle">สรุป SN</b>
+    <div class="sumctl"><input id="sumlot" placeholder="ล็อต (ว่าง = ทุกล็อต)"><button class="btn sm" id="sumgo">ดู</button></div>
+    <a class="btn sm" id="sumcsv" href="#" download><span data-icon="download"></span>CSV</a>
+    <button class="btn sm" id="sumclose">ปิด</button>
+  </header>
+  <div class="sumbar" id="sumbar"></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>SN</th><th>ผล</th><th>ขั้น</th><th>สาเหตุที่ไม่ผ่าน</th><th>MAC</th><th>Firmware</th><th>เสร็จเมื่อ</th><th>ผู้ทำ</th></tr></thead>
+    <tbody id="sumbody"></tbody>
+  </table></div>
+</dialog>
+
 <dialog id="hist">
-  <header><span data-icon="clock"></span><b>ประวัติการทำงาน · ล่าสุด 40 รายการ</b><button class="btn" id="histclose">ปิด</button></header>
+  <header><span data-icon="clock"></span><b>ประวัติการทำงาน · ล่าสุด 40 รายการ</b><button class="btn sm" id="histclose">ปิด</button></header>
   <div class="tablewrap"><table>
     <thead><tr><th>#</th><th>เวลา</th><th>ขั้น</th><th>ผล</th><th>SN</th><th>MAC</th><th>Firmware</th><th>ผู้ทำ</th></tr></thead>
     <tbody id="histbody"></tbody>
@@ -457,7 +502,7 @@ td.mono { font-family: var(--mono); color: var(--ink-2); }
 </dialog>
 
 <dialog id="logdlg">
-  <header><span data-icon="log"></span><b id="logtitle">Log</b><button class="btn" id="logclose">ปิด</button></header>
+  <header><span data-icon="log"></span><b id="logtitle">Log</b><button class="btn sm" id="logclose">ปิด</button></header>
   <pre class="logview" id="logview"></pre>
 </dialog>
 
@@ -466,29 +511,51 @@ td.mono { font-family: var(--mono); color: var(--ink-2); }
     <div class="head">
       <div class="num"></div>
       <div class="title"><b></b><span class="port"></span></div>
-      <span class="badge"></span>
+      <div class="status"><span class="badge"></span><span class="elapsed"></span></div>
+      <div class="tools">
+        <button class="btn sm icon b-log" title="Log ของช่องนี้"><span data-icon="log"></span></button>
+        <button class="btn sm icon b-stop" title="หยุด (หลังข้อที่กำลังทำจบ)"><span data-icon="stop"></span></button>
+      </div>
     </div>
-    <div class="body">
-      <div class="emptynote"><div class="plug" data-icon="plug"></div><div>ว่าง · เสียบบอร์ดที่ช่องนี้</div></div>
-      <div class="hero">
+    <div class="emptynote"><div class="plug" data-icon="plug"></div><div>ว่าง · เสียบกล่องที่ช่องนี้</div></div>
+    <div class="ids">
+      <div class="idrow"><span class="k">SN</span><span class="sn">—</span></div>
+      <div class="idrow two"><span class="k">MAC</span><span class="mac">—</span><span class="k">FW</span><span class="fwv">—</span></div>
+    </div>
+    <ol class="stages"></ol>
+    <div class="act">
+      <div class="a-ready">
+        <div class="unitpick">
+          <label>เลขเครื่อง</label>
+          <button class="btn u-dn" title="เลขว่างก่อนหน้า">−</button>
+          <input class="unit" inputmode="numeric" autocomplete="off">
+          <button class="btn u-up" title="เลขว่างถัดไป">+</button>
+        </div>
+        <div class="grow note r-note"></div>
+        <button class="btn go b-start"><span data-icon="play"></span>เริ่ม</button>
+      </div>
+      <div class="a-run">
         <div class="ring">
-          <svg viewBox="0 0 80 80"><circle class="track" cx="40" cy="40" r="34"/><circle class="val" cx="40" cy="40" r="34"/></svg>
+          <svg viewBox="0 0 52 52"><circle class="track" cx="26" cy="26" r="22"/><circle class="val" cx="26" cy="26" r="22"/></svg>
           <div class="mid"></div>
         </div>
-        <div class="headline"><b class="hl"></b><span class="sub"></span></div>
+        <div class="grow"><div class="t1 r-stage"></div><div class="t2 r-step"></div></div>
       </div>
-      <ol class="stages"></ol>
-      <div class="ask" hidden></div>
-      <div class="passnote" hidden></div>
-      <div class="fail" hidden><b class="fstep"></b><div class="fdetail"></div><div class="fhelp"><span data-icon="bulb"></span><span class="fhelptext"></span></div></div>
-      <div class="meta"><span>SN</span><span class="sn">—</span><span>MAC</span><span class="mac">—</span><span>FW</span><span class="fwv">—</span></div>
-    </div>
-    <div class="foot">
-      <button class="btn go b-start"><span data-icon="play"></span>เริ่ม</button>
-      <button class="btn b-stop"><span data-icon="stop"></span>หยุด</button>
-      <button class="btn b-clear"><span data-icon="reset"></span>ล้าง</button>
-      <button class="btn ghost b-log"><span data-icon="log"></span>Log</button>
-      <span class="elapsed"></span>
+      <div class="ask a-ask"></div>
+      <div class="a-pass">
+        <div class="big" data-icon="check"></div>
+        <div class="grow"><div class="t1">ผ่านทุกขั้น</div><div class="t2">ถอดกล่องออก แล้วเสียบตัวถัดไป</div></div>
+        <button class="btn b-clear"><span data-icon="reset"></span>ล้าง</button>
+      </div>
+      <div class="a-fail failwhy">
+        <div class="big" data-icon="x"></div>
+        <div class="grow">
+          <div class="t1 fstep"></div>
+          <div class="t2 fstage"></div>
+          <div class="hint fhelp"><span data-icon="bulb"></span><span class="fhelptext"></span></div>
+        </div>
+        <button class="btn b-clear2"><span data-icon="reset"></span>ล้าง</button>
+      </div>
     </div>
   </section>
 </template>
@@ -512,8 +579,9 @@ const ICONS = {
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
   bulb: '<path d="M9 18h6M10 21.5h4M12 2.5a6.5 6.5 0 0 0-3.8 11.8c.5.4.8 1 .8 1.7v.5h6V16c0-.7.3-1.3.8-1.7A6.5 6.5 0 0 0 12 2.5z"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
-  chip: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
+  list: '<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>',
+  download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
 };
 function icon(name) { return '<svg class="i" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>"; }
 function paintIcons(root) {
@@ -523,7 +591,7 @@ function paintIcons(root) {
 const BADGE = { empty: "ว่าง", ready: "พร้อม", running: "กำลังทำ", ask: "รอคำตอบ",
                 pass: "ผ่าน", fail: "ไม่ผ่าน", stopped: "หยุดแล้ว" };
 const KIND = { firmware: "firmware", usj: "ROM / ทดสอบ", rom: "download mode" };
-const RING = 2 * Math.PI * 34;
+const RING = 2 * Math.PI * 22;
 const grid = document.getElementById("grid");
 const openLogs = new Set();
 const cards = [];
@@ -536,7 +604,7 @@ function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { ret
 const root = document.documentElement;
 function setTheme(t) {
   root.dataset.theme = t; store("mflash.theme", t);
-  const b = document.getElementById("theme"); b.innerHTML = icon(t === "dark" ? "sun" : "moon");
+  document.getElementById("theme").innerHTML = icon(t === "dark" ? "sun" : "moon");
 }
 setTheme(load("mflash.theme") || "dark");
 document.getElementById("theme").onclick = () => setTheme(root.dataset.theme === "dark" ? "light" : "dark");
@@ -576,41 +644,66 @@ function beep() {
 }
 function fmtTime(s) { const m = Math.floor(s / 60); return m + ":" + String(s % 60).padStart(2, "0"); }
 function text(el, v) { if (el.textContent !== v) el.textContent = v; }
+function pad(n) { return n == null ? "" : String(n).padStart(state ? state.unit_digits : 3, "0"); }
+
+/* ---- lot ---- */
+const lotIn = document.getElementById("lot");
+async function saveLot() {
+  if (!state || lotIn.value.trim() === state.lot) return;
+  const j = await post("/api/lot", { lot: lotIn.value.trim() });
+  if (j.error) { lotIn.value = state.lot; } else if (lotIn.value.trim()) { toast("ล็อต " + lotIn.value.trim() + " · แต่ละช่องได้เลขเครื่องถัดไปแล้ว", true); }
+}
+lotIn.addEventListener("keydown", (e) => { if (e.key === "Enter") { lotIn.blur(); } if (e.key === "Escape") { lotIn.value = state.lot; lotIn.blur(); } });
+lotIn.addEventListener("blur", saveLot);
+lotIn.addEventListener("input", () => {
+  lotIn.value = lotIn.value.replace(/\s/g, "");
+});
 
 function makeCard(i) {
   const el = document.getElementById("slot-tpl").content.firstElementChild.cloneNode(true);
   paintIcons(el);
   const q = (s) => el.querySelector(s);
-  const c = { el, i, qid: 0, stagesKey: "", mid: "",
-    num: q(".num"), title: q(".title b"), port: q(".port"), badge: q(".badge"),
+  const c = { el, i, qid: 0, stagesKey: "", mode: "",
+    num: q(".num"), title: q(".title b"), port: q(".port"), badge: q(".badge"), elapsed: q(".elapsed"),
     sn: q(".sn"), mac: q(".mac"), fwv: q(".fwv"), stages: q(".stages"),
-    ringval: q(".ring .val"), ringmid: q(".ring .mid"), hl: q(".hl"), sub: q(".sub"), hero: q(".hero"),
-    ask: q(".ask"), fail: q(".fail"), fstep: q(".fstep"), fdetail: q(".fdetail"),
-    fhelp: q(".fhelp"), fhelptext: q(".fhelptext"), meta: q(".meta"),
-    start: q(".b-start"), stop: q(".b-stop"), clear: q(".b-clear"), logbtn: q(".b-log"), elapsed: q(".elapsed") };
+    aReady: q(".a-ready"), aRun: q(".a-run"), aAsk: q(".a-ask"), aPass: q(".a-pass"), aFail: q(".a-fail"),
+    unit: q(".unit"), up: q(".u-up"), dn: q(".u-dn"), rnote: q(".r-note"), unitpick: q(".unitpick"),
+    ringval: q(".ring .val"), ringmid: q(".ring .mid"), rstage: q(".r-stage"), rstep: q(".r-step"),
+    fstep: q(".fstep"), fstage: q(".fstage"), fhelp: q(".fhelp"), fhelptext: q(".fhelptext"),
+    start: q(".b-start"), stop: q(".b-stop"), clear: q(".b-clear"), clear2: q(".b-clear2"), logbtn: q(".b-log") };
   c.num.textContent = String(i + 1).padStart(2, "0");
   c.title.textContent = "ช่อง " + (i + 1);
   c.ringval.style.strokeDasharray = RING;
   c.ringval.style.strokeDashoffset = RING;
   c.start.onclick = () => { beep(); post("/api/start", { slot: i, operator: op.value }); };
   c.stop.onclick = () => post("/api/stop", { slot: i });
-  c.clear.onclick = () => post("/api/clear", { slot: i });
+  c.clear.onclick = c.clear2.onclick = () => post("/api/clear", { slot: i });
   c.logbtn.onclick = () => openLog(i);
+  c.up.onclick = () => post("/api/unit", { slot: i, step: 1 });
+  c.dn.onclick = () => post("/api/unit", { slot: i, step: -1 });
+  const setUnit = async () => {
+    const v = parseInt(c.unit.value, 10);
+    const cur = state && state.slots[i].unit;
+    if (!Number.isFinite(v)) { c.unit.value = pad(cur); return; }
+    if (v === cur) { c.unit.value = pad(cur); return; }
+    const j = await post("/api/unit", { slot: i, unit: v });
+    if (j.error) c.unit.value = pad(cur);
+  };
+  c.unit.addEventListener("keydown", (e) => { if (e.key === "Enter") c.unit.blur(); });
+  c.unit.addEventListener("blur", setUnit);
+  c.unit.addEventListener("input", () => { c.unit.value = c.unit.value.replace(/\D/g, "").slice(0, state ? state.unit_digits : 3); });
   grid.appendChild(el);
   return c;
 }
 
 function renderAsk(c, s) {
   const q = s.question;
-  if (!q) { c.ask.hidden = true; c.qid = 0; c.ask.innerHTML = ""; return; }
+  if (!q) { c.qid = 0; c.aAsk.innerHTML = ""; return; }
   if (c.qid === q.id) return;
-  c.qid = q.id; c.ask.hidden = false; c.ask.innerHTML = "";
-  const lab = document.createElement("div"); lab.className = "qlabel";
-  lab.insertAdjacentHTML("afterbegin", icon(q.kind === "yn" ? "help" : "chip"));
-  lab.appendChild(document.createTextNode(q.kind === "yn" ? "ตรวจแล้วตอบ" : "กรอกข้อมูล"));
+  c.qid = q.id; c.aAsk.innerHTML = "";
   const p = document.createElement("p"); p.textContent = q.text;
   const row = document.createElement("div"); row.className = "btns";
-  c.ask.append(lab, p, row);
+  c.aAsk.append(p, row);
   const send = (v) => post("/api/answer", { slot: c.i, qid: q.id, value: v }, true);
   if (q.kind === "yn") {
     const y = document.createElement("button"); y.className = "yes";
@@ -630,36 +723,25 @@ function renderAsk(c, s) {
   }
 }
 
-function headline(s) {
-  const n = s.step_total ? ` · ข้อ ${Math.min(s.step_idx + 1, s.step_total)}/${s.step_total}` : "";
-  switch (s.state) {
-    case "ready": return ["พร้อมเริ่ม", "กด เริ่ม ด้านล่าง หรือ เริ่มทุกช่องที่พร้อม"];
-    case "running": return [s.stage_label || "กำลังเริ่ม…", (s.step_name || "") + n];
-    case "ask": return ["รอคำตอบจากคุณ", s.stage_label + n];
-    case "pass": return ["ผ่านทุกขั้น", "ถอดบอร์ดออก แล้วเสียบตัวถัดไป"];
-    case "fail": return ["ไม่ผ่าน", (s.fail && s.fail.stage ? s.stages.find((x) => x.name === s.fail.stage)?.label + " · " : "") + "ดูสาเหตุด้านล่าง"];
-    case "stopped": return ["หยุดแล้ว", "กด ล้าง เพื่อเริ่มใหม่"];
-    default: return ["", ""];
-  }
-}
-
 function renderSlot(c, s) {
   if (c.el.dataset.state !== s.state) c.el.dataset.state = s.state;
   text(c.badge, s.stopping ? "กำลังหยุด…" : BADGE[s.state] || s.state);
   text(c.port, s.port ? s.port + " · " + (KIND[s.port_kind] || "") : (s.location ? "USB " + s.location : "ยังไม่ได้ผูกตำแหน่ง"));
-  text(c.sn, s.sn || "—"); text(c.mac, s.mac || "—"); text(c.fwv, s.firmware || "—");
+  const el = s.elapsed ? fmtTime(s.elapsed) : "";
+  if (c.elapsed.dataset.v !== el) { c.elapsed.dataset.v = el; c.elapsed.innerHTML = el ? icon("clock") : ""; if (el) c.elapsed.appendChild(document.createTextNode(el)); }
 
-  /* ring */
-  const pct = Math.max(0, Math.min(1, s.progress || 0));
-  c.ringval.style.strokeDashoffset = RING * (1 - (s.state === "ready" ? 0 : pct));
-  const mid = s.state === "pass" ? "icon:check" : (s.state === "fail" || s.state === "stopped") ? "icon:x"
-            : s.state === "ready" ? "icon:play" : Math.round(pct * 100) + "%";
-  if (c.mid !== mid) {
-    c.mid = mid;
-    if (mid.startsWith("icon:")) c.ringmid.innerHTML = icon(mid.slice(5)); else c.ringmid.textContent = mid;
+  /* the box, always on show */
+  const snKey = (s.sn || "") + "|" + s.sn_planned + "|" + (s.existing_sn ? 1 : 0) + "|" + s.state;
+  if (c.sn.dataset.k !== snKey) {
+    c.sn.dataset.k = snKey; c.sn.textContent = s.sn || "—";
+    if (s.sn && s.sn_planned) {
+      const em = document.createElement("em");
+      em.textContent = (s.state === "fail" || s.state === "stopped") ? "ยังไม่ได้ตั้ง" : "จะตั้ง";
+      c.sn.appendChild(em);
+    }
+    if (s.existing_sn) { const em = document.createElement("em"); em.textContent = "SN เดิม"; c.sn.appendChild(em); }
   }
-  const [hl, sub] = headline(s);
-  text(c.hl, hl); text(c.sub, sub);
+  text(c.mac, s.mac || "—"); text(c.fwv, s.firmware || "—");
 
   /* stepper */
   const key = s.stages.map((x) => x.name).join(",");
@@ -675,30 +757,43 @@ function renderSlot(c, s) {
   s.stages.forEach((x, k) => {
     const li = c.stages.children[k]; if (!li) return;
     const cls = x.result || "";
-    if (li.className !== cls) {
-      li.className = cls;
-      li.firstChild.innerHTML = cls === "PASS" ? icon("check") : cls === "FAIL" ? icon("x") : "";
-    }
+    if (li.className !== cls) { li.className = cls; li.firstChild.innerHTML = cls === "PASS" ? icon("check") : cls === "FAIL" ? icon("x") : ""; }
   });
   c.stages.hidden = !s.stages.length;
 
-  renderAsk(c, s);
-  const f = s.fail;
-  c.fail.hidden = !(f && (s.state === "fail" || s.state === "stopped"));
-  if (f) {
-    text(c.fstep, f.step || f.stage || "");
-    text(c.fdetail, f.detail || ""); text(c.fhelptext, f.help || "");
-    c.fhelp.hidden = !f.help;
+  /* the action area: exactly one of these */
+  const mode = s.state === "ready" ? "ready" : s.state === "running" ? "run" : s.state === "ask" ? "ask"
+             : s.state === "pass" ? "pass" : (s.state === "fail" || s.state === "stopped") ? "fail" : "";
+  c.aReady.hidden = mode !== "ready"; c.aRun.hidden = mode !== "run"; c.aAsk.hidden = mode !== "ask";
+  c.aPass.hidden = mode !== "pass"; c.aFail.hidden = mode !== "fail";
+
+  if (mode === "ready") {
+    const lotSet = !!state.lot;
+    c.unitpick.hidden = !lotSet || !!s.existing_sn;
+    if (document.activeElement !== c.unit) c.unit.value = pad(s.unit);
+    text(c.rnote, s.existing_sn ? "กล่องนี้มี SN แล้ว จะใช้ SN เดิม" : !lotSet ? "ยังไม่ได้กรอกล็อต SN ด้านบน" : "");
+    c.start.disabled = !s.port || !!state.profile_error || state.firmware.some((x) => !x.ok);
   }
+  if (mode === "run") {
+    const pct = Math.max(0, Math.min(1, s.progress || 0));
+    c.ringval.style.strokeDashoffset = RING * (1 - pct);
+    text(c.ringmid, Math.round(pct * 100) + "%");
+    text(c.rstage, s.stage_label || "กำลังเริ่ม…");
+    const n = s.step_total ? ` · ข้อ ${Math.min(s.step_idx + 1, s.step_total)}/${s.step_total}` : "";
+    text(c.rstep, (s.step_name || "") + n);
+  }
+  renderAsk(c, s);
+  if (mode === "fail") {
+    const f = s.fail || {};
+    text(c.fstep, s.state === "stopped" ? "หยุดแล้ว" : "ไม่ผ่าน: " + (f.step || ""));
+    const st = s.stages.find((x) => x.name === f.stage);
+    text(c.fstage, s.state === "stopped" ? "กด ล้าง เพื่อเริ่มใหม่" : (st ? "ขั้น" + st.label : ""));
+    text(c.fhelptext, f.help || ""); c.fhelp.hidden = !f.help || s.state === "stopped";
+  }
+
   const active = s.state === "running" || s.state === "ask";
-  const blocked = !!state.profile_error || state.firmware.some((x) => !x.ok);
-  c.start.hidden = s.state !== "ready";
-  c.start.disabled = !s.port || blocked;
   c.stop.hidden = !active; c.stop.disabled = s.stopping;
-  c.clear.hidden = active || s.state === "empty" || s.state === "ready";
   c.logbtn.hidden = s.state === "empty";
-  const el = s.elapsed ? fmtTime(s.elapsed) : "";
-  if (c.elapsed.dataset.v !== el) { c.elapsed.dataset.v = el; c.elapsed.innerHTML = el ? icon("clock") : ""; if (el) c.elapsed.appendChild(document.createTextNode(el)); }
 }
 
 function fillSelect(sel, opts, value) {
@@ -718,6 +813,12 @@ function render() {
   document.getElementById("stage").disabled = st.busy;
   text(document.getElementById("subtitle"), (st.product_name || "สถานีผลิต") + (st.station ? " · " + st.station : ""));
   text(document.getElementById("clock"), st.now || "");
+
+  if (document.activeElement !== lotIn && lotIn.value !== st.lot) lotIn.value = st.lot;
+  lotIn.placeholder = st.lot_example || "";
+  text(document.getElementById("lotsuffix"), "-" + "#".repeat(st.unit_digits || 3));
+  document.getElementById("lotctl").classList.toggle("empty", !st.lot);
+  document.getElementById("lotwarn").hidden = !!st.lot;
 
   const fw = document.getElementById("fw");
   const fwKey = JSON.stringify(st.firmware);
@@ -747,6 +848,7 @@ function render() {
   err.hidden = !msg; text(err, msg);
 
   while (cards.length < st.slots.length) cards.push(makeCard(cards.length));
+  st.slots.forEach((s, i) => renderSlot(cards[i], s));
   if (logSlot !== null && st.slots[logSlot] && st.slots[logSlot].log) {
     const v = document.getElementById("logview"), t = st.slots[logSlot].log.join("\n") || "(ยังไม่มี)";
     if (v.textContent !== t) {
@@ -754,7 +856,6 @@ function render() {
       v.textContent = t; if (atEnd) v.scrollTop = v.scrollHeight;
     }
   }
-  st.slots.forEach((s, i) => renderSlot(cards[i], s));
   const maxQ = Math.max(0, ...st.slots.map((s) => s.question ? s.question.id : 0));
   if (maxQ > lastQ) { lastQ = maxQ; beep(); }
   document.title = (asks ? `(${asks}) ` : "") + "mCOLD Station";
@@ -782,6 +883,8 @@ document.getElementById("savelayout").onclick = async () => {
   const j = await post("/api/layout/save"); if (j.saved) toast("บันทึกตำแหน่งช่องแล้ว", true);
 };
 document.getElementById("forgetlayout").onclick = () => post("/api/layout/forget");
+
+/* ---- log ---- */
 let logSlot = null;
 const logdlg = document.getElementById("logdlg");
 function openLog(i) {
@@ -792,6 +895,59 @@ function openLog(i) {
 }
 logdlg.addEventListener("close", () => { logSlot = null; openLogs.clear(); });
 document.getElementById("logclose").onclick = () => logdlg.close();
+
+/* ---- SN summary ---- */
+const sumdlg = document.getElementById("sumdlg");
+const sumlot = document.getElementById("sumlot");
+function fmtWhen(iso) { return (iso || "").replace("T", " ").slice(0, 16); }
+async function loadSummary() {
+  const lot = sumlot.value.trim();
+  const q = "?lot=" + encodeURIComponent(lot);
+  const sm = await (await fetch("/api/summary" + q)).json();
+  if (sm.error) { toast(sm.error); return; }
+  document.getElementById("sumcsv").href = "/api/summary.csv" + q;
+  text(document.getElementById("sumtitle"), "สรุป SN · " + (sm.lot ? "ล็อต " + sm.lot : "ทุกล็อต"));
+  const bar = document.getElementById("sumbar"); bar.innerHTML = "";
+  const withSn = sm.rows.filter((r) => r.sn).length;
+  const tiles = [["มี SN แล้ว", withSn, ""], ["ผ่านครบ", sm.counts.PASS, "k-pass"], ["ไม่ผ่าน", sm.counts.FAIL, "k-fail"],
+                 ["ยังไม่ครบขั้น", sm.counts.INCOMPLETE, "k-ask"]];
+  for (const [l, v, cls] of tiles) {
+    const k = document.createElement("div"); k.className = "kpi " + cls;
+    const sp = document.createElement("span"); sp.textContent = l; const b = document.createElement("b"); b.textContent = v;
+    k.append(sp, b); bar.appendChild(k);
+  }
+  const mis = document.createElement("div"); mis.className = "missing";
+  if (sm.missing.length) {
+    mis.appendChild(document.createTextNode("เลขเครื่องที่ข้ามไป: "));
+    const b = document.createElement("b"); b.textContent = sm.missing.map((u) => pad(u)).join(", "); mis.appendChild(b);
+  } else if (sm.lot) { mis.textContent = "ไม่มีเลขเครื่องที่ข้าม"; }
+  bar.appendChild(mis);
+
+  const tb = document.getElementById("sumbody"); tb.innerHTML = "";
+  if (!sm.rows.length) {
+    const tr = document.createElement("tr"); tr.className = "empty-row";
+    const td = document.createElement("td"); td.colSpan = 8; td.textContent = "ยังไม่มีกล่องในล็อตนี้"; tr.appendChild(td); tb.appendChild(tr);
+  }
+  for (const r of sm.rows) {
+    const tr = document.createElement("tr");
+    const add = (v, cls) => { const td = document.createElement("td"); if (v instanceof Node) td.appendChild(v); else td.textContent = v; if (cls) td.className = cls; tr.appendChild(td); return td; };
+    add(r.sn || "— (ยังไม่มี SN)", "mono");
+    const pill = document.createElement("span"); pill.className = "pill " + r.result;
+    pill.textContent = { PASS: "ผ่าน", FAIL: "ไม่ผ่าน", INCOMPLETE: "ยังไม่ครบ" }[r.result] || r.result; add(pill);
+    const dots = document.createElement("span"); dots.className = "sdots";
+    for (const s of sm.sequence) { const i = document.createElement("i"); i.className = r.stages[s.name] || ""; i.title = s.label + ": " + (r.stages[s.name] || "ยังไม่ได้ทำ"); dots.appendChild(i); }
+    add(dots);
+    add(r.fail ? `${r.fail.stage_label}: ${r.fail.step}` : "", "wrap");
+    add(r.mac, "mono"); add(r.firmware || "—", "mono"); add(fmtWhen(r.finished)); add(r.operator || "");
+    tb.appendChild(tr);
+  }
+}
+document.getElementById("summary").onclick = () => { sumlot.value = state ? state.lot : ""; sumdlg.showModal(); loadSummary(); };
+document.getElementById("sumgo").onclick = loadSummary;
+sumlot.addEventListener("keydown", (e) => { if (e.key === "Enter") loadSummary(); });
+document.getElementById("sumclose").onclick = () => sumdlg.close();
+
+/* ---- history ---- */
 const hist = document.getElementById("hist");
 document.getElementById("histclose").onclick = () => hist.close();
 document.getElementById("history").onclick = async () => {

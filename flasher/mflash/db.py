@@ -117,6 +117,56 @@ class Db:
     def steps(self, run_id: int) -> list[sqlite3.Row]:
         return self.q("SELECT * FROM step WHERE run_id=? ORDER BY idx", (run_id,))
 
+    def summary(self, product: str, sequence: list[str], prefix: str = "",
+                since: str = "") -> list[dict]:
+        """One row per box whose SN starts with `prefix` (or per box seen since
+        `since` that has no SN yet): what the line needs to know about it."""
+        if prefix:
+            devs = self.q("SELECT * FROM device WHERE product=? AND sn LIKE ? ORDER BY sn",
+                          (product, prefix.replace("%", "") + "%"))
+        else:
+            devs = self.q("SELECT * FROM device WHERE product=? AND sn IS NOT NULL ORDER BY sn",
+                          (product,))
+        if since:
+            devs += self.q("SELECT * FROM device WHERE product=? AND sn IS NULL AND last_seen>=? "
+                           "ORDER BY last_seen", (product, since))
+        out = []
+        for d in devs:
+            stages, fail, last = {}, None, None
+            for st in sequence:
+                r = self.q("SELECT * FROM run WHERE mac=? AND stage=? AND finished IS NOT NULL "
+                           "ORDER BY id DESC LIMIT 1", (d["mac"], st))
+                if not r:
+                    stages[st] = ""
+                    continue
+                r = r[0]
+                stages[st] = r["result"]
+                if not last or (r["finished"] or "") > (last["finished"] or ""):
+                    last = r
+                if r["result"] == "FAIL" and fail is None:
+                    bad = self.q("SELECT name, detail FROM step WHERE run_id=? AND result='FAIL' "
+                                 "ORDER BY idx DESC LIMIT 1", (r["id"],))
+                    fail = {"stage": st, "step": bad[0]["name"] if bad else "",
+                            "detail": bad[0]["detail"] if bad else ""}
+            vals = {v["key"]: v["val"] for v in self.q("SELECT * FROM value WHERE mac=?", (d["mac"],))}
+            fw = vals.get("firmware_production", "")
+            if fail:
+                result = "FAIL"
+            elif stages and all(v == "PASS" for v in stages.values()):
+                result = "PASS"
+            else:
+                result = "INCOMPLETE"
+            out.append({
+                "sn": d["sn"] or "", "mac": d["mac"], "chip": vals.get("chip_chip", d["chip"] or ""),
+                "firmware": fw.split("+", 1)[0], "firmware_id": fw, "result": result,
+                "stages": stages, "fail": fail,
+                "finished": last["finished"] if last else "", "operator": last["operator"] if last else "",
+                "station": last["station"] if last else "",
+                "unapproved": bool(last["unapproved"]) if last else False,
+                "first_seen": d["first_seen"],
+            })
+        return out
+
     def export_csv(self, path: str, product: str = "") -> int:
         """One row per box: SN, MAC, the last result of each stage, its values."""
         devs = self.q("SELECT * FROM device" + (" WHERE product=?" if product else "")
