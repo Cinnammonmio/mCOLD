@@ -180,6 +180,14 @@ a.btn { text-decoration: none; }
 .fwchip small { color: var(--muted); font-weight: 400; }
 .fwchip.bad { background: color-mix(in srgb, var(--fail) 14%, transparent); color: var(--fail); white-space: normal; }
 .fwchip svg.i { width: 14px; height: 14px; }
+.fwbox .fwrow { flex-wrap: nowrap; }
+.fwsel { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted);
+  min-width: 0; flex: 1 1 0; white-space: nowrap; }
+.fwsel select { height: 26px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--pass) 40%, transparent);
+  background: color-mix(in srgb, var(--pass) 10%, var(--surface-solid)); color: var(--pass); font-weight: 600;
+  font-size: 12.5px; padding: 0 6px; min-width: 0; width: 100%; max-width: 220px; outline: none; }
+.fwsel select option { color: var(--ink); background: var(--surface-solid); }
+.fwsel.bad select { border-color: var(--fail); color: var(--fail); background: color-mix(in srgb, var(--fail) 10%, var(--surface-solid)); }
 
 .guide {
   display: flex; gap: 6px 18px; flex-wrap: wrap; align-items: center; padding: 0 28px 12px;
@@ -304,7 +312,7 @@ a.btn { text-decoration: none; }
 .stages li.FAIL .node { background: var(--fail); border-color: var(--fail); color: #fff; }
 
 /* the action area: one place, kept free, for what happens now */
-.act { flex: 1; min-height: 92px; display: flex; flex-direction: column; justify-content: center;
+.act { flex: 0 0 auto; min-height: 64px; display: flex; flex-direction: column; justify-content: center;
   border-radius: 14px; padding: 10px 12px; background: color-mix(in srgb, var(--c) 7%, transparent);
   border: 1px solid color-mix(in srgb, var(--c) 22%, transparent); }
 .act > div { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -332,13 +340,13 @@ a.btn { text-decoration: none; }
 .unitpick .btn { width: 30px; height: 38px; padding: 0; border-radius: 10px; font-size: 18px; }
 .act .note { color: var(--muted); font-size: 13px; }
 
-/* ask */
+/* ask: compact, it shares the slot with everything else */
 .slot[data-state=ask] .act { background: color-mix(in srgb, var(--ask) 12%, var(--surface-solid)); border-color: color-mix(in srgb, var(--ask) 55%, transparent); }
-.ask { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
-.ask p { margin: 0; font-weight: 600; font-size: 16px; line-height: 1.4; }
-.ask .btns { display: flex; gap: 10px; }
+.ask { flex-direction: column; align-items: stretch !important; gap: 6px !important; }
+.ask p { margin: 0; font-weight: 600; font-size: 14px; line-height: 1.35; }
+.ask .btns { display: flex; gap: 8px; }
 .ask .btns button {
-  flex: 1; height: 42px; border-radius: 11px; font-size: 15.5px; font-weight: 600; cursor: pointer;
+  flex: 1; height: 34px; border-radius: 9px; font-size: 14px; font-weight: 600; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent;
 }
 .ask .yes { background: var(--pass); color: #04150d; }
@@ -346,13 +354,17 @@ a.btn { text-decoration: none; }
 .ask .no { background: transparent; color: var(--fail); border-color: color-mix(in srgb, var(--fail) 60%, transparent) !important; }
 .ask .no:hover { background: color-mix(in srgb, var(--fail) 10%, transparent); }
 .ask input {
-  flex: 1; min-width: 0; height: 42px; border-radius: 11px; padding: 0 12px; font-family: var(--mono);
-  font-size: 15px; background: var(--surface-solid); border: 1.5px solid var(--line-2); color: var(--ink); outline: none;
+  flex: 1; min-width: 0; height: 34px; border-radius: 9px; padding: 0 10px; font-family: var(--mono);
+  font-size: 14px; background: var(--surface-solid); border: 1.5px solid var(--line-2); color: var(--ink); outline: none;
 }
 .ask input:focus { border-color: var(--ask); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ask) 22%, transparent); }
-.ask .yes.ok { flex: 0 0 auto; padding: 0 20px; }
+.ask .yes.ok { flex: 0 0 auto; padding: 0 16px; }
+.ask .btns svg.i { width: 16px; height: 16px; }
 
-/* pass / fail */
+/* pass / fail, and the same box again */
+.redo { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.redo .btn { height: 26px; font-size: 12.5px; padding: 0 9px; border-radius: 8px; gap: 5px; }
+.redo .btn svg.i { width: 14px; height: 14px; }
 .big { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none;
   background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); }
 .big svg.i { width: 24px; height: 24px; stroke-width: 2.6; }
@@ -397,6 +409,33 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
   padding: 0 10px; font-family: var(--mono); width: 190px; outline: none; }
 .empty-row td { text-align: center; color: var(--muted); padding: 30px; }
 
+/* settings */
+.form { overflow: auto; max-height: calc(86vh - 70px); padding: 6px 22px 22px; }
+.form h3 { font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .3px; margin: 18px 0 8px;
+  display: flex; align-items: center; gap: 10px; }
+.form h3 .btn { margin-left: auto; }
+.frow { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.fld { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.fld > span { font-size: 11.5px; color: var(--muted); }
+.fld input, .fld select { height: 36px; border-radius: 9px; border: 1px solid var(--line-2); background: var(--surface-2);
+  padding: 0 10px; outline: none; min-width: 0; }
+.fld input:focus, .fld select:focus { border-color: var(--accent); }
+.fld input.mono { font-family: var(--mono); }
+.wifirow { padding: 10px 12px; border-radius: 12px; background: var(--surface-2); margin-bottom: 8px; }
+.wifirow .fld input, .wifirow .fld select { background: var(--surface-solid); }
+.chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); height: 36px; }
+.cfg { width: 100%; }
+.cfg td { padding: 6px 10px; }
+.cfg td.k { font-family: var(--mono); color: var(--muted); font-size: 12px; }
+.cfg td.r { color: var(--faint); font-size: 12px; }
+.cfg input { width: 110px; height: 32px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--surface-2);
+  padding: 0 8px; font-family: var(--mono); outline: none; }
+.cfg input:focus { border-color: var(--accent); }
+.formnote .mono { font-family: var(--mono); }
+.formnote { font-size: 12.5px; color: var(--muted); margin-top: 14px; line-height: 1.6; }
+.formerr { white-space: pre-line; color: var(--fail); font-size: 13px; padding: 10px 14px; border-radius: 10px;
+  background: color-mix(in srgb, var(--fail) 10%, transparent); margin-top: 12px; }
+
 .toast {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 30; max-width: 90vw;
   background: var(--surface-solid); color: var(--ink); border: 1px solid color-mix(in srgb, var(--fail) 50%, transparent);
@@ -411,6 +450,7 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
   .overview { padding-bottom: 10px; gap: 10px; }
   .kpi { padding: 4px 12px; } .kpi b { font-size: 17px; }
   .fwbox { padding: 4px 12px; }
+  .fwbox > span { display: none; }       /* each dropdown names its kind */
   .guide { display: none; }
   .banner { margin-bottom: 10px; padding: 6px 14px; font-size: 13px; }
   .grid { gap: 10px; padding-bottom: 8px; }
@@ -418,10 +458,10 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
   .stages li { gap: 2px; }
   .num { font-size: 24px; }
   .ids { padding: 6px 10px; }
-  .act { min-height: 76px; padding: 7px 10px; }
+  .act { min-height: 58px; padding: 7px 10px; }
   .act .t1 { font-size: 15.5px; }
-  .ask p { font-size: 15px; }
-  .ask .btns button, .ask input { height: 38px; font-size: 14.5px; }
+  .ask p { font-size: 13.5px; }
+  .ask .btns button, .ask input { height: 32px; font-size: 13.5px; }
   .unitpick input, .unitpick .btn { height: 34px; }
   .btn { height: 34px; }
 }
@@ -438,12 +478,13 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
       <label for="lot">ล็อต SN</label><input id="lot" type="text" autocomplete="off" spellcheck="false"><span class="suffix" id="lotsuffix">-###</span>
     </div>
     <div class="ctl"><label for="product">สินค้า</label><select id="product"></select></div>
-    <div class="ctl"><label for="stage">ขั้น</label><select id="stage"></select></div>
+    <div class="ctl"><label for="stage">โหมด</label><select id="stage"></select></div>
     <div class="ctl"><label for="operator">ผู้ทำ</label><input id="operator" type="text" placeholder="ชื่อ"></div>
   </div>
   <div class="spacer"></div>
   <span class="clock" id="clock"></span>
   <button class="btn" id="summary"><span data-icon="list"></span>สรุป SN</button>
+  <button class="btn icon ghost" id="settings" title="ตั้งค่า" aria-label="ตั้งค่า"></button>
   <button class="btn icon ghost" id="theme" title="สว่าง / มืด" aria-label="สลับธีม"></button>
   <div class="menu" id="menu">
     <button class="btn icon ghost" id="menubtn" aria-haspopup="true" aria-label="เมนู"></button>
@@ -462,7 +503,7 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
   <div class="kpi k-ask" id="k-ask-box"><span>รอคำตอบ</span><b id="k-ask">0</b></div>
   <div class="kpi k-pass"><span>ผ่าน</span><b id="k-pass">0</b></div>
   <div class="kpi k-fail"><span>ไม่ผ่าน</span><b id="k-fail">0</b></div>
-  <div class="fwbox"><span>Firmware ที่จะลง (อนุมัติแล้วเท่านั้น)</span><div class="fwrow" id="fw"></div></div>
+  <div class="fwbox"><span>Firmware ที่จะลง (เลือกได้เฉพาะที่อนุมัติแล้ว)</span><div class="fwrow" id="fw"></div></div>
 </section>
 
 <div class="guide" id="guide">
@@ -491,6 +532,43 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
     <thead><tr><th>SN</th><th>ผล</th><th>ขั้น</th><th>สาเหตุที่ไม่ผ่าน</th><th>MAC</th><th>Firmware</th><th>เสร็จเมื่อ</th><th>ผู้ทำ</th></tr></thead>
     <tbody id="sumbody"></tbody>
   </table></div>
+</dialog>
+
+<dialog id="setdlg">
+  <header>
+    <span data-icon="gear"></span><b>ตั้งค่าสถานี</b>
+    <button class="btn sm go" id="setsave"><span data-icon="check"></span>บันทึก</button>
+    <button class="btn sm" id="setclose">ปิด</button>
+  </header>
+  <div class="form" id="setform">
+    <h3>สถานี</h3>
+    <div class="frow"><label class="fld" style="width:260px"><span>ชื่อสถานี (บันทึกไว้กับทุกงาน)</span><input id="f-station"></label></div>
+
+    <h3>Wi-Fi ที่ใส่ให้ทุกกล่อง <span id="f-wcount"></span><button class="btn sm" id="f-addwifi"><span data-icon="plus"></span>เพิ่มเครือข่าย</button></h3>
+    <div id="f-wifi"></div>
+
+    <h3>Broker (MQTT)</h3>
+    <div class="frow">
+      <label class="fld" style="flex:2 1 220px"><span>Host</span><input id="f-mhost" class="mono" placeholder="ว่าง = ใช้ค่าที่ติดมากับ firmware"></label>
+      <label class="fld" style="width:100px"><span>Port</span><input id="f-mport" class="mono" inputmode="numeric"></label>
+      <label class="fld" style="flex:1 1 150px"><span>ชื่อผู้ใช้</span><input id="f-muser" class="mono" autocomplete="off"></label>
+      <label class="fld" style="flex:1 1 180px"><span>รหัสผ่าน</span><input id="f-mpass" type="password" autocomplete="new-password"></label>
+      <label class="chk"><input type="checkbox" id="f-mnopass">ไม่ใช้รหัสผ่าน</label>
+    </div>
+
+    <h3>OTA</h3>
+    <div class="frow"><label class="fld" style="flex:1 1 420px"><span>ที่อยู่ file server ของ firmware (ota base)</span><input id="f-ota" class="mono" placeholder="https://..."></label></div>
+
+    <h3>ค่าตั้งต้นของกล่อง (config set) · เว้นว่าง = ใช้ค่าของ firmware</h3>
+    <table class="cfg"><tbody id="f-cfg"></tbody></table>
+
+    <div class="formerr" id="f-err" hidden></div>
+    <div class="formnote">
+      ค่าใหม่ใช้กับงานที่เริ่ม<b>หลังบันทึก</b> · กล่องที่ทำเสร็จไปแล้ว: กด <b>ตั้งค่าใหม่</b> ในช่อง (หรือเลือกโหมด
+      "เปลี่ยนตั้งค่า") เครือข่ายที่ลบออกจากรายการนี้จะถูกลบออกจากกล่องด้วย · รหัสผ่านไม่แสดงบนหน้าจอ
+      เว้นว่าง = ใช้รหัสเดิม · บันทึกใน <span class="mono" id="f-path"></span>
+    </div>
+  </div>
 </dialog>
 
 <dialog id="hist">
@@ -544,8 +622,8 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
       <div class="ask a-ask"></div>
       <div class="a-pass">
         <div class="big" data-icon="check"></div>
-        <div class="grow"><div class="t1">ผ่านทุกขั้น</div><div class="t2">ถอดกล่องออก แล้วเสียบตัวถัดไป</div></div>
-        <button class="btn b-clear"><span data-icon="reset"></span>ล้าง</button>
+        <div class="grow"><div class="t1">ผ่านทุกขั้น</div><div class="t2">ถอดกล่องออก แล้วเสียบตัวถัดไป</div>
+          <div class="redo"><button class="btn b-clear"><span data-icon="reset"></span>ล้าง</button></div></div>
       </div>
       <div class="a-fail failwhy">
         <div class="big" data-icon="x"></div>
@@ -553,8 +631,8 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
           <div class="t1 fstep"></div>
           <div class="t2 fstage"></div>
           <div class="hint fhelp"><span data-icon="bulb"></span><span class="fhelptext"></span></div>
+          <div class="redo"><button class="btn b-clear2"><span data-icon="reset"></span>ล้าง</button></div>
         </div>
-        <button class="btn b-clear2"><span data-icon="reset"></span>ล้าง</button>
       </div>
     </div>
   </section>
@@ -582,6 +660,10 @@ const ICONS = {
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
+  flash: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
 };
 function icon(name) { return '<svg class="i" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>"; }
 function paintIcons(root) {
@@ -609,6 +691,7 @@ function setTheme(t) {
 setTheme(load("mflash.theme") || "dark");
 document.getElementById("theme").onclick = () => setTheme(root.dataset.theme === "dark" ? "light" : "dark");
 document.getElementById("menubtn").innerHTML = icon("more");
+document.getElementById("settings").innerHTML = icon("gear");
 paintIcons(document);
 
 const op = document.getElementById("operator");
@@ -791,16 +874,43 @@ function renderSlot(c, s) {
     text(c.fhelptext, f.help || ""); c.fhelp.hidden = !f.help || s.state === "stopped";
   }
 
+  /* the same box again: only one that was made (it has its SN) */
+  const redoKey = (mode === "pass" || mode === "fail") && s.sn && !s.sn_planned ? state.redo.map((m) => m.name).join(",") : "";
+  if (c.redoKey !== redoKey) {
+    c.redoKey = redoKey;
+    for (const box of [c.aPass, c.aFail]) {
+      const r = box.querySelector(".redo");
+      r.querySelectorAll(".b-redo").forEach((b) => b.remove());
+      if (!redoKey) continue;
+      for (const m of state.redo) {
+        const b = document.createElement("button"); b.className = "btn b-redo"; b.title = m.label;
+        b.innerHTML = icon(m.name === "resetup" ? "gear" : "flash");
+        b.appendChild(document.createTextNode(m.name === "resetup" ? "ตั้งค่าใหม่" : "Flash ใหม่"));
+        b.onclick = () => { beep(); post("/api/start", { slot: c.i, operator: op.value, mode: m.name }); };
+        r.insertBefore(b, r.firstChild);
+      }
+    }
+  }
+
   const active = s.state === "running" || s.state === "ask";
   c.stop.hidden = !active; c.stop.disabled = s.stopping;
   c.logbtn.hidden = s.state === "empty";
 }
 
 function fillSelect(sel, opts, value) {
-  const key = opts.map((o) => o.value + ":" + o.label).join("|");
+  const key = opts.map((o) => o.value + ":" + o.label + ":" + (o.group || "")).join("|");
   if (sel.dataset.key !== key) {
     sel.dataset.key = key; sel.innerHTML = "";
-    for (const o of opts) { const e = document.createElement("option"); e.value = o.value; e.textContent = o.label; sel.appendChild(e); }
+    const groups = {};
+    const label = { mode: "โหมด", stage: "เฉพาะขั้นเดียว" };
+    for (const o of opts) {
+      const e = document.createElement("option"); e.value = o.value; e.textContent = o.label;
+      if (o.disabled) e.disabled = true;
+      if (o.group) {
+        if (!groups[o.group]) { groups[o.group] = document.createElement("optgroup"); groups[o.group].label = label[o.group] || o.group; sel.appendChild(groups[o.group]); }
+        groups[o.group].appendChild(e);
+      } else sel.appendChild(e);
+    }
   }
   if (document.activeElement !== sel && sel.value !== value) sel.value = value;
 }
@@ -821,15 +931,27 @@ function render() {
   document.getElementById("lotwarn").hidden = !!st.lot;
 
   const fw = document.getElementById("fw");
-  const fwKey = JSON.stringify(st.firmware);
-  if (fw.dataset.key !== fwKey) {
+  const fwKey = JSON.stringify([st.firmware, st.firmware_options, st.busy]);
+  if (fw.dataset.key !== fwKey && !fw.contains(document.activeElement)) {
     fw.dataset.key = fwKey; fw.innerHTML = "";
     for (const f of st.firmware) {
-      const e = document.createElement("span"); e.className = "fwchip" + (f.ok ? "" : " bad");
-      e.innerHTML = icon(f.ok ? "check" : "x");
-      e.appendChild(document.createTextNode(f.ok ? `${f.kind} ${f.version} ` : `${f.kind}: ${f.msg}`));
-      if (f.ok) { const sm = document.createElement("small"); sm.textContent = "· " + f.by; e.appendChild(sm); }
-      e.title = f.ok ? f.id : f.msg; fw.appendChild(e);
+      const opts = st.firmware_options[f.kind] || [];
+      const lab = document.createElement("label"); lab.className = "fwsel" + (f.ok ? "" : " bad");
+      lab.appendChild(document.createTextNode({ test: "ทดสอบ", production: "จริง" }[f.kind] || f.kind));
+      const sel = document.createElement("select"); sel.disabled = st.busy;
+      const auto = document.createElement("option"); auto.value = "approved";
+      auto.textContent = opts.length ? `ล่าสุด · ${opts[0].version}` : "ยังไม่มีที่อนุมัติ";
+      auto.title = "ล่าสุดที่อนุมัติ";
+      sel.appendChild(auto);
+      for (const o of opts) {
+        const e = document.createElement("option"); e.value = o.id;
+        e.textContent = `${o.version} · ${o.by}${o.signed ? "" : " · ไม่ได้เซ็น"}`; sel.appendChild(e);
+      }
+      sel.value = f.which && f.which !== "approved" ? f.which : "approved";
+      sel.title = f.ok ? f.id : f.msg;
+      sel.onchange = async () => { const j = await post("/api/firmware", { kind: f.kind, which: sel.value }); if (j.error) fw.dataset.key = ""; };
+      lab.appendChild(sel); fw.appendChild(lab);
+      if (!f.ok) { const e = document.createElement("span"); e.className = "fwchip bad"; e.textContent = f.msg; fw.appendChild(e); }
     }
   }
   const by = (k) => st.slots.filter((s) => s.state === k).length;
@@ -946,6 +1068,101 @@ document.getElementById("summary").onclick = () => { sumlot.value = state ? stat
 document.getElementById("sumgo").onclick = loadSummary;
 sumlot.addEventListener("keydown", (e) => { if (e.key === "Enter") loadSummary(); });
 document.getElementById("sumclose").onclick = () => sumdlg.close();
+
+/* ---- settings ---- */
+const setdlg = document.getElementById("setdlg");
+let cfgKeys = {};
+function wifiRow(w) {
+  const row = document.createElement("div"); row.className = "wifirow";
+  row.dataset.old = w.ssid || ""; row.dataset.has = w.has_password ? "1" : "";
+  row.innerHTML = `
+    <div class="frow">
+      <label class="fld" style="flex:1 1 180px"><span>ชื่อเครือข่าย (SSID)</span><input class="w-ssid mono" maxlength="32"></label>
+      <label class="fld" style="flex:1 1 180px"><span>รหัสผ่าน</span><input class="w-pass" type="password" autocomplete="new-password"></label>
+      <label class="chk"><input type="checkbox" class="w-open">เครือข่ายเปิด</label>
+      <label class="fld" style="width:130px"><span>IP</span><select class="w-dhcp"><option value="1">DHCP</option><option value="0">IP คงที่</option></select></label>
+      <button class="btn sm icon w-del" title="ลบเครือข่ายนี้">${icon("trash")}</button>
+    </div>
+    <div class="frow w-fixed" style="margin-top:8px">
+      <label class="fld" style="width:150px"><span>IP</span><input class="w-ip mono"></label>
+      <label class="fld" style="width:150px"><span>Gateway</span><input class="w-gw mono"></label>
+      <label class="fld" style="width:150px"><span>Subnet</span><input class="w-sub mono" placeholder="255.255.255.0"></label>
+      <label class="fld" style="width:150px"><span>DNS (ไม่ใส่ก็ได้)</span><input class="w-dns mono"></label>
+    </div>`;
+  const q = (c) => row.querySelector(c);
+  q(".w-ssid").value = w.ssid || "";
+  q(".w-pass").placeholder = w.has_password ? "•••• ตั้งไว้แล้ว (ว่าง = ใช้เดิม)" : "8–63 ตัว";
+  q(".w-open").checked = !!w.ssid && !w.has_password;
+  q(".w-dhcp").value = w.dhcp === false ? "0" : "1";
+  q(".w-ip").value = w.ip || ""; q(".w-gw").value = w.gateway || ""; q(".w-sub").value = w.subnet || ""; q(".w-dns").value = w.dns || "";
+  const sync = () => { q(".w-fixed").hidden = q(".w-dhcp").value === "1"; q(".w-pass").disabled = q(".w-open").checked; };
+  q(".w-dhcp").onchange = sync; q(".w-open").onchange = sync; sync();
+  q(".w-del").onclick = () => { row.remove(); countWifi(); };
+  return row;
+}
+function countWifi() {
+  const n = document.querySelectorAll("#f-wifi .wifirow").length;
+  document.getElementById("f-wcount").textContent = `(${n}/5)`;
+  document.getElementById("f-addwifi").disabled = n >= 5;
+}
+async function openSettings() {
+  const d = await (await fetch("/api/settings")).json();
+  if (d.error) { toast(d.error); return; }
+  cfgKeys = d.config_keys || {};
+  document.getElementById("f-station").value = d.station || "";
+  const wl = document.getElementById("f-wifi"); wl.innerHTML = "";
+  for (const w of d.wifi) wl.appendChild(wifiRow(w));
+  countWifi();
+  document.getElementById("f-mhost").value = d.mqtt.host || "";
+  document.getElementById("f-mport").value = d.mqtt.port || 1883;
+  document.getElementById("f-muser").value = d.mqtt.username || "";
+  const mp = document.getElementById("f-mpass"); mp.value = "";
+  mp.placeholder = d.mqtt.has_password ? "•••• ตั้งไว้แล้ว (ว่าง = ใช้เดิม)" : "";
+  document.getElementById("f-mnopass").checked = !!d.mqtt.host && !d.mqtt.has_password;
+  mp.disabled = document.getElementById("f-mnopass").checked;
+  document.getElementById("f-ota").value = d.ota_base || "";
+  const tb = document.getElementById("f-cfg"); tb.innerHTML = "";
+  const keys = Object.keys(cfgKeys);
+  for (const k of Object.keys(d.config)) if (!keys.includes(k)) keys.push(k);
+  for (const k of keys) {
+    const r = cfgKeys[k] || {};
+    const tr = document.createElement("tr");
+    const td = (t, cls) => { const e = document.createElement("td"); if (cls) e.className = cls; e.textContent = t; tr.appendChild(e); return e; };
+    td(r.label || k); td(k, "k");
+    td(r.min !== undefined ? `${r.min} – ${r.max} · ค่าเดิม ${r.default}` : "", "r");
+    const inp = document.createElement("input"); inp.dataset.key = k; inp.inputMode = "numeric";
+    inp.value = d.config[k] !== undefined ? d.config[k] : ""; inp.placeholder = r.default !== undefined ? String(r.default) : "";
+    tr.appendChild(document.createElement("td")).appendChild(inp);
+    tb.appendChild(tr);
+  }
+  document.getElementById("f-path").textContent = d.path || "site.ini";
+  document.getElementById("f-err").hidden = true;
+  setdlg.showModal();
+}
+document.getElementById("f-mnopass").onchange = (e) => { document.getElementById("f-mpass").disabled = e.target.checked; };
+document.getElementById("f-addwifi").onclick = () => { document.getElementById("f-wifi").appendChild(wifiRow({ dhcp: true })); countWifi(); };
+document.getElementById("settings").onclick = openSettings;
+document.getElementById("setclose").onclick = () => setdlg.close();
+document.getElementById("setsave").onclick = async () => {
+  const wifi = [...document.querySelectorAll("#f-wifi .wifirow")].map((row) => {
+    const q = (c) => row.querySelector(c);
+    const open = q(".w-open").checked, typed = q(".w-pass").value;
+    return { ssid: q(".w-ssid").value.trim(), old_ssid: row.dataset.old, dhcp: q(".w-dhcp").value === "1",
+             password: open ? "" : (typed ? typed : (row.dataset.has ? null : "")),
+             ip: q(".w-ip").value.trim(), gateway: q(".w-gw").value.trim(), subnet: q(".w-sub").value.trim(), dns: q(".w-dns").value.trim() };
+  });
+  const nop = document.getElementById("f-mnopass").checked, mp = document.getElementById("f-mpass").value;
+  const config = {};
+  document.querySelectorAll("#f-cfg input").forEach((i) => { config[i.dataset.key] = i.value.trim(); });
+  const body = { station: document.getElementById("f-station").value.trim(), wifi,
+    mqtt: { host: document.getElementById("f-mhost").value.trim(), port: parseInt(document.getElementById("f-mport").value, 10) || 1883,
+            username: document.getElementById("f-muser").value.trim(), password: nop ? "" : (mp ? mp : null) },
+    ota_base: document.getElementById("f-ota").value.trim(), config };
+  const j = await post("/api/settings", body, true);
+  const err = document.getElementById("f-err");
+  if (j.error) { err.textContent = j.error; err.hidden = false; err.scrollIntoView({ block: "nearest" }); return; }
+  err.hidden = true; setdlg.close(); toast("บันทึกการตั้งค่าแล้ว ใช้กับงานที่เริ่มต่อจากนี้", true);
+};
 
 /* ---- history ---- */
 const hist = document.getElementById("hist");

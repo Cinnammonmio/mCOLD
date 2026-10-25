@@ -28,11 +28,12 @@ from . import profile as proflib
 from .db import Db
 from .ports import Port, UsbIds, norm_mac
 from .runner import Box, Hardware, Runner, StepFailed
-from .site import Site
+from . import site as sitelib
+from .site import Site, Wifi
 from .ui import Ui
 
 STAGE_LABELS = {"test": "ทดสอบโมดูล", "production": "ลง firmware จริง", "setup": "ตั้งค่า",
-                "verify": "ตรวจก่อนส่ง"}
+                "verify": "ตรวจก่อนส่ง", "update": "Flash ใหม่"}
 
 
 def stage_label(s: str) -> str:
@@ -165,6 +166,7 @@ class Station:
         self.slots = [Slot(i) for i in range(n_slots)]
         self.ui = SlotUi(self)
         self.lock = threading.RLock()
+        self.fw_choice: dict[str, str] = {}     # firmware kind -> library id; none = newest approved
         self.layout_path = layout_path or os.path.join(proflib.FLASHER, "records", "slots.json")
         self.stage_choice = "all"
         self.lot = ""
@@ -193,20 +195,29 @@ class Station:
                 self.stage_choice = "all"
 
     def set_stage(self, stage: str) -> None:
+        """A mode (`all`, `resetup`, ...) or stages by name, with commas."""
+        self.stages_of(stage)
+        self.stage_choice = stage
+
+    def stages_of(self, choice: str) -> list[str]:
         if not self.profile:
             raise RuntimeError(self.profile_error)
-        if stage != "all":
-            for s in stage.split(","):
-                self.profile.stage(s)
-        self.stage_choice = stage
+        mode = self.profile.mode(choice)
+        if mode is not None:
+            return mode
+        for s in choice.split(","):
+            self.profile.stage(s)
+        return choice.split(",")
 
     def stages(self) -> list[str]:
         if not self.profile:
             return []
-        return list(self.profile.sequence) if self.stage_choice == "all" else self.stage_choice.split(",")
+        return self.stages_of(self.stage_choice)
 
-    def firmware_status(self) -> list[dict]:
-        key = f"{self.profile.product if self.profile else ''}/{self.stage_choice}"
+    def firmware_status(self, stages: list[str] | None = None) -> list[dict]:
+        if stages is not None:
+            return self._firmware_status(stages)
+        key = f"{self.profile.product if self.profile else ''}/{self.stage_choice}/{sorted(self.fw_choice.items())}"
         t, k, cached = self._fw_cache
         if k == key and time.monotonic() - t < 3:
             return cached
@@ -214,24 +225,134 @@ class Station:
         self._fw_cache = (time.monotonic(), key, out)
         return out
 
-    def _firmware_status(self) -> list[dict]:
+    def _firmware_status(self, stages: list[str] | None = None) -> list[dict]:
         out = []
         if not self.profile:
             return out
         needed = []
-        for s in self.stages():
+        for s in (self.stages() if stages is None else stages):
             for st in self.profile.stage(s):
                 k = st.get("firmware")
                 if k and st["type"] in ("flash", "version") and k not in needed:
                     needed.append(k)
         for k in needed:
+            which = self.fw_choice.get(k, "approved")
             try:
-                m = fwlib.resolve(self.profile.product, k, "approved")
+                m = fwlib.resolve(self.profile.product, k, which)
+                if not m.get("approved"):
+                    raise fwlib.FirmwareError(f"{k} {m['id']} ยังไม่ได้อนุมัติ")
                 out.append({"kind": k, "ok": True, "id": m["id"], "version": m["version"],
-                            "by": m["approved"]["by"]})
+                            "by": m["approved"]["by"], "which": which})
             except fwlib.FirmwareError as e:
-                out.append({"kind": k, "ok": False, "msg": str(e)})
+                out.append({"kind": k, "ok": False, "msg": str(e), "which": which})
         return out
+
+    def firmware_options(self) -> dict[str, list[dict]]:
+        """kind -> the approved builds in the library, newest first: what the dropdown offers."""
+        t, cached = getattr(self, "_fwo_cache", (0.0, None))
+        if cached is not None and time.monotonic() - t < 3:
+            return cached
+        out = self._firmware_options()
+        self._fwo_cache = (time.monotonic(), out)
+        return out
+
+    def _firmware_options(self) -> dict[str, list[dict]]:
+        out = {}
+        if not self.profile:
+            return out
+        for k in self.profile.firmware:
+            rows = [m for m in fwlib.list_firmware(self.profile.product, k) if m.get("approved")]
+            out[k] = [{"id": m["id"], "version": m["version"], "by": m["approved"]["by"],
+                       "built": m.get("built", ""), "signed": m.get("signed", False)}
+                      for m in reversed(rows)]
+        return out
+
+    def set_firmware(self, kind: str, which: str) -> None:
+        if not self.profile or kind not in self.profile.firmware:
+            raise RuntimeError(f"ไม่มี firmware ชนิด {kind}")
+        if which != "approved":
+            m = fwlib.resolve(self.profile.product, kind, which)
+            if not m.get("approved"):
+                raise RuntimeError(f"{kind} {m['id']} ยังไม่ได้อนุมัติ เลือกไม่ได้")
+            which = m["id"]
+        with self.lock:
+            if any(s.busy for s in self.slots):
+                raise RuntimeError("มีช่องที่กำลังทำงานอยู่ เปลี่ยน firmware ไม่ได้")
+            if which == "approved":
+                self.fw_choice.pop(kind, None)
+            else:
+                self.fw_choice[kind] = which
+            self._fw_cache = (0.0, "", [])
+        self._write_settings(firmware=self.fw_choice)
+
+    # ---- the site's settings (site.ini) ---------------------------------------
+
+    def settings(self) -> dict:
+        """What the settings page edits. Passwords never leave this machine: only
+        whether one is set."""
+        st = self.site
+        keys = self.profile.config_keys if self.profile else {}
+        return {
+            "station": st.station, "path": st.path,
+            "wifi": [{"ssid": w.ssid, "has_password": bool(w.password), "dhcp": w.dhcp, "ip": w.ip,
+                      "gateway": w.gateway, "subnet": w.subnet, "dns": w.dns} for w in st.wifi],
+            "mqtt": {"host": st.mqtt.get("host", ""), "port": st.mqtt.get("port", 1883),
+                     "username": st.mqtt.get("username", ""),
+                     "has_password": bool(st.mqtt.get("password"))},
+            "ota_base": st.ota_base,
+            "config": dict(st.config),
+            "config_keys": keys,
+        }
+
+    def save_settings(self, d: dict) -> str:
+        """The settings page's form back into site.ini. A password left out (None)
+        keeps the one already saved for that network or broker."""
+        old = self.site
+        old_pw = {w.ssid: w.password for w in old.wifi}
+        wifi = []
+        for w in d.get("wifi", []):
+            ssid = str(w.get("ssid", "")).strip()
+            if not ssid:
+                continue
+            pw = w.get("password")
+            if pw is None:
+                pw = old_pw.get(str(w.get("old_ssid") or ssid), "")
+            dhcp = bool(w.get("dhcp", True))
+            wifi.append(Wifi(ssid=ssid, password=str(pw), dhcp=dhcp,
+                             ip="" if dhcp else str(w.get("ip", "")).strip(),
+                             gateway="" if dhcp else str(w.get("gateway", "")).strip(),
+                             subnet="" if dhcp else str(w.get("subnet", "")).strip(),
+                             dns="" if dhcp else str(w.get("dns", "")).strip()))
+        m = d.get("mqtt") or {}
+        mqtt = {}
+        if str(m.get("host", "")).strip():
+            pw = m.get("password")
+            mqtt = {"host": str(m["host"]).strip(), "port": int(m.get("port") or 1883),
+                    "username": str(m.get("username", "")).strip(),
+                    "password": old.mqtt.get("password", "") if pw is None else str(pw)}
+        config = {}
+        keys = self.profile.config_keys if self.profile else {}
+        bad = []
+        for k, v in (d.get("config") or {}).items():
+            if v is None or str(v).strip() == "":
+                continue
+            try:
+                n = int(str(v).strip(), 0)
+            except ValueError:
+                bad.append(f"ค่าตั้ง {k}: '{v}' ไม่ใช่ตัวเลข")
+                continue
+            r = keys.get(k)
+            if r and not r["min"] <= n <= r["max"]:
+                bad.append(f"ค่าตั้ง {k}: {n} อยู่นอกช่วง {r['min']}–{r['max']}")
+            config[k] = n
+        new = Site(station=str(d.get("station", "")).strip(), wifi=wifi, mqtt=mqtt,
+                   ota_base=str(d.get("ota_base", "")).strip(), config=config, path=old.path)
+        bad = sitelib.validate(new) + bad
+        if bad:
+            raise RuntimeError("\n".join(bad))
+        path = sitelib.save(new)
+        self.site = new           # runs started from now on use it; running ones keep theirs
+        return path
 
     def _read_settings(self) -> dict:
         try:
@@ -254,6 +375,7 @@ class Station:
         lot = d.get("lot", "")
         if lot and self.profile and self.profile.lot_ok(lot):
             self.lot = lot
+        self.fw_choice = {k: v for k, v in (d.get("firmware") or {}).items() if isinstance(v, str)}
 
     def save_layout(self) -> str:
         self._write_settings(slots=[s.location for s in self.slots])
@@ -454,26 +576,35 @@ class Station:
 
     # ---- running ------------------------------------------------------------
 
-    def start(self, i: int, operator: str = "") -> None:
+    def start(self, i: int, operator: str = "", mode: str = "") -> None:
         with self.lock:
+            stages = self.stages_of(mode) if mode else self.stages()
             s = self.slots[i]
             if not self.profile:
                 raise RuntimeError(self.profile_error)
             if s.busy:
                 raise RuntimeError(f"ช่อง {i + 1} กำลังทำงานอยู่")
+            if s.location and self.ids:
+                # the box may have changed port since the last scan (it restarts at the end of a run)
+                now = [p for p in self.hw.scan() if self.ids.ours(p) and location_key(p) == s.location]
+                s.port = now[0] if now else None
             if not s.port:
                 raise RuntimeError(f"ช่อง {i + 1} ไม่มีบอร์ด")
             if self.profile.incomplete:
                 raise RuntimeError(f"profile {self.profile.product} ยังไม่ครบ")
-            bad = [f for f in self.firmware_status() if not f["ok"]]
+            bad = [f for f in self.firmware_status(stages) if not f["ok"]]
             if bad:
                 raise RuntimeError(bad[0]["msg"])
+            prev = s.box
+            if prev and prev.sn and s.state in ("pass", "fail", "stopped"):
+                # the same box again (new settings, new firmware): its SN, not its slot's number
+                s.existing_sn, s.unit = prev.sn, None
             if s.unit is not None and not s.existing_sn:
                 who = self._used_units(but=s).get(s.unit)
                 if who:
                     raise RuntimeError(f"ช่อง {i + 1}: เลข {s.unit} ใช้แล้ว ({who}) เลือกเลขใหม่")
             s.reset()
-            s.stages = self.stages()
+            s.stages = stages
             s.results = {st: "" for st in s.stages}
             s.state = "running"
             s.started = time.time()
@@ -491,6 +622,7 @@ class Station:
 
     def _work(self, s: Slot, operator: str) -> None:
         r = Runner(self.profile, self.db, self.ui, self.site, hw=self.hw,
+                   firmware_choice=dict(self.fw_choice),
                    operator=operator or "station", station=self.site.station or "gui",
                    should_stop=s.stop.is_set, sn=self.planned_sn(s), keep_existing_sn=True)
         ok = False
@@ -577,9 +709,13 @@ class Station:
             "sn_example": p.sn.get("example", "") if p else "",
             "unit_digits": int(p.sn.get("unit_digits", 3)) if p else 3,
             "unit_max": p.unit_max if p else 999,
-            "stage_options": ([{"value": "all", "label": f"ทุกขั้น ({len(p.sequence)} ขั้น)"}]
-                + [{"value": x, "label": stage_label(x)} for x in p.stages]) if p else [],
+            "stage_options": ([{"value": m["name"], "label": m["label"], "group": "mode"}
+                               for m in (p.modes or [{"name": "all", "label": "ทุกขั้น"}])]
+                              + [{"value": x, "label": "เฉพาะ " + stage_label(x), "group": "stage"}
+                                 for x in p.stages]) if p else [],
+            "redo": [m for m in (p.modes if p else []) if m["name"] in ("resetup", "reflash_setup")],
             "firmware": self.firmware_status(),
+            "firmware_options": self.firmware_options(),
             "busy": any(s.busy for s in self.slots),
             "counts": self.counts, "station": self.site.station, "demo": self.demo,
             "now": dt.datetime.now().strftime("%H:%M:%S"),

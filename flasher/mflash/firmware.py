@@ -216,7 +216,8 @@ def list_firmware(product: str, kind: str | None = None) -> list[dict]:
             if os.path.isfile(mf):
                 with open(mf, encoding="utf-8") as f:
                     out.append(json.load(f))
-    return sorted(out, key=lambda m: m["imported"])
+    # imported in the same second (a script, a demo): the higher version is the newer
+    return sorted(out, key=lambda m: (m["imported"], version_key(m["version"])))
 
 
 def folder(m: dict) -> str:

@@ -6,6 +6,7 @@
     mflash plan mcold all                         what a run would do, without a box
     mflash run mcold all                          test -> production -> setup -> verify
     mflash run mcold verify --all-ports           every box on the bus at once
+    mflash run mcold reflash_setup                a box already made: new app and settings, same SN
     mflash history mCDV1-L0169-1069-001
     mflash export records.csv
     mflash summary mcold mCDV1-L0169-1069         every SN of a lot, its box and its result
@@ -44,8 +45,9 @@ def _profile(name: str) -> proflib.Profile:
 
 
 def _stages(p: proflib.Profile, stage: str) -> list[str]:
-    if stage == "all":
-        return list(p.sequence)
+    mode = p.mode(stage)            # all, resetup, reflash, reflash_setup ...
+    if mode is not None:
+        return mode
     out = stage.split(",")
     for s in out:
         p.stage(s)
@@ -90,7 +92,8 @@ def _describe(st: dict) -> str:
     if st.get("send"):
         bits.append(f"> {st['send']}")
     if t == "flash":
-        bits.append(f"firmware {st['firmware']}" + (", erase whole chip" if st.get("erase") else ""))
+        bits.append(f"firmware {st['firmware']}" + (", erase whole chip" if st.get("erase") else "")
+                    + (f", only {' + '.join(st['only'])}, nothing erased" if st.get("only") else ""))
     if st.get("expect"):
         bits.append("expect " + " & ".join(f"/{x}/" for x in st["expect"]))
     if st.get("forbid"):
@@ -332,7 +335,7 @@ def main(argv=None) -> None:
 
     s = sub.add_parser("run", help="run stages on boxes")
     s.add_argument("product")
-    s.add_argument("stage", help="a stage, several with commas, or 'all'")
+    s.add_argument("stage", help="a mode (all, resetup, reflash, reflash_setup) or stages with commas")
     s.add_argument("--port")
     s.add_argument("--all-ports", action="store_true", help="every box of this product on the bus")
     s.add_argument("--fw", action="append", metavar="KIND=WHICH",

@@ -51,9 +51,20 @@ class Profile:
     firmware: dict[str, FirmwareKind]
     stages: dict[str, list[dict]]
     sequence: list[str]
+    modes: list[dict] = field(default_factory=list)
+    config_keys: dict = field(default_factory=dict)
     chip_expect: dict = field(default_factory=dict)
     incomplete: list[str] = field(default_factory=list)
     path: str = ""
+
+    def mode(self, name: str) -> list[str] | None:
+        """The stages of a named mode, or None if `name` is not one."""
+        if name == "all":
+            return list(self.sequence)
+        for m in self.modes:
+            if m["name"] == name:
+                return list(m["stages"])
+        return None
 
     def stage(self, name: str) -> list[dict]:
         if name not in self.stages:
@@ -109,6 +120,9 @@ def load(product: str) -> Profile:
             flash=d["flash"], usb=d["usb"], console=d.get("console", {}),
             sn=d.get("sn", {}), firmware=fw, stages=d.get("stages", {}),
             sequence=d.get("sequence", list(d.get("stages", {}))),
+            config_keys=d.get("config_keys") or {},
+            modes=[{"name": m["name"], "label": m.get("label", m["name"]), "stages": list(m["stages"])}
+                   for m in (d.get("modes") or [])],
             chip_expect=d.get("chip_expect", {}), incomplete=d.get("incomplete", []) or [],
             path=path)
     except (KeyError, TypeError, ValueError) as e:
@@ -124,6 +138,10 @@ def validate(p: Profile) -> list[str]:
     for s in p.sequence:
         if s not in p.stages:
             out.append(f"sequence names stage '{s}', which is not defined")
+    for m in p.modes:
+        for s in m["stages"]:
+            if s not in p.stages:
+                out.append(f"mode {m['name']} names stage '{s}', which is not defined")
     for sname, steps in p.stages.items():
         for i, st in enumerate(steps or []):
             where = f"stage {sname} step {i + 1}"

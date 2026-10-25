@@ -235,3 +235,116 @@ def test_cli_summary(station, capsys, tmp_path):
     assert f"lot {LOT}: 1 SNs, 1 passed" in out and f"{LOT}-001" in out and "somchai" in out
     main(["--db", station.db.path, "summary", "mcold", LOT, "--csv", str(tmp_path / "s.csv")])
     assert (tmp_path / "s.csv").read_text(encoding="utf-8-sig").count(f"{LOT}-001") == 1
+
+
+# ---- a box made already: new settings, new firmware ------------------------
+
+def _make_one(station, slot=0):
+    station.start(slot, "t")
+    answer_until_idle(station)
+    assert station.slots[slot].state == "pass"
+    return station.bus.boxes[0]
+
+
+def test_reflash_keeps_the_sn_and_rewrites_only_the_app(station):
+    from mflash.site import Site, Wifi
+    box = _make_one(station)
+    sn = box.sn
+    station.site = Site(wifi=[Wifi("Old-AP", "password1")], path=station.site.path)
+    station.start(0, "t", mode="resetup")
+    answer_until_idle(station)
+    assert box.wifi == ["Old-AP"]
+    # the settings change: Old-AP goes, New-AP comes; the firmware is written again
+    station.site = Site(wifi=[Wifi("New-AP", "password2")], path=station.site.path)
+    esp = station.hw.esp("", {})
+    n = len(esp.writes)
+    station.start(0, "t", mode="reflash_setup")
+    answer_until_idle(station)
+    s = station.slots[0]
+    assert s.state == "pass", s.fail
+    assert s.stages == ["update", "setup", "verify"]
+    assert esp.writes[n:] == [(["ota_data_initial.bin", "firmware.bin"], False)]   # no erase
+    assert box.sn == sn and s.box.sn == sn                      # its SN, not a new number
+    assert box.wifi == ["New-AP"]
+    assert "wifi del Old-AP" in box.sent
+
+
+def test_resetup_flashes_nothing(station):
+    _make_one(station)
+    esp = station.hw.esp("", {})
+    n = len(esp.writes)
+    station.start(0, "t", mode="resetup")
+    answer_until_idle(station)
+    assert station.slots[0].state == "pass" and len(esp.writes) == n
+
+
+def test_reflash_needs_a_box_that_was_made(station):
+    station.start(1, "t", mode="reflash")              # a blank box: nothing to keep
+    answer_until_idle(station)
+    s = station.slots[1]
+    assert s.state == "fail"
+
+
+def test_firmware_dropdown(station, tmp_path):
+    from mflash import firmware as fwlib
+    from mflash import profile as proflib
+    from mflash.sim import build_dir
+    p = proflib.load("mcold")
+    m = fwlib.import_build(p, "production", build_dir(str(tmp_path / "b2"), "0.7.1-demo", "production",
+                                                      proflib.REPO))
+    opts = station.firmware_options()["production"]
+    assert [o["version"] for o in opts] == ["0.7.0-demo", "0.7.0-dev.61"]   # 0.7.1: not approved
+    with pytest.raises(RuntimeError, match="ยังไม่ได้อนุมัติ"):
+        station.set_firmware("production", m["id"])
+    fwlib.approve("mcold", "production", m["id"], "boss")
+    station._fwo_cache = (0.0, None)
+    assert [o["version"] for o in station.firmware_options()["production"]] == \
+        ["0.7.1-demo", "0.7.0-demo", "0.7.0-dev.61"]
+    old = [o for o in station.firmware_options()["production"] if o["version"] == "0.7.0-demo"][0]
+    station.set_firmware("production", old["id"])          # the older one, on purpose
+    assert [f["version"] for f in station.firmware_status() if f["kind"] == "production"] == ["0.7.0-demo"]
+    box = _make_one(station)
+    assert box.version == "0.7.0-demo"
+    station.set_firmware("production", "approved")         # back to the newest approved
+    station.start(0, "t", mode="reflash")
+    answer_until_idle(station)
+    assert station.slots[0].state == "pass" and box.version == "0.7.1-demo"
+    # the choice outlives a restart
+    station.set_firmware("production", old["id"])
+    st2 = Station("mcold", station.db, Site(), hw=station.hw, layout_path=station.layout_path)
+    assert st2.fw_choice == {"production": old["id"]}
+
+
+def test_settings_page(station, tmp_path):
+    from mflash import site as sitelib
+    from mflash.site import Wifi
+    station.site = sitelib.Site(wifi=[Wifi("Line-AP", "secret-123")],
+                                mqtt={"host": "b.example", "port": 1883, "username": "u",
+                                      "password": "mqtt-secret"},
+                                path=str(tmp_path / "site.ini"))
+    got = station.settings()
+    assert "secret-123" not in json.dumps(got) and "mqtt-secret" not in json.dumps(got)
+    assert got["wifi"][0]["has_password"] and got["mqtt"]["has_password"]
+    assert got["config_keys"]["sample_period_s"]["max"] == 3600
+    form = {"station": "line-2",
+            "wifi": [{"ssid": "Line-AP-5G", "old_ssid": "Line-AP", "password": None, "dhcp": True},
+                     {"ssid": "Office", "password": "office-pass", "dhcp": False, "ip": "10.0.0.50",
+                      "gateway": "10.0.0.1", "subnet": "255.255.255.0", "dns": ""}],
+            "mqtt": {"host": "b.example", "port": 8883, "username": "u", "password": None},
+            "ota_base": "https://files.example/mcold/", "config": {"sample_period_s": "600", "tz_offset_min": ""}}
+    path = station.save_settings(form)
+    back = sitelib.load(path)
+    assert back.station == "line-2"
+    assert [(w.ssid, w.password, w.dhcp) for w in back.wifi] == [("Line-AP-5G", "secret-123", True),
+                                                                 ("Office", "office-pass", False)]
+    assert back.wifi[1].ip == "10.0.0.50" and back.mqtt["password"] == "mqtt-secret"
+    assert back.mqtt["port"] == 8883 and back.config == {"sample_period_s": 600}
+    assert station.site.station == "line-2"                     # used from the next run on
+    for bad, msg in [({"wifi": [{"ssid": "x", "password": "short"}]}, "8–63"),
+                     ({"config": {"sample_period_s": "5"}}, "นอกช่วง"),
+                     ({"mqtt": {"host": "b", "username": "a b"}}, "ช่องว่าง"),
+                     ({"ota_base": "ftp://x"}, "OTA"),
+                     ({"wifi": [{"ssid": "o", "dhcp": False, "ip": "10.0.0.999"}]}, "IPv4")]:
+        with pytest.raises(RuntimeError, match=msg):
+            station.save_settings(bad)
+    assert sitelib.load(path).station == "line-2"               # a refused form changes nothing

@@ -22,6 +22,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from . import firmware as fwlib
 from . import profile as proflib
 from . import site as sitelib
 from .db import Db
@@ -60,6 +61,8 @@ def make_handler(station: Station):
                 self._json(station.state(log_slots=logs))
             elif u.path == "/api/history":
                 self._json(station.history())
+            elif u.path == "/api/settings":
+                self._json(station.settings())
             elif u.path in ("/api/summary", "/api/summary.csv"):
                 lot = parse_qs(u.query).get("lot", [None])[0]
                 try:
@@ -95,7 +98,11 @@ def make_handler(station: Station):
             path = urlparse(self.path).path
             try:
                 if path == "/api/start":
-                    station.start(int(a["slot"]), a.get("operator", ""))
+                    station.start(int(a["slot"]), a.get("operator", ""), a.get("mode", ""))
+                elif path == "/api/settings":
+                    return self._json({"saved": station.save_settings(a)})
+                elif path == "/api/firmware":
+                    station.set_firmware(str(a["kind"]), str(a.get("which") or "approved"))
                 elif path == "/api/start_all":
                     return self._json({"started": station.start_all(a.get("operator", ""))})
                 elif path == "/api/stop":
@@ -122,7 +129,7 @@ def make_handler(station: Station):
                     station.forget_layout()
                 else:
                     return self._json({"error": "unknown"}, 404)
-            except (RuntimeError, KeyError, ValueError, proflib.ProfileError) as e:
+            except (RuntimeError, KeyError, ValueError, proflib.ProfileError, fwlib.FirmwareError) as e:
                 return self._json({"error": str(e)}, 409)
             self._json({"ok": True})
 
@@ -152,7 +159,8 @@ def serve(product: str = "mcold", host: str = "127.0.0.1", port: int = 8765, dem
         bus = demo_setup(root, speed=speed)
         site = Site(station="demo", wifi=[Wifi("Factory-AP", "demo-password")],
                     mqtt={"host": "broker.example", "port": 1883, "username": "demo",
-                          "password": "demo-secret"})
+                          "password": "demo-secret"},
+                    path=os.path.join(root, "site.ini"))     # the demo never touches the real one
         station = Station(product, Db(os.path.join(root, "demo.db")), site, hw=SimHardware(bus),
                           layout_path=os.path.join(root, "slots.json"), demo=True)
         for i, s in enumerate(station.slots):     # a dock whose bays have been saved

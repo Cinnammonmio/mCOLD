@@ -89,6 +89,7 @@ class SimBox:
         self.version, self.elf16 = version, elf16
         self.config: dict[str, int] = {}
         self.gnss_dead = gnss_dead    # a GNSS that sends nothing: wiring or the rail
+        self.wifi: list[str] = []     # its known networks, in NVS: an app-only flash keeps them
         self.sent: list[str] = []
 
     # what is on the bus
@@ -148,7 +149,25 @@ class SimBox:
             if line == "logtest":
                 return "  ring wraps                                   pass\n\n  all passed\n"
             if line.startswith("wifi add "):
-                return f"  {line.split()[2]} stored (1 known); joins the strongest in range\n"
+                rest = line[9:]
+                ssid = rest[1:rest.index('"', 1)] if rest.startswith('"') else rest.split()[0]
+                if ssid not in self.wifi:
+                    self.wifi.append(ssid)
+                return f"  {ssid} stored ({len(self.wifi)} known); joins the strongest in range\n"
+            if line.startswith("wifi ip "):
+                parts = line.split()
+                if len(parts) >= 4 and parts[2] in self.wifi:
+                    return f"  {parts[2]}: {'DHCP' if parts[3] == 'dhcp' else 'fixed address; used at the next join'}\n"
+                return "  wifi ip SSID dhcp | wifi ip SSID IP GATEWAY SUBNET [DNS]  (a known SSID)\n"
+            if line.startswith("wifi del "):
+                ssid = line[9:].strip().strip('"')
+                if ssid in self.wifi:
+                    self.wifi.remove(ssid)
+                    return "  removed\n"
+                return "  not a known network\n"
+            if line == "wifi":
+                return ("\n  Wi-Fi      not connected (0 attempts)\n  known      "
+                        + (", ".join(self.wifi) or "none") + "\n")
             if line.startswith("mqtt set "):
                 return "  stored; connecting\n"
             if line.startswith("ota base "):
@@ -352,8 +371,10 @@ def demo_setup(root: str, speed: float = 0.4) -> SimBus:
     from . import profile as proflib
     os.environ["MFLASH_LIBRARY"] = os.path.join(root, "library")
     p = proflib.load("mcold")
-    for kind, ver in (("test", "bringup-demo"), ("production", "0.7.0-demo")):
-        d = build_dir(os.path.join(root, f"build-{kind}"), ver, kind, proflib.REPO)
+    # two production builds, so the dropdown has a choice; the newer is imported last
+    for kind, ver in (("test", "bringup-demo"), ("production", "0.7.0-dev.61"),
+                      ("production", "0.7.0-demo")):
+        d = build_dir(os.path.join(root, f"build-{kind}-{ver}"), ver, kind, proflib.REPO)
         m = fwlib.import_build(p, kind, d, {"build_dir": "demo"})
         if not m.get("approved"):
             fwlib.approve("mcold", kind, m["id"], "demo")

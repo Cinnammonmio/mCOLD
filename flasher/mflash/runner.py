@@ -11,6 +11,7 @@ port. It is followed by its MAC and SN (ports.py), never by guessing.
 from __future__ import annotations
 
 import datetime as dt
+import os
 import re
 import time
 from dataclasses import dataclass, field
@@ -336,6 +337,11 @@ class Runner:
             images = fwlib.verify_files(m)
         except fwlib.FirmwareError as e:
             raise StepFailed(str(e)) from e
+        if st.get("only"):
+            # a box already made: the app (and an otadata that boots it), nothing else
+            images = [(o, p) for o, p in images if os.path.basename(p) in st["only"]]
+            if not images:
+                raise StepFailed(f"none of {st['only']} in {kind} {m['id']}")
         self.db.update_run(run_id, firmware=f"{kind} {m['id']}")
         self.ui.info(box.label, f"  flashing {kind} {m['id']}"
                      + (" (whole chip erased first)" if st.get("erase") else ""))
@@ -459,9 +465,19 @@ class Runner:
         s = self.site
         lines: list[tuple[str, str]] = []           # (command, pattern its reply must match)
         need = set(st.get("require", []) or [])
+        out_all = ""
         if st.get("wifi", True):
             if not s.wifi and "wifi" in need:
                 raise StepFailed(f"no [wifi.N] networks in {s.path}")
+            if st.get("replace_wifi") and s.wifi:
+                # the settings changed since this box was made: forget what is not in them
+                known = parsers.wifi_known(self._cmd(box, "wifi", quiet=1.0))
+                keep = {w.ssid for w in s.wifi}
+                for ssid in known:
+                    if ssid not in keep:
+                        q = f'"{ssid}"' if " " in ssid else ssid
+                        out = self._cmd(box, f"wifi del {q}", quiet=1.0)
+                        out_all += f"> wifi del {ssid}\n{out}\n"
             for w in s.wifi:
                 ssid = f'"{w.ssid}"' if " " in w.ssid else w.ssid
                 lines.append((f"wifi add {ssid} {w.password}".rstrip(), r"stored \("))
@@ -487,7 +503,6 @@ class Runner:
         if st.get("config", True):
             for k, v in s.config.items():
                 lines.append((f"config set {k} {v}", rf"{re.escape(k)} = {v}, stored"))
-        out_all = ""
         for cmd, pat in lines:
             out = self._cmd(box, cmd, quiet=1.0)
             out_all += f"> {cmd}\n{out}\n"

@@ -62,3 +62,11 @@ def rpc_mac(text: str) -> str:
     """The MAC from `rpc {"cmd":"GET_STATUS"}` (rpc.cpp c_status: net.mac)."""
     m = re.search(r'"mac"\s*:\s*"([0-9A-Fa-f:]{17})"', text)
     return m.group(1).upper() if m else ""
+
+
+def wifi_known(text: str) -> list[str]:
+    """The known networks from `wifi` / `sync` (print_sync: "  known      a, b")."""
+    m = re.search(r"^\s+known\s+(.*)$", text, re.M)
+    if not m or m.group(1).strip() in ("", "none"):
+        return []
+    return [x.strip() for x in m.group(1).split(", ") if x.strip()]

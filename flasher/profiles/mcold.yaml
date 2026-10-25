@@ -45,6 +45,26 @@ sn:
   unit_sep: '-'
   unit_digits: 3
 
+# The settings a site may give every box (`config set`), with their ranges
+# and defaults from docs/manuals/service-manual.md section 5. The settings
+# page offers these by name and checks the range before saving.
+config_keys:
+  sample_period_s: {min: 60, max: 3600, default: 300, label: "เก็บข้อมูลทุก (วินาที)"}
+  upload_period_s: {min: 60, max: 86400, default: 300, label: "ส่งข้อมูลขึ้น server ทุก (วินาที, ใช้แบต)"}
+  gnss_period_s: {min: 300, max: 86400, default: 1800, label: "หาตำแหน่ง GNSS ทุก (วินาที, ระหว่าง trip)"}
+  tz_offset_min: {min: -720, max: 840, default: 420, label: "เขตเวลาบนจอ (นาที จาก UTC)"}
+  temp_adj_c100: {min: -1000, max: 1000, default: 0, label: "ปรับค่าอุณหภูมิ (0.01 °C)"}
+  buzzer_enabled: {min: 0, max: 1, default: 1, label: "เสียงเตือน (0 ปิด, 1 เปิด)"}
+  led_bright_pct: {min: 1, max: 100, default: 20, label: "ความสว่างไฟข้าง (%)"}
+  led_front_pct: {min: 1, max: 100, default: 2, label: "ความสว่างไฟหน้า (%)"}
+  led_status_s: {min: 60, max: 3600, default: 900, label: "กะพริบบอกว่ายังทำงานทุก (วินาที)"}
+  accel_wake_ths: {min: 1, max: 63, default: 2, label: "ความไวการเคลื่อนไหว (x31 mg)"}
+  batt_trip_mv: {min: 3000, max: 4100, default: 3550, label: "แบตต่ำกว่านี้ห้ามเริ่ม trip (mV)"}
+  batt_off_mv: {min: 3000, max: 3700, default: 3400, label: "แบตต่ำกว่านี้ปิดเครื่อง (mV)"}
+  idle_wake_s: {min: 300, max: 86400, default: 3600, label: "หลับนานสุดเมื่อไม่มีงาน (วินาที)"}
+  sleep_en: {min: 0, max: 1, default: 1, label: "Deep sleep ตอนใช้แบต (0/1)"}
+  usb_drive: {min: 0, max: 1, default: 1, label: "แสดงเป็นไดรฟ์ USB (0/1)"}
+
 chip_expect:
   flash_size: 16MB
 
@@ -74,6 +94,15 @@ firmware:
       - {offset: 0x20000, file: firmware.bin}
 
 sequence: [test, production, setup, verify]
+
+# What the station offers to run. A box already made comes back for new
+# settings or a new firmware without losing its SN, its settings or its
+# trip log: `update` writes the app alone, nothing is erased.
+modes:
+  - {name: all,           label: "ทำใหม่ทั้งหมด (กล่องใหม่)",       stages: [test, production, setup, verify]}
+  - {name: resetup,       label: "เปลี่ยนตั้งค่า (ไม่ flash)",        stages: [setup, verify]}
+  - {name: reflash,       label: "Flash ใหม่ เก็บ SN และค่าเดิม",   stages: [update, verify]}
+  - {name: reflash_setup, label: "Flash ใหม่ + ตั้งค่าใหม่",         stages: [update, setup, verify]}
 
 stages:
   # ---- 1. test the modules of an assembled box, with bringup ------------
@@ -147,6 +176,23 @@ stages:
       type: version
       firmware: production
 
+  # ---- a box already made: a new app, everything else kept ------------------
+  update:
+    - name: Flash firmware จริงใหม่ (ไม่ลบ SN ค่าตั้ง และ trip log)
+      type: flash
+      firmware: production
+      only: [ota_data_initial.bin, firmware.bin]
+      boot_timeout: 60
+    - name: เวอร์ชันตรงกับไฟล์ที่เลือก
+      type: version
+      firmware: production
+    - name: SN ยังอยู่
+      type: console
+      send: sn
+      expect: ['[A-Za-z]{3}V\d-L\d{4}-\d{4}-\d{3}']
+      forbid: ['not the factory pattern']
+      help: "ไม่มี SN: กล่องนี้ยังไม่เคยผ่านขั้นตั้งค่า ใช้โหมด ทำใหม่ทั้งหมด หรือ Flash ใหม่ + ตั้งค่าใหม่"
+
   # ---- 3. this box's settings ---------------------------------------------
   setup:
     - name: SN (ล็อต + เลขเครื่องของช่อง)
@@ -157,6 +203,7 @@ stages:
     - name: Wi-Fi, broker, OTA และค่าตั้งต้นของ site (site.ini)
       type: provision
       require: []
+      replace_wifi: true      # networks no longer in the settings are removed from the box
     - name: สอบเทียบอุณหภูมิ 1 จุด
       type: calibrate
       enabled: false        # not yet tried on a board; turn on once checked
