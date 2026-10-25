@@ -250,7 +250,7 @@ def test_sn_already_used_by_another_box(lib, tmp_path):
     db.seen("AA:BB:CC:DD:EE:FF", "mcold")
     db.set_sn("AA:BB:CC:DD:EE:FF", SN)
     assert not r.run(Box(label="1", port=box.port()), ["setup"])
-    assert "already belongs" in db.steps(db.history()[0]["id"])[0]["detail"]
+    assert "ใช้แล้วกับกล่อง AA:BB:CC:DD:EE:FF" in db.steps(db.history()[0]["id"])[0]["detail"]
 
 
 def test_reflash_from_the_product_firmware_goes_through_its_flash_command(lib, tmp_path):

@@ -13,7 +13,8 @@ import time
 
 class Ui:
     def info(self, who: str, msg: str) -> None: ...
-    def yes_no(self, who: str, question: str) -> bool: ...
+    # yes_no with repeat=True may answer None: "do it again, then ask me again"
+    def yes_no(self, who: str, question: str, repeat: bool = False) -> bool | None: ...
     def text(self, who: str, question: str, default: str = "") -> str: ...
 
     # progress, for a window that shows it; the terminal reads info() alone
@@ -35,17 +36,19 @@ class TerminalUi(Ui):
             for line in msg.splitlines() or [""]:
                 print(f"{time.strftime('%H:%M:%S')} [{who}] {line}", file=self.out, flush=True)
 
-    def yes_no(self, who: str, question: str) -> bool:
+    def yes_no(self, who: str, question: str, repeat: bool = False) -> bool | None:
         with self._lock:
             if self.assume_yes:
                 self.info(who, f"{question} -> y (--yes)")
                 return True
             while True:
-                a = input(f"\a[{who}] {question} [y/n] ").strip().lower()
+                a = input(f"\a[{who}] {question} [y/n{'/r = again' if repeat else ''}] ").strip().lower()
                 if a in ("y", "yes", "ใช่", "ผ่าน"):
                     return True
                 if a in ("n", "no", "ไม่", "ไม่ผ่าน"):
                     return False
+                if repeat and a in ("r", "again", "ซ้ำ", "ทำซ้ำ"):
+                    return None
 
     def text(self, who: str, question: str, default: str = "") -> str:
         with self._lock:
@@ -64,9 +67,12 @@ class ScriptedUi(Ui):
     def info(self, who: str, msg: str) -> None:
         self.log.append(f"[{who}] {msg}")
 
-    def yes_no(self, who: str, question: str) -> bool:
+    def yes_no(self, who: str, question: str, repeat: bool = False) -> bool | None:
         self.log.append(f"[{who}] ? {question}")
-        return bool(self.answers.pop(0)) if self.answers else True
+        if not self.answers:
+            return True
+        a = self.answers.pop(0)
+        return None if (repeat and a == "again") else bool(a)
 
     def text(self, who: str, question: str, default: str = "") -> str:
         self.log.append(f"[{who}] ? {question}")

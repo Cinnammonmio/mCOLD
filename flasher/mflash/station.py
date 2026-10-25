@@ -52,6 +52,7 @@ class Question:
     kind: str                     # "yn" or "text"
     text: str
     default: str = ""
+    repeat: bool = False          # the person may ask for the check to run again
     answer: object = None
     done: threading.Event = field(default_factory=threading.Event)
 
@@ -114,11 +115,11 @@ class SlotUi(Ui):
         for line in msg.splitlines() or [""]:
             s.log.append(time.strftime("%H:%M:%S ") + line)
 
-    def _ask(self, who: str, kind: str, text: str, default: str = ""):
+    def _ask(self, who: str, kind: str, text: str, default: str = "", repeat: bool = False):
         s = self._slot(who)
         with self._lock:
             self._qid += 1
-            q = Question(self._qid, kind, text, default)
+            q = Question(self._qid, kind, text, default, repeat=repeat)
         s.question, s.state = q, "ask"
         self.st.questions_asked += 1
         while not q.done.wait(0.2):
@@ -128,8 +129,12 @@ class SlotUi(Ui):
         s.question, s.state = None, "running"
         return q.answer
 
-    def yes_no(self, who: str, question: str) -> bool:
-        a = bool(self._ask(who, "yn", question))
+    def yes_no(self, who: str, question: str, repeat: bool = False) -> bool | None:
+        a = self._ask(who, "yn", question, repeat=repeat)
+        if repeat and a == "again":
+            self.info(who, f"  ? {question} -> ทำซ้ำ")
+            return None
+        a = bool(a)
         self.info(who, f"  ? {question} -> {'ใช่' if a else 'ไม่'}")
         return a
 
@@ -458,6 +463,27 @@ class Station:
                 raise RuntimeError("ไม่มีเลขว่างทางนั้นแล้ว")
             self.set_unit(i, u)
 
+    def unit_conflict(self, s: Slot) -> str:
+        """Who already has this slot's number, if anyone (the record may have changed
+        since the number was given: another slot finished, a summary row was deleted)."""
+        if s.unit is None or s.existing_sn or s.busy or s.state not in ("ready",):
+            return ""
+        return self._used_units(but=s).get(s.unit, "")
+
+    def delete_record(self, mac: str, by: str = "") -> dict:
+        """The SN summary's delete: the box's record goes, its number is free again."""
+        with self.lock:
+            for s in self.slots:
+                if s.busy and s.box and s.box.mac == mac:
+                    raise RuntimeError(f"กล่องนี้กำลังทำงานอยู่ในช่อง {s.index + 1} ลบไม่ได้")
+            r = self.db.delete_device(mac, by=by, reason="SN summary")
+            if not r:
+                raise RuntimeError("ไม่มีบันทึกของกล่องนี้แล้ว")
+            for s in self.slots:          # a finished slot still showing it: its SN is gone
+                if not s.busy and s.box and s.box.mac == mac and s.state in ("pass", "fail", "stopped"):
+                    s.existing_sn = ""
+            return r
+
     def planned_sn(self, s: Slot) -> str:
         if s.existing_sn:
             return s.existing_sn
@@ -684,6 +710,7 @@ class Station:
                 "sn": (box.sn if box and box.sn else self.planned_sn(s)),
                 "sn_planned": not (box and box.sn) and not s.existing_sn and bool(self.planned_sn(s)),
                 "unit": s.unit, "unit_auto": s.unit_auto, "existing_sn": s.existing_sn,
+                "unit_conflict": self.unit_conflict(s),
                 "firmware": fw,
                 # before a run, the stages it would go through, so the slot shows the plan
                 "stages": [{"name": st, "label": stage_label(st), "result": s.results.get(st, "")}
@@ -691,7 +718,8 @@ class Station:
                 "stage": s.stage, "stage_label": stage_label(s.stage),
                 "step_idx": s.step_idx, "step_total": s.step_total, "step_name": s.step_name,
                 "fail": s.fail, "stopping": s.stop.is_set() and s.busy,
-                "question": {"id": q.id, "kind": q.kind, "text": q.text, "default": q.default}
+                "question": {"id": q.id, "kind": q.kind, "text": q.text, "default": q.default,
+                             "repeat": q.repeat}
                 if q else None,
                 "elapsed": int((s.finished or time.time()) - s.started) if s.started else 0,
                 "progress": self._progress(s),

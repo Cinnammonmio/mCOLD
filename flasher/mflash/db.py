@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS step (
   type TEXT NOT NULL, result TEXT NOT NULL, detail TEXT, output TEXT, at TEXT NOT NULL,
   PRIMARY KEY (run_id, idx)
 );
+CREATE TABLE IF NOT EXISTS deleted (
+  mac TEXT NOT NULL, sn TEXT, product TEXT, runs INTEGER, by TEXT, reason TEXT, at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS value (
   mac TEXT NOT NULL, key TEXT NOT NULL, val TEXT, run_id INTEGER, at TEXT NOT NULL,
   PRIMARY KEY (mac, key)
@@ -166,6 +169,23 @@ class Db:
                 "first_seen": d["first_seen"],
             })
         return out
+
+    def delete_device(self, mac: str, by: str = "", reason: str = "") -> dict | None:
+        """Forget a box: its SN (free for another box), its runs, steps and values.
+        What was deleted, by whom and when stays in `deleted`."""
+        d = self.device(mac)
+        if not d:
+            return None
+        with self._lock:
+            n = self._c.execute("SELECT COUNT(*) FROM run WHERE mac=?", (mac,)).fetchone()[0]
+            self._c.execute("DELETE FROM step WHERE run_id IN (SELECT id FROM run WHERE mac=?)", (mac,))
+            self._c.execute("DELETE FROM run WHERE mac=?", (mac,))
+            self._c.execute("DELETE FROM value WHERE mac=?", (mac,))
+            self._c.execute("DELETE FROM device WHERE mac=?", (mac,))
+            self._c.execute("INSERT INTO deleted VALUES (?,?,?,?,?,?,?)",
+                            (mac, d["sn"], d["product"], n, by, reason, _now()))
+            self._c.commit()
+        return {"mac": mac, "sn": d["sn"], "runs": n}
 
     def export_csv(self, path: str, product: str = "") -> int:
         """One row per box: SN, MAC, the last result of each stage, its values."""

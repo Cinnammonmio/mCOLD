@@ -101,6 +101,8 @@ def make_handler(station: Station):
                     station.start(int(a["slot"]), a.get("operator", ""), a.get("mode", ""))
                 elif path == "/api/settings":
                     return self._json({"saved": station.save_settings(a)})
+                elif path == "/api/summary/delete":
+                    return self._json({"deleted": station.delete_record(str(a["mac"]), str(a.get("by", "")))})
                 elif path == "/api/firmware":
                     station.set_firmware(str(a["kind"]), str(a.get("which") or "approved"))
                 elif path == "/api/start_all":

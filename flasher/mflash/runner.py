@@ -279,15 +279,22 @@ class Runner:
         return StepResult(PASS)
 
     def step_confirm(self, box: Box, st: dict, run_id: int) -> StepResult:
+        """Run the check, ask the person; "again" runs it once more and asks again
+        (the LEDs went by while they were looking elsewhere)."""
         out = ""
-        if st.get("send"):
-            out = self._cmd(box, fill(st["send"], self._ctx(box)), quiet=st.get("quiet", 1.5),
-                            timeout=st.get("timeout", 15))
-            if st.get("expect") or st.get("forbid"):
-                self._check(out, st, box)
-        if not self.ui.yes_no(box.label, st["ask"]):
-            raise StepFailed("operator: no", out)
-        return StepResult(PASS, "", out)
+        for n in range(int(st.get("max_repeat", 10)) + 1):
+            if st.get("send"):
+                out = self._cmd(box, fill(st["send"], self._ctx(box)), quiet=st.get("quiet", 1.5),
+                                timeout=st.get("timeout", 15))
+                if st.get("expect") or st.get("forbid"):
+                    self._check(out, st, box)
+            a = self.ui.yes_no(box.label, st["ask"], repeat=bool(st.get("send")))
+            if a is None:
+                continue
+            if not a:
+                raise StepFailed("operator: no", out)
+            return StepResult(PASS, f"after {n} repeats" if n else "", out)
+        raise StepFailed("repeated too many times", out)
 
     def step_console(self, box: Box, st: dict, run_id: int) -> StepResult:
         out = self._cmd(box, fill(st["send"], self._ctx(box)), quiet=st.get("quiet", 1.5),
@@ -434,16 +441,32 @@ class Runner:
             owner = self.db.sn_owner(self.p.product, box.sn)
             if not owner or not box.mac or owner == box.mac:
                 return StepResult(PASS, f"{box.sn} (SN เดิมของเครื่อง)")
+        if self.preset_sn:
+            why = self._sn_problem(self.preset_sn.strip(), box)
+            if why:
+                raise StepFailed(why)
+            box.sn = self.preset_sn.strip()
+            return StepResult(PASS, box.sn)
+        # typed or scanned: a wrong or used one is asked again, not a failed box
+        ask = st.get("ask", "สแกน SN จากฉลาก")
         default = box.sn or ""
-        sn = self.preset_sn or self.ui.text(box.label, st.get("ask", "สแกน SN จากฉลาก"), default)
-        sn = sn.strip()
+        for _ in range(int(st.get("max_tries", 5))):
+            sn = self.ui.text(box.label, ask, default).strip()
+            why = self._sn_problem(sn, box)
+            if not why:
+                box.sn = sn
+                return StepResult(PASS, sn)
+            ask = f"{why} · สแกน SN ใหม่"
+            default = ""
+        raise StepFailed(why)
+
+    def _sn_problem(self, sn: str, box: Box) -> str:
         if not self.p.sn_ok(sn):
-            raise StepFailed(f"'{sn}' is not the SN pattern (e.g. {self.p.sn.get('example', '')})")
+            return f"'{sn}' ไม่ตรงรูปแบบ SN (เช่น {self.p.sn.get('example', '')})"
         owner = self.db.sn_owner(self.p.product, sn)
-        if owner and box.mac and owner != box.mac:
-            raise StepFailed(f"{sn} already belongs to {owner}")
-        box.sn = sn
-        return StepResult(PASS, sn)
+        if owner and owner != box.mac:
+            return f"{sn} ใช้แล้วกับกล่อง {owner}"
+        return ""
 
     def step_set_sn(self, box: Box, st: dict, run_id: int) -> StepResult:
         if not box.sn:

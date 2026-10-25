@@ -348,3 +348,70 @@ def test_settings_page(station, tmp_path):
         with pytest.raises(RuntimeError, match=msg):
             station.save_settings(bad)
     assert sitelib.load(path).station == "line-2"               # a refused form changes nothing
+
+
+# ---- again, duplicates, deleting ---------------------------------------------
+
+def test_again_runs_the_check_once_more(station):
+    station.start(0, "t", mode="test")
+    box = station.bus.boxes[0]
+    end = time.monotonic() + 5
+    while not station.slots[0].question and time.monotonic() < end:
+        time.sleep(0.01)
+    q = station.slots[0].question
+    assert q.repeat and "ไฟเขียว" in q.text and box.sent.count("walk") == 1
+    station.answer(0, q.id, "again")
+    while (not station.slots[0].question or station.slots[0].question.id == q.id) and time.monotonic() < end:
+        time.sleep(0.01)
+    assert box.sent.count("walk") == 2                 # the LEDs walked again
+    answer_until_idle(station)
+    assert station.slots[0].state == "pass"
+
+
+def test_a_typed_sn_that_is_taken_is_asked_again(station):
+    _make_one(station)                                 # LOT-001 is in the record now
+    station.set_lot("")                                # no lot: the station asks for the SN
+    station.slots[1].unit = None
+    answers = iter([f"{LOT}-001", f"{LOT}-007"])
+    asked = []
+    station.start(1, "t")
+    end = time.monotonic() + 20
+    while station.slots[1].busy and time.monotonic() < end:
+        q = station.slots[1].question
+        if q:
+            if q.kind == "text":
+                asked.append(q.text)
+                station.answer(1, q.id, next(answers))
+            else:
+                station.answer(1, q.id, True)
+        time.sleep(0.01)
+    assert station.slots[1].state == "pass", station.slots[1].fail
+    assert station.slots[1].box.sn == f"{LOT}-007"
+    assert "ใช้แล้วกับกล่อง" in asked[1]
+
+
+def test_unit_conflict_shows_before_start(station):
+    _make_one(station)                                 # slot 1 takes 001 into the record
+    station.clear(0)
+    station.slots[1].unit = 1                          # as if the record changed under it
+    st = station.state()
+    assert "ช่อง" in st["slots"][1]["unit_conflict"] or LOT in st["slots"][1]["unit_conflict"]
+    with pytest.raises(RuntimeError, match="ใช้แล้ว"):
+        station.start(1, "t")
+
+
+def test_delete_from_the_summary_frees_the_number(station):
+    box = _make_one(station)
+    assert station.summary()["rows"][0]["sn"] == f"{LOT}-001"
+    r = station.delete_record(box.mac, by="boss")
+    assert r["sn"] == f"{LOT}-001" and r["runs"] == 4
+    assert [x for x in station.summary()["rows"] if x["sn"]] == []
+    assert station.db.device(box.mac) is None
+    gone = station.db.q("SELECT * FROM deleted")
+    assert gone[0]["sn"] == f"{LOT}-001" and gone[0]["by"] == "boss"
+    with pytest.raises(RuntimeError, match="ใช้แล้ว: ช่อง 1"):
+        station.set_unit(1, 1)                         # the box carrying it is still in slot 1
+    station.clear(0)                                   # taken out
+    station.set_unit(1, 1)                             # 001 is free again
+    with pytest.raises(RuntimeError, match="ไม่มีบันทึก"):
+        station.delete_record(box.mac)
