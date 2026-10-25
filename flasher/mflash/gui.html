@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="th">
+<html lang="th" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,220 +10,418 @@
 @font-face { font-family: "Plex Thai"; font-weight: 600; src: url(/fonts/IBMPlexSansThai-SemiBold.ttf); }
 @font-face { font-family: "Plex Thai"; font-weight: 700; src: url(/fonts/IBMPlexSansThai-Bold.ttf); }
 
+/* ---- tokens: dark is the house look, light for bright rooms ---- */
 :root {
-  --bg: #eef1f4; --panel: #ffffff; --ink: #17202a; --muted: #5d6b7a; --line: #d7dde3;
-  --chip: #eef1f4;
-  --idle: #8a96a3; --run: #1f6fd1; --run-bg: #e8f1fd;
-  --ask: #b86e00; --ask-bg: #fff4dc;
-  --pass: #138a4a; --pass-bg: #e3f6eb;
-  --fail: #c62828; --fail-bg: #fdeaea;
-  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --shadow: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.08);
+  --bg: #0a0e16;
+  --bg-glow-1: rgba(56, 189, 248, .10);
+  --bg-glow-2: rgba(129, 140, 248, .08);
+  --surface: rgba(255, 255, 255, .035);
+  --surface-2: rgba(255, 255, 255, .06);
+  --surface-solid: #121826;
+  --line: rgba(255, 255, 255, .08);
+  --line-2: rgba(255, 255, 255, .14);
+  --ink: #eef2f8;
+  --ink-2: #c3ccda;
+  --muted: #8592a8;
+  --faint: #566176;
+  --accent: #7dd3fc;
+  --accent-2: #a5b4fc;
+  --on-accent: #06121f;
+  --run: #60a5fa;
+  --ask: #fbbf24;
+  --pass: #34d399;
+  --fail: #fb7185;
+  --cta-bg: #f4f7fb;
+  --cta-ink: #0a0e16;
+  --shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 20px 40px -24px rgba(0,0,0,.6);
+  --mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, Consolas, monospace;
+  --radius: 20px;
+  color-scheme: dark;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1419; --panel: #182029; --ink: #e6ebf0; --muted: #93a1b0; --line: #2a3542;
-    --chip: #222c37;
-    --run-bg: #14273f; --ask-bg: #33270f; --pass-bg: #10301f; --fail-bg: #3a1616;
-    --run: #5aa2ff; --ask: #f0a73a; --pass: #3ccf7f; --fail: #ff6b6b; --idle: #6f7d8b;
-    --shadow: none;
-  }
+:root[data-theme="light"] {
+  --bg: #f3f5f9;
+  --bg-glow-1: rgba(56, 189, 248, .14);
+  --bg-glow-2: rgba(129, 140, 248, .10);
+  --surface: rgba(255, 255, 255, .78);
+  --surface-2: #eef1f6;
+  --surface-solid: #ffffff;
+  --line: rgba(15, 23, 42, .08);
+  --line-2: rgba(15, 23, 42, .16);
+  --ink: #0f172a;
+  --ink-2: #334155;
+  --muted: #64748b;
+  --faint: #94a3b8;
+  --accent: #0284c7;
+  --accent-2: #6366f1;
+  --on-accent: #ffffff;
+  --run: #2563eb;
+  --ask: #d97706;
+  --pass: #059669;
+  --fail: #e11d48;
+  --cta-bg: #0f172a;
+  --cta-ink: #ffffff;
+  --shadow: 0 1px 2px rgba(15,23,42,.04), 0 12px 32px -16px rgba(15,23,42,.18);
+  color-scheme: light;
 }
+
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; }
+html, body { margin: 0; min-height: 100%; }
 body {
-  background: var(--bg); color: var(--ink);
-  font: 15px/1.45 "Plex Thai", "Leelawadee UI", Tahoma, system-ui, sans-serif;
-  display: flex; flex-direction: column;
+  background:
+    radial-gradient(1200px 600px at 8% -10%, var(--bg-glow-1), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, var(--bg-glow-2), transparent 55%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--ink);
+  font: 15px/1.5 "Plex Thai", "Leelawadee UI", Tahoma, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  display: flex; flex-direction: column; min-height: 100vh;
 }
 button, select, input { font: inherit; color: inherit; }
-button {
-  border: 1px solid var(--line); background: var(--panel); border-radius: 8px;
-  padding: 7px 14px; cursor: pointer; font-weight: 500;
-}
-button:hover:not(:disabled) { border-color: var(--muted); }
-button:disabled { opacity: .4; cursor: default; }
-button.primary { background: var(--run); border-color: var(--run); color: #fff; }
-select, input[type=text] {
-  border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 6px 10px;
-}
+svg.i { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round; }
+[hidden] { display: none !important; }
 
-/* ---- top bar ---- */
+/* ---- buttons ---- */
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; justify-content: center;
+  height: 38px; padding: 0 14px; border-radius: 12px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--line-2); background: var(--surface-2); color: var(--ink-2);
+  font-weight: 500; font-size: 14px; transition: background .15s, border-color .15s, transform .05s;
+}
+.btn:hover:not(:disabled) { border-color: var(--muted); color: var(--ink); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .35; cursor: default; }
+.btn.cta { background: var(--cta-bg); color: var(--cta-ink); border-color: transparent; font-weight: 600; }
+.btn.cta:hover:not(:disabled) { filter: brightness(.95); color: var(--cta-ink); }
+.btn.go { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--on-accent);
+  border-color: transparent; font-weight: 600; }
+.btn.go:hover:not(:disabled) { color: var(--on-accent); filter: brightness(1.05); }
+.btn.ghost { background: transparent; }
+.btn.icon { width: 38px; padding: 0; }
+
+/* ---- header ---- */
 .top {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
-  padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 14px 22px; flex-wrap: wrap;
+  padding: 14px 28px 12px;
 }
-.brand { font-weight: 700; font-size: 17px; letter-spacing: .2px; margin-right: 6px; }
-.brand small { font-weight: 500; color: var(--muted); margin-left: 6px; font-size: 13px; }
-.field { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
-.field select, .field input { color: var(--ink); font-size: 14px; max-width: 100%; }
-.field { min-width: 0; max-width: 100%; }
-#stage { max-width: min(360px, 70vw); }
-.fw { display: flex; gap: 6px; flex-wrap: wrap; }
-.fwchip {
-  font-size: 12.5px; padding: 3px 9px; border-radius: 999px; background: var(--pass-bg);
-  color: var(--pass); white-space: nowrap; font-weight: 500;
+.brand { display: flex; align-items: center; gap: 12px; margin-right: 6px; }
+.mark {
+  width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: var(--on-accent);
+  box-shadow: 0 8px 24px -8px var(--accent);
 }
-.fwchip.bad { background: var(--fail-bg); color: var(--fail); white-space: normal; }
+.mark svg.i { width: 22px; height: 22px; stroke-width: 2; }
+.brand-text b { display: block; font-size: 17px; letter-spacing: .2px; font-weight: 700; }
+.brand-text span { display: block; font-size: 12.5px; color: var(--muted); margin-top: -2px; }
+.controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.ctl {
+  display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 6px 0 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  backdrop-filter: blur(12px); min-width: 0; max-width: 100%;
+}
+.ctl label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.ctl select, .ctl input {
+  border: 0; background: transparent; outline: none; font-size: 14px; font-weight: 500; color: var(--ink);
+  height: 36px; min-width: 0; max-width: 100%;
+}
+.ctl select option { background: var(--surface-solid); color: var(--ink); }
+.ctl input { width: 110px; }
+.ctl:focus-within { border-color: var(--accent); }
 .spacer { flex: 1; }
-.counts { font-size: 14px; color: var(--muted); white-space: nowrap; }
-.counts b.p { color: var(--pass); } .counts b.f { color: var(--fail); }
+.clock { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 14px; letter-spacing: .5px; }
 .menu { position: relative; }
 .menu-list {
-  position: absolute; right: 0; top: calc(100% + 4px); z-index: 5; background: var(--panel);
-  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,.15);
-  padding: 6px; display: none; min-width: 220px;
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 10; min-width: 240px;
+  background: var(--surface-solid); border: 1px solid var(--line-2); border-radius: 14px;
+  box-shadow: 0 24px 48px -12px rgba(0,0,0,.45); padding: 6px; display: none;
 }
 .menu.open .menu-list { display: block; }
-.menu-list button { display: block; width: 100%; text-align: left; border: 0; }
-.menu-list button:hover { background: var(--chip); }
-.banner { padding: 7px 16px; font-size: 14px; font-weight: 500; }
-.banner.demo { background: var(--ask-bg); color: var(--ask); }
-.banner.err { background: var(--fail-bg); color: var(--fail); }
-
-/* ---- slots ---- */
-.grid {
-  flex: 1; display: grid; gap: 12px; padding: 12px 16px 16px;
-  grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(0, 1fr);
-  min-height: 0;
+.menu-list button {
+  display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 0;
+  background: transparent; border-radius: 10px; cursor: pointer; text-align: left; color: var(--ink-2);
 }
-@media (max-width: 1180px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: auto; } }
-@media (max-width: 720px) { .grid { grid-template-columns: 1fr; padding: 10px 16px; } }
+.menu-list button:hover { background: var(--surface-2); color: var(--ink); }
+
+/* ---- overview strip ---- */
+.overview { display: flex; gap: 12px; padding: 0 28px 14px; flex-wrap: wrap; align-items: stretch; }
+.kpi {
+  flex: 1 1 120px; min-width: 110px; padding: 8px 14px; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--line); backdrop-filter: blur(12px);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.kpi span { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.kpi span::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--faint)); }
+.kpi b { font-size: 22px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.kpi.k-run { --c: var(--run); } .kpi.k-ask { --c: var(--ask); } .kpi.k-pass { --c: var(--pass); }
+.kpi.k-fail { --c: var(--fail); } .kpi.k-ready { --c: var(--accent); }
+.kpi.k-ask.hot { border-color: var(--ask); background: color-mix(in srgb, var(--ask) 12%, var(--surface)); }
+.kpi.k-ask.hot b { color: var(--ask); }
+.fwbox {
+  flex: 2 1 300px; padding: 7px 14px; border-radius: 14px; background: var(--surface);
+  border: 1px solid var(--line); display: flex; flex-direction: column; justify-content: center; gap: 4px;
+  backdrop-filter: blur(12px); min-width: 0;
+}
+.fwbox > span { font-size: 11.5px; color: var(--muted); }
+.fwrow { display: flex; gap: 8px; flex-wrap: wrap; }
+.fwchip {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500;
+  padding: 3px 10px 3px 8px; border-radius: 999px; background: color-mix(in srgb, var(--pass) 14%, transparent);
+  color: var(--pass); max-width: 100%;
+}
+.fwchip small { color: var(--muted); font-weight: 400; }
+.fwchip.bad { background: color-mix(in srgb, var(--fail) 14%, transparent); color: var(--fail); white-space: normal; }
+.fwchip svg.i { width: 14px; height: 14px; }
+
+.guide.quiet { display: none; }
+.guide {
+  display: flex; gap: 6px 18px; flex-wrap: wrap; align-items: center; padding: 0 28px 14px;
+  color: var(--muted); font-size: 13px;
+}
+.guide b { color: var(--ink-2); font-weight: 500; }
+.guide i { font-style: normal; display: inline-grid; place-items: center; width: 20px; height: 20px;
+  border-radius: 50%; background: var(--surface-2); color: var(--ink-2); font-size: 11.5px; margin-right: 6px; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin: 0 4px 0 2px; vertical-align: 0; }
+
+.banner {
+  margin: 0 28px 14px; padding: 10px 16px; border-radius: 14px; font-size: 14px; font-weight: 500;
+  display: flex; gap: 10px; align-items: center;
+}
+.banner.demo { background: color-mix(in srgb, var(--accent-2) 14%, transparent); color: var(--ink-2);
+  border: 1px solid color-mix(in srgb, var(--accent-2) 30%, transparent); }
+.banner.err { background: color-mix(in srgb, var(--fail) 14%, transparent); color: var(--fail);
+  border: 1px solid color-mix(in srgb, var(--fail) 35%, transparent); }
+
+/* ---- the six slots ---- */
+.grid {
+  flex: 1; display: grid; gap: 16px; padding: 0 28px 24px;
+  grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(340px, 1fr);
+}
+@media (min-width: 1241px) and (min-height: 760px) {
+  body { height: 100vh; }
+  .grid { grid-auto-rows: minmax(0, 1fr); min-height: 0; }
+}
+@media (max-width: 1240px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .grid { grid-template-columns: 1fr; padding: 0 16px 16px; }
+  .top, .overview, .guide { padding-left: 16px; padding-right: 16px; }
+  .banner { margin-left: 16px; margin-right: 16px; }
+  .ctl input { width: 90px; }
+}
 
 .slot {
-  --c: var(--idle); --cbg: var(--panel);
-  background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
-  box-shadow: var(--shadow); display: flex; flex-direction: column; min-height: 300px;
-  overflow: hidden; position: relative;
+  --c: var(--faint);
+  position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); backdrop-filter: blur(16px);
+  transition: border-color .25s, box-shadow .25s;
 }
-.slot::before { content: ""; height: 6px; background: var(--c); flex: none; }
-.slot[data-state=running] { --c: var(--run); --cbg: var(--run-bg); }
-.slot[data-state=ask] { --c: var(--ask); --cbg: var(--ask-bg); border-color: var(--ask); }
-.slot[data-state=pass] { --c: var(--pass); --cbg: var(--pass-bg); }
-.slot[data-state=fail], .slot[data-state=stopped] { --c: var(--fail); --cbg: var(--fail-bg); }
-.slot[data-state=empty] { background: transparent; border-style: dashed; box-shadow: none; }
+.slot::after {        /* a soft wash of the state's colour from the top edge */
+  content: ""; position: absolute; inset: 0 0 auto 0; height: 120px; pointer-events: none;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 12%, transparent), transparent);
+  opacity: 0; transition: opacity .3s;
+}
+.slot[data-state=ready] { --c: var(--accent); }
+.slot[data-state=running] { --c: var(--run); }
+.slot[data-state=ask] { --c: var(--ask); border-color: color-mix(in srgb, var(--ask) 70%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ask) 40%, transparent), 0 24px 60px -24px color-mix(in srgb, var(--ask) 55%, transparent); }
+.slot[data-state=pass] { --c: var(--pass); border-color: color-mix(in srgb, var(--pass) 45%, transparent); }
+.slot[data-state=fail], .slot[data-state=stopped] { --c: var(--fail); border-color: color-mix(in srgb, var(--fail) 50%, transparent); }
+.slot:not([data-state=empty]):not([data-state=ready])::after { opacity: 1; }
+.slot[data-state=empty] { background: transparent; border: 1.5px dashed var(--line-2); box-shadow: none; backdrop-filter: none; }
+
+.head { display: flex; align-items: center; gap: 12px; padding: 14px 18px 0; position: relative; z-index: 1; }
+.num { font-size: 30px; font-weight: 300; letter-spacing: -1px; line-height: 1; color: var(--ink);
+  font-variant-numeric: tabular-nums; }
+.title { min-width: 0; flex: 1; }
+.title b { display: block; font-size: 12px; font-weight: 500; color: var(--muted); letter-spacing: .3px; }
+.port { display: block; font-size: 12px; color: var(--faint); font-family: var(--mono);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.badge {
+  display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 12px; border-radius: 999px;
+  font-size: 13px; font-weight: 600; color: var(--c); white-space: nowrap;
+  background: color-mix(in srgb, var(--c) 14%, transparent);
+}
+.badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.slot[data-state=running] .badge::before, .slot[data-state=ask] .badge::before { animation: blink 1.2s ease-in-out infinite; }
+@keyframes blink { 50% { opacity: .25; } }
+
+.body { position: relative; z-index: 1; flex: 1; min-height: 0; overflow-y: auto; padding: 10px 18px 0;
+  display: flex; flex-direction: column; gap: 12px; }
+.emptynote { margin: auto; text-align: center; color: var(--muted); display: flex; flex-direction: column;
+  align-items: center; gap: 10px; font-size: 14px; }
+.emptynote .plug { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center;
+  background: var(--surface-2); color: var(--faint); }
+.emptynote .plug svg.i { width: 26px; height: 26px; }
 .slot[data-state=empty] .body > :not(.emptynote) { display: none; }
 .slot:not([data-state=empty]) .emptynote { display: none; }
 
-.head { display: flex; align-items: center; gap: 10px; padding: 10px 14px 6px; }
-.num {
-  width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
-  background: var(--chip); font-weight: 700; font-size: 17px; flex: none;
+/* hero: the ring and what to do now */
+.hero { display: flex; align-items: center; gap: 16px; min-height: 66px; }
+.ring { position: relative; width: 66px; height: 66px; flex: none; }
+.ring svg { width: 66px; height: 66px; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 6; }
+.ring .track { stroke: var(--line-2); }
+.ring .val { stroke: var(--c); stroke-linecap: round; transition: stroke-dashoffset .5s ease, stroke .3s; }
+.ring .mid { position: absolute; inset: 0; display: grid; place-items: center; font-size: 16px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--ink); }
+.ring .mid svg.i { width: 28px; height: 28px; stroke-width: 2.4; color: var(--c); transform: none; }
+.headline { min-width: 0; flex: 1; }
+.headline b { display: block; font-size: 19px; font-weight: 600; line-height: 1.3; }
+.headline span { display: block; color: var(--muted); font-size: 13.5px; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.slot[data-state=pass] .headline b { color: var(--pass); }
+.slot[data-state=fail] .headline b, .slot[data-state=stopped] .headline b { color: var(--fail); }
+.slot[data-state=ask] .headline b { color: var(--ask); }
+
+/* stepper */
+.stages { list-style: none; margin: 0; padding: 0; display: flex; }
+.stages li { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px;
+  font-size: 11.5px; color: var(--faint); text-align: center; min-width: 0; }
+.stages li::before {             /* the line to the previous node */
+  content: ""; position: absolute; top: 10px; right: 50%; width: 100%; height: 2px; background: var(--surface-2);
+  z-index: 0;
 }
-.slot[data-state=pass] .num, .slot[data-state=fail] .num, .slot[data-state=running] .num,
-.slot[data-state=ask] .num, .slot[data-state=stopped] .num { background: var(--c); color: #fff; }
-.title { min-width: 0; flex: 1; }
-.title b { display: block; font-size: 15px; }
-.port { color: var(--muted); font-size: 12.5px; font-family: var(--mono); white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; display: block; }
-.badge {
-  font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
-  background: var(--cbg); color: var(--c); white-space: nowrap; border: 1px solid transparent;
-}
-.slot[data-state=ready] .badge, .slot[data-state=empty] .badge { background: var(--chip); color: var(--muted); }
+.stages li:first-child::before { display: none; }
+.stages li.PASS::before, .stages li.running::before, .stages li.FAIL::before { background: color-mix(in srgb, var(--pass) 60%, transparent); }
+.stages li .node { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; z-index: 1;
+  background: var(--surface-solid); border: 2px solid var(--line-2); color: transparent; }
+.stages li .node svg.i { width: 13px; height: 13px; stroke-width: 3; }
+.stages li .lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; padding: 0 2px; }
+.stages li.running { color: var(--ink); font-weight: 600; }
+.stages li.running .node { border-color: var(--run); box-shadow: 0 0 0 4px color-mix(in srgb, var(--run) 25%, transparent); }
+.stages li.running .node::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--run); }
+.stages li.PASS { color: var(--ink-2); }
+.stages li.PASS .node { background: var(--pass); border-color: var(--pass); color: var(--on-accent); }
+.stages li.FAIL { color: var(--fail); font-weight: 600; }
+.stages li.FAIL .node { background: var(--fail); border-color: var(--fail); color: #fff; }
 
-.body { padding: 0 14px; display: flex; flex-direction: column; gap: 8px; flex: 1; min-height: 0;
-  overflow-y: auto; }
-.emptynote { color: var(--muted); margin: auto; text-align: center; font-size: 14px; }
-.ids { display: grid; grid-template-columns: auto 1fr; gap: 0 10px; font-size: 13px; }
-.ids span:nth-child(odd) { color: var(--muted); }
-.ids span:nth-child(even) { font-family: var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.stages { display: flex; gap: 4px; list-style: none; margin: 2px 0 0; padding: 0; }
-.stages li {
-  flex: 1; font-size: 12px; text-align: center; padding: 4px 2px; border-radius: 6px;
-  background: var(--chip); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.stages li.running { background: var(--run); color: #fff; }
-.stages li.PASS { background: var(--pass-bg); color: var(--pass); font-weight: 600; }
-.stages li.FAIL { background: var(--fail); color: #fff; font-weight: 600; }
-.stages li.PASS::before { content: "✓ "; }
-.stages li.FAIL::before { content: "✗ "; }
-
-.now { font-size: 13.5px; }
-.stepline { display: flex; gap: 8px; justify-content: space-between; }
-.stepname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stepcount { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.bar { height: 6px; border-radius: 3px; background: var(--chip); margin-top: 4px; overflow: hidden; }
-.bar i { display: block; height: 100%; width: 0; background: var(--c); transition: width .3s; }
-
+/* the question */
 .ask {
-  background: var(--ask-bg); border: 1px solid var(--ask); border-radius: 10px; padding: 10px 12px;
-  animation: pulse 1.6s ease-in-out infinite;
+  border-radius: 16px; padding: 12px 14px; position: relative;
+  background: color-mix(in srgb, var(--ask) 12%, var(--surface-solid));
+  border: 1px solid color-mix(in srgb, var(--ask) 55%, transparent);
 }
-@keyframes pulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--ask) 25%, transparent); } }
-.ask p { margin: 0 0 8px; font-weight: 600; font-size: 15.5px; }
-.ask .btns { display: flex; gap: 8px; }
-.ask .btns button { flex: 1; padding: 10px; font-size: 16px; font-weight: 600; }
-.ask .yes { background: var(--pass); border-color: var(--pass); color: #fff; }
-.ask .no { background: var(--panel); border-color: var(--fail); color: var(--fail); }
-.ask input { flex: 1; min-width: 0; font-family: var(--mono); font-size: 15px; }
-
-.fail { background: var(--fail-bg); border-radius: 10px; padding: 8px 12px; font-size: 13.5px; }
-.fail b { color: var(--fail); display: block; }
-.fail .fdetail { font-family: var(--mono); font-size: 12.5px; word-break: break-word; }
-.fail .fhelp { margin-top: 4px; }
-.passnote { background: var(--pass-bg); color: var(--pass); border-radius: 10px; padding: 10px 12px;
-  font-weight: 600; text-align: center; }
-
-.log {
-  margin: 0; font: 11.5px/1.4 var(--mono); background: var(--chip); border-radius: 8px;
-  padding: 8px; overflow: auto; max-height: 160px; min-height: 80px; white-space: pre-wrap; flex: none;
-  word-break: break-word;
+.ask .qlabel { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ask); font-weight: 600;
+  letter-spacing: .3px; margin-bottom: 4px; }
+.ask p { margin: 0 0 10px; font-weight: 600; font-size: 17px; line-height: 1.4; color: var(--ink); }
+.ask .btns { display: flex; gap: 10px; }
+.ask .btns button {
+  flex: 1; height: 46px; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent;
 }
-.foot { display: flex; gap: 6px; align-items: center; padding: 10px 14px 12px; margin-top: auto; }
-.foot .elapsed { margin-left: auto; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
-[hidden] { display: none !important; }
+.ask .yes { background: var(--pass); color: #04150d; }
+.ask .yes:hover { filter: brightness(1.06); }
+.ask .no { background: transparent; color: var(--fail); border-color: color-mix(in srgb, var(--fail) 60%, transparent) !important; }
+.ask .no:hover { background: color-mix(in srgb, var(--fail) 10%, transparent); }
+.ask input {
+  flex: 1; min-width: 0; height: 48px; border-radius: 12px; padding: 0 14px; font-family: var(--mono);
+  font-size: 16px; background: var(--surface-solid); border: 1.5px solid var(--line-2); color: var(--ink); outline: none;
+}
+.ask input:focus { border-color: var(--ask); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ask) 22%, transparent); }
+.ask .yes.ok { flex: 0 0 auto; padding: 0 22px; }
+
+.fail { border-radius: 14px; padding: 12px 14px; background: color-mix(in srgb, var(--fail) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--fail) 30%, transparent); font-size: 13.5px; }
+.fail b { display: block; color: var(--fail); font-size: 14px; }
+.fail .fdetail { font-family: var(--mono); font-size: 12px; color: var(--ink-2); margin-top: 4px; word-break: break-word; }
+.fail .fhelp { display: flex; gap: 8px; margin-top: 8px; color: var(--ink-2); }
+.fail .fhelp svg.i { color: var(--ask); margin-top: 2px; width: 16px; height: 16px; }
+.passnote { display: none; }
+
+/* asking or failed, the question or the reason is the whole point: the
+   stepper and the IDs step aside (the headline already names the stage) */
+.slot[data-state=ask] .meta, .slot[data-state=ask] .stages,
+.slot[data-state=fail] .stages, .slot[data-state=stopped] .stages { display: none; }
+.meta { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 12.5px; margin-top: auto; }
+.meta span:nth-child(odd) { color: var(--faint); }
+.meta span:nth-child(even) { font-family: var(--mono); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta .sn { color: var(--ink) !important; font-weight: 600; }
+
+.log { margin: 0; font: 11.5px/1.5 var(--mono); background: var(--surface-2); border-radius: 12px; color: var(--ink-2);
+  padding: 10px 12px; overflow: auto; max-height: 170px; min-height: 90px; white-space: pre-wrap; word-break: break-word; flex: none; }
+
+.foot { position: relative; z-index: 1; display: flex; gap: 8px; align-items: center; padding: 12px 18px 14px; }
+.foot .elapsed { margin-left: auto; color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: center; gap: 6px; }
+.foot .elapsed svg.i { width: 15px; height: 15px; }
 
 /* ---- history ---- */
 dialog {
-  border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink);
-  width: min(1100px, calc(100vw - 32px)); max-height: 80vh; padding: 0;
+  border: 1px solid var(--line-2); border-radius: 20px; background: var(--surface-solid); color: var(--ink);
+  width: min(1120px, calc(100vw - 32px)); max-height: 82vh; padding: 0; box-shadow: 0 40px 80px -20px rgba(0,0,0,.5);
 }
-dialog::backdrop { background: rgba(0,0,0,.35); }
-dialog header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); }
-dialog header b { flex: 1; }
-.tablewrap { overflow: auto; max-height: calc(80vh - 60px); }
+dialog::backdrop { background: rgba(5, 8, 14, .55); backdrop-filter: blur(4px); }
+dialog header { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+dialog header b { flex: 1; font-size: 16px; }
+.tablewrap { overflow: auto; max-height: calc(82vh - 70px); }
 table { border-collapse: collapse; width: 100%; font-size: 13px; }
-th, td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-th { position: sticky; top: 0; background: var(--panel); color: var(--muted); font-weight: 500; }
-td.PASS { color: var(--pass); font-weight: 600; } td.FAIL { color: var(--fail); font-weight: 600; }
-td.mono { font-family: var(--mono); }
+th, td { text-align: left; padding: 10px 16px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { position: sticky; top: 0; background: var(--surface-solid); color: var(--muted); font-weight: 500; font-size: 12px; }
+td.PASS, td.FAIL { font-weight: 600; }
+td.PASS { color: var(--pass); } td.FAIL { color: var(--fail); }
+td.mono { font-family: var(--mono); color: var(--ink-2); }
 
 .toast {
-  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--fail);
-  color: #fff; padding: 10px 18px; border-radius: 10px; font-weight: 500; max-width: 90vw;
-  box-shadow: 0 6px 20px rgba(0,0,0,.2); z-index: 20;
+  position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 30; max-width: 90vw;
+  background: var(--surface-solid); color: var(--ink); border: 1px solid color-mix(in srgb, var(--fail) 50%, transparent);
+  padding: 12px 18px; border-radius: 14px; font-weight: 500; box-shadow: 0 20px 40px -12px rgba(0,0,0,.5);
+  display: flex; gap: 10px; align-items: center;
 }
+.toast.ok { border-color: color-mix(in srgb, var(--pass) 50%, transparent); }
 </style>
 </head>
 <body>
-<div class="top">
-  <div class="brand">mCOLD<small>สถานีผลิต</small></div>
-  <label class="field">สินค้า <select id="product"></select></label>
-  <label class="field">ขั้น <select id="stage"></select></label>
-  <label class="field">ผู้ทำ <input id="operator" type="text" size="10" placeholder="ชื่อ"></label>
-  <div class="fw" id="fw"></div>
+<header class="top">
+  <div class="brand">
+    <div class="mark" data-icon="snow"></div>
+    <div class="brand-text"><b>mCOLD Station</b><span id="subtitle">สถานีผลิต · ทดสอบ ลง firmware ตั้งค่า ตรวจ</span></div>
+  </div>
+  <div class="controls">
+    <div class="ctl"><label for="product">สินค้า</label><select id="product"></select></div>
+    <div class="ctl"><label for="stage">ขั้น</label><select id="stage"></select></div>
+    <div class="ctl"><label for="operator">ผู้ทำ</label><input id="operator" type="text" placeholder="ชื่อ"></div>
+  </div>
   <div class="spacer"></div>
-  <div class="counts" id="counts"></div>
-  <button class="primary" id="startall">เริ่มทุกช่องที่พร้อม</button>
+  <span class="clock" id="clock"></span>
+  <button class="btn icon ghost" id="theme" title="สว่าง / มืด" aria-label="สลับธีม"></button>
   <div class="menu" id="menu">
-    <button id="menubtn" aria-haspopup="true">⋯</button>
+    <button class="btn icon ghost" id="menubtn" aria-haspopup="true" aria-label="เมนู"></button>
     <div class="menu-list">
-      <button id="history">ประวัติการทำงาน</button>
-      <button id="savelayout">บันทึกตำแหน่งช่อง (dock)</button>
-      <button id="forgetlayout">ล้างตำแหน่งช่อง</button>
+      <button id="history"><span data-icon="clock"></span>ประวัติการทำงาน</button>
+      <button id="savelayout"><span data-icon="pin"></span>บันทึกตำแหน่งช่อง (Dock)</button>
+      <button id="forgetlayout"><span data-icon="reset"></span>ล้างตำแหน่งช่อง</button>
     </div>
   </div>
+  <button class="btn go" id="startall"><span data-icon="play"></span>เริ่มทุกช่องที่พร้อม</button>
+</header>
+
+<section class="overview">
+  <div class="kpi k-ready"><span>พร้อมเริ่ม</span><b id="k-ready">0</b></div>
+  <div class="kpi k-run"><span>กำลังทำ</span><b id="k-run">0</b></div>
+  <div class="kpi k-ask" id="k-ask-box"><span>รอคำตอบ</span><b id="k-ask">0</b></div>
+  <div class="kpi k-pass"><span>ผ่าน</span><b id="k-pass">0</b></div>
+  <div class="kpi k-fail"><span>ไม่ผ่าน</span><b id="k-fail">0</b></div>
+  <div class="fwbox"><span>Firmware ที่จะลง (อนุมัติแล้วเท่านั้น)</span><div class="fwrow" id="fw"></div></div>
+</section>
+
+<div class="guide" id="guide">
+  <span><i>1</i><b>เสียบบอร์ด</b> ลงช่องของ Dock</span>
+  <span><i>2</i><b>กดเริ่ม</b> ทีละช่อง หรือทุกช่อง</span>
+  <span><i>3</i><b>ตอบคำถาม</b> เมื่อช่องเป็น<span class="dot" style="background:var(--ask)"></span>สีเหลือง</span>
+  <span><i>4</i><span class="dot" style="background:var(--pass)"></span><b>เขียว</b> = ผ่าน ถอดได้ ·
+    <span class="dot" style="background:var(--fail)"></span><b>แดง</b> = ไม่ผ่าน ดูสาเหตุในช่อง</span>
 </div>
-<div class="banner demo" id="demo" hidden>โหมดสาธิต: บอร์ดจำลอง 5 ตัวใน 6 ช่อง (ช่อง 6 เป็นบอร์ดที่โพรบลอย จะไม่ผ่านขั้นทดสอบ) · ไม่มีอะไรถูก flash จริง</div>
+
+<div class="banner demo" id="demo" hidden><span data-icon="info"></span>โหมดสาธิต: บอร์ดจำลอง 5 ตัวใน 6 ช่อง · ช่อง 6 คือบอร์ดที่โพรบลอย จะไม่ผ่านขั้นทดสอบ · ไม่มีอะไรถูก flash จริง · กด "ล้าง" เพื่อใส่บอร์ดใหม่</div>
 <div class="banner err" id="err" hidden></div>
+
 <main class="grid" id="grid"></main>
 
 <dialog id="hist">
-  <header><b>ประวัติการทำงาน (ล่าสุด 40 รายการ)</b><button id="histclose">ปิด</button></header>
+  <header><span data-icon="clock"></span><b>ประวัติการทำงาน · ล่าสุด 40 รายการ</b><button class="btn" id="histclose">ปิด</button></header>
   <div class="tablewrap"><table>
-    <thead><tr><th>#</th><th>เวลา</th><th>ขั้น</th><th>ผล</th><th>SN</th><th>MAC</th><th>firmware</th><th>ผู้ทำ</th></tr></thead>
+    <thead><tr><th>#</th><th>เวลา</th><th>ขั้น</th><th>ผล</th><th>SN</th><th>MAC</th><th>Firmware</th><th>ผู้ทำ</th></tr></thead>
     <tbody id="histbody"></tbody>
   </table></div>
 </dialog>
@@ -236,23 +434,26 @@ td.mono { font-family: var(--mono); }
       <span class="badge"></span>
     </div>
     <div class="body">
-      <div class="emptynote">ว่าง · เสียบบอร์ดที่ช่องนี้</div>
-      <div class="ids"><span>SN</span><span class="sn">—</span><span>MAC</span><span class="mac">—</span><span>FW</span><span class="fwv">—</span></div>
-      <ol class="stages"></ol>
-      <div class="now">
-        <div class="stepline"><span class="stepname"></span><span class="stepcount"></span></div>
-        <div class="bar"><i></i></div>
+      <div class="emptynote"><div class="plug" data-icon="plug"></div><div>ว่าง · เสียบบอร์ดที่ช่องนี้</div></div>
+      <div class="hero">
+        <div class="ring">
+          <svg viewBox="0 0 80 80"><circle class="track" cx="40" cy="40" r="34"/><circle class="val" cx="40" cy="40" r="34"/></svg>
+          <div class="mid"></div>
+        </div>
+        <div class="headline"><b class="hl"></b><span class="sub"></span></div>
       </div>
+      <ol class="stages"></ol>
       <div class="ask" hidden></div>
-      <div class="passnote" hidden>ผ่านทุกขั้น · ถอดบอร์ดออกได้</div>
-      <div class="fail" hidden><b class="fstep"></b><div class="fdetail"></div><div class="fhelp"></div></div>
+      <div class="passnote" hidden></div>
+      <div class="fail" hidden><b class="fstep"></b><div class="fdetail"></div><div class="fhelp"><span data-icon="bulb"></span><span class="fhelptext"></span></div></div>
       <pre class="log" hidden></pre>
+      <div class="meta"><span>SN</span><span class="sn">—</span><span>MAC</span><span class="mac">—</span><span>FW</span><span class="fwv">—</span></div>
     </div>
     <div class="foot">
-      <button class="primary b-start">เริ่ม</button>
-      <button class="b-stop">หยุด</button>
-      <button class="b-clear">ล้าง</button>
-      <button class="b-log">log</button>
+      <button class="btn go b-start"><span data-icon="play"></span>เริ่ม</button>
+      <button class="btn b-stop"><span data-icon="stop"></span>หยุด</button>
+      <button class="btn b-clear"><span data-icon="reset"></span>ล้าง</button>
+      <button class="btn ghost b-log"><span data-icon="log"></span>Log</button>
       <span class="elapsed"></span>
     </div>
   </section>
@@ -260,9 +461,35 @@ td.mono { font-family: var(--mono); }
 
 <script>
 "use strict";
+/* ---- icons: drawn here, no files to fetch ---- */
+const ICONS = {
+  snow: '<path d="M12 2v20M4.9 4.9l14.2 14.2M2 12h20M4.9 19.1L19.1 4.9M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5M3.5 9l2.5 3-2.5 3M20.5 9L18 12l2.5 3"/>',
+  play: '<path d="M7 4.5v15l12.5-7.5z"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2.5"/>',
+  reset: '<path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/>',
+  log: '<path d="M4 17l6-5-6-5M12 19h8"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+  plug: '<path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0zM12 17v5"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  pin: '<path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+  more: '<circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
+  bulb: '<path d="M9 18h6M10 21.5h4M12 2.5a6.5 6.5 0 0 0-3.8 11.8c.5.4.8 1 .8 1.7v.5h6V16c0-.7.3-1.3.8-1.7A6.5 6.5 0 0 0 12 2.5z"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/>',
+  chip: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/>',
+};
+function icon(name) { return '<svg class="i" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>"; }
+function paintIcons(root) {
+  root.querySelectorAll("[data-icon]").forEach((el) => { if (!el.dataset.painted) { el.insertAdjacentHTML("afterbegin", icon(el.dataset.icon)); el.dataset.painted = 1; } });
+}
+
 const BADGE = { empty: "ว่าง", ready: "พร้อม", running: "กำลังทำ", ask: "รอคำตอบ",
                 pass: "ผ่าน", fail: "ไม่ผ่าน", stopped: "หยุดแล้ว" };
 const KIND = { firmware: "firmware", usj: "ROM / ทดสอบ", rom: "download mode" };
+const RING = 2 * Math.PI * 34;
 const grid = document.getElementById("grid");
 const openLogs = new Set();
 const cards = [];
@@ -270,21 +497,35 @@ let state = null, failures = 0, lastQ = 0, audio = null;
 
 function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
 function load(k) { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+
+/* theme */
+const root = document.documentElement;
+function setTheme(t) {
+  root.dataset.theme = t; store("mflash.theme", t);
+  const b = document.getElementById("theme"); b.innerHTML = icon(t === "dark" ? "sun" : "moon");
+}
+setTheme(load("mflash.theme") || "dark");
+document.getElementById("theme").onclick = () => setTheme(root.dataset.theme === "dark" ? "light" : "dark");
+document.getElementById("menubtn").innerHTML = icon("more");
+paintIcons(document);
+
 const op = document.getElementById("operator");
 op.value = load("mflash.operator");
 op.addEventListener("input", () => store("mflash.operator", op.value));
 
-function toast(msg) {
+function toast(msg, ok) {
   const t = document.createElement("div");
-  t.className = "toast"; t.textContent = msg; document.body.appendChild(t);
+  t.className = "toast" + (ok ? " ok" : "");
+  t.insertAdjacentHTML("afterbegin", icon(ok ? "check" : "info"));
+  t.appendChild(document.createTextNode(msg)); document.body.appendChild(t);
   setTimeout(() => t.remove(), 4500);
 }
-async function post(path, body) {
+async function post(path, body, quiet) {
   try {
     const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" },
                                   body: JSON.stringify(body || {}) });
     const j = await r.json();
-    if (j.error) toast(j.error);
+    if (j.error && !quiet) toast(j.error);
     return j;
   } catch (e) { toast("ติดต่อโปรแกรมไม่ได้: " + e); return {}; }
 }
@@ -292,8 +533,11 @@ function beep() {
   try {
     audio = audio || new (window.AudioContext || window.webkitAudioContext)();
     const o = audio.createOscillator(), g = audio.createGain();
-    o.frequency.value = 880; g.gain.value = 0.08;
-    o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.15);
+    o.type = "sine"; o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, audio.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.09, audio.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.25);
+    o.connect(g); g.connect(audio.destination); o.start(); o.stop(audio.currentTime + 0.26);
   } catch (e) {}
 }
 function fmtTime(s) { const m = Math.floor(s / 60); return m + ":" + String(s % 60).padStart(2, "0"); }
@@ -301,17 +545,20 @@ function text(el, v) { if (el.textContent !== v) el.textContent = v; }
 
 function makeCard(i) {
   const el = document.getElementById("slot-tpl").content.firstElementChild.cloneNode(true);
+  paintIcons(el);
   const q = (s) => el.querySelector(s);
-  const c = { el, i, qid: 0, stagesKey: "",
+  const c = { el, i, qid: 0, stagesKey: "", mid: "",
     num: q(".num"), title: q(".title b"), port: q(".port"), badge: q(".badge"),
     sn: q(".sn"), mac: q(".mac"), fwv: q(".fwv"), stages: q(".stages"),
-    stepname: q(".stepname"), stepcount: q(".stepcount"), bar: q(".bar i"), now: q(".now"),
-    ask: q(".ask"), pass: q(".passnote"), fail: q(".fail"), fstep: q(".fstep"), fdetail: q(".fdetail"),
-    fhelp: q(".fhelp"), log: q(".log"), start: q(".b-start"), stop: q(".b-stop"),
-    clear: q(".b-clear"), logbtn: q(".b-log"), elapsed: q(".elapsed") };
-  c.num.textContent = i + 1;
+    ringval: q(".ring .val"), ringmid: q(".ring .mid"), hl: q(".hl"), sub: q(".sub"), hero: q(".hero"),
+    ask: q(".ask"), fail: q(".fail"), fstep: q(".fstep"), fdetail: q(".fdetail"),
+    fhelp: q(".fhelp"), fhelptext: q(".fhelptext"), log: q(".log"), meta: q(".meta"),
+    start: q(".b-start"), stop: q(".b-stop"), clear: q(".b-clear"), logbtn: q(".b-log"), elapsed: q(".elapsed") };
+  c.num.textContent = String(i + 1).padStart(2, "0");
   c.title.textContent = "ช่อง " + (i + 1);
-  c.start.onclick = () => post("/api/start", { slot: i, operator: op.value });
+  c.ringval.style.strokeDasharray = RING;
+  c.ringval.style.strokeDashoffset = RING;
+  c.start.onclick = () => { beep(); post("/api/start", { slot: i, operator: op.value }); };
   c.stop.onclick = () => post("/api/stop", { slot: i });
   c.clear.onclick = () => post("/api/clear", { slot: i });
   c.logbtn.onclick = () => { openLogs.has(i) ? openLogs.delete(i) : openLogs.add(i); c.log.hidden = !openLogs.has(i); };
@@ -324,23 +571,41 @@ function renderAsk(c, s) {
   if (!q) { c.ask.hidden = true; c.qid = 0; c.ask.innerHTML = ""; return; }
   if (c.qid === q.id) return;
   c.qid = q.id; c.ask.hidden = false; c.ask.innerHTML = "";
-  const p = document.createElement("p"); p.textContent = q.text; c.ask.appendChild(p);
-  const row = document.createElement("div"); row.className = "btns"; c.ask.appendChild(row);
-  const send = (v) => post("/api/answer", { slot: c.i, qid: q.id, value: v });
+  const lab = document.createElement("div"); lab.className = "qlabel";
+  lab.insertAdjacentHTML("afterbegin", icon(q.kind === "yn" ? "help" : "chip"));
+  lab.appendChild(document.createTextNode(q.kind === "yn" ? "ตรวจแล้วตอบ" : "กรอกข้อมูล"));
+  const p = document.createElement("p"); p.textContent = q.text;
+  const row = document.createElement("div"); row.className = "btns";
+  c.ask.append(lab, p, row);
+  const send = (v) => post("/api/answer", { slot: c.i, qid: q.id, value: v }, true);
   if (q.kind === "yn") {
-    const y = document.createElement("button"); y.className = "yes"; y.textContent = "✓ ใช่ / ผ่าน";
-    const n = document.createElement("button"); n.className = "no"; n.textContent = "✗ ไม่ผ่าน";
+    const y = document.createElement("button"); y.className = "yes";
+    y.innerHTML = icon("check"); y.appendChild(document.createTextNode("ใช่ / ผ่าน"));
+    const n = document.createElement("button"); n.className = "no";
+    n.innerHTML = icon("x"); n.appendChild(document.createTextNode("ไม่ผ่าน"));
     y.onclick = () => send(true); n.onclick = () => send(false);
     row.append(y, n);
   } else {
     const inp = document.createElement("input"); inp.type = "text"; inp.value = q.default || "";
-    inp.placeholder = "สแกนบาร์โค้ด หรือพิมพ์ แล้วกด Enter";
-    const ok = document.createElement("button"); ok.className = "yes"; ok.textContent = "ตกลง";
-    ok.style.flex = "0 0 auto";
+    inp.placeholder = "สแกนบาร์โค้ด หรือพิมพ์ แล้วกด Enter"; inp.autocomplete = "off"; inp.spellcheck = false;
+    const ok = document.createElement("button"); ok.className = "yes ok"; ok.textContent = "ตกลง";
     const go = () => { if (inp.value.trim()) send(inp.value.trim()); };
     ok.onclick = go; inp.onkeydown = (e) => { if (e.key === "Enter") go(); };
     row.append(inp, ok);
     if (!document.activeElement || document.activeElement.tagName !== "INPUT") setTimeout(() => inp.focus(), 0);
+  }
+}
+
+function headline(s) {
+  const n = s.step_total ? ` · ข้อ ${Math.min(s.step_idx + 1, s.step_total)}/${s.step_total}` : "";
+  switch (s.state) {
+    case "ready": return ["พร้อมเริ่ม", "กด เริ่ม ด้านล่าง หรือ เริ่มทุกช่องที่พร้อม"];
+    case "running": return [s.stage_label || "กำลังเริ่ม…", (s.step_name || "") + n];
+    case "ask": return ["รอคำตอบจากคุณ", s.stage_label + n];
+    case "pass": return ["ผ่านทุกขั้น", "ถอดบอร์ดออก แล้วเสียบตัวถัดไป"];
+    case "fail": return ["ไม่ผ่าน", (s.fail && s.fail.stage ? s.stages.find((x) => x.name === s.fail.stage)?.label + " · " : "") + "ดูสาเหตุด้านล่าง"];
+    case "stopped": return ["หยุดแล้ว", "กด ล้าง เพื่อเริ่มใหม่"];
+    default: return ["", ""];
   }
 }
 
@@ -349,26 +614,46 @@ function renderSlot(c, s) {
   text(c.badge, s.stopping ? "กำลังหยุด…" : BADGE[s.state] || s.state);
   text(c.port, s.port ? s.port + " · " + (KIND[s.port_kind] || "") : (s.location ? "USB " + s.location : "ยังไม่ได้ผูกตำแหน่ง"));
   text(c.sn, s.sn || "—"); text(c.mac, s.mac || "—"); text(c.fwv, s.firmware || "—");
+
+  /* ring */
+  const pct = Math.max(0, Math.min(1, s.progress || 0));
+  c.ringval.style.strokeDashoffset = RING * (1 - (s.state === "ready" ? 0 : pct));
+  const mid = s.state === "pass" ? "icon:check" : (s.state === "fail" || s.state === "stopped") ? "icon:x"
+            : s.state === "ready" ? "icon:play" : Math.round(pct * 100) + "%";
+  if (c.mid !== mid) {
+    c.mid = mid;
+    if (mid.startsWith("icon:")) c.ringmid.innerHTML = icon(mid.slice(5)); else c.ringmid.textContent = mid;
+  }
+  const [hl, sub] = headline(s);
+  text(c.hl, hl); text(c.sub, sub);
+
+  /* stepper */
   const key = s.stages.map((x) => x.name).join(",");
   if (c.stagesKey !== key) {
     c.stagesKey = key; c.stages.innerHTML = "";
-    for (const x of s.stages) { const li = document.createElement("li"); li.textContent = x.label; li.title = x.label; c.stages.appendChild(li); }
+    for (const x of s.stages) {
+      const li = document.createElement("li");
+      const node = document.createElement("span"); node.className = "node";
+      const lbl = document.createElement("span"); lbl.className = "lbl"; lbl.textContent = x.label; li.title = x.label;
+      li.append(node, lbl); c.stages.appendChild(li);
+    }
   }
-  s.stages.forEach((x, k) => { const li = c.stages.children[k]; const cls = x.result || ""; if (li && li.className !== cls) li.className = cls; });
-  const active = s.state === "running" || s.state === "ask";
-  c.now.hidden = !active;
-  if (active) {
-    text(c.stepname, s.step_name || s.stage_label || "");
-    text(c.stepcount, s.step_total ? Math.min(s.step_idx + 1, s.step_total) + "/" + s.step_total : "");
-    c.bar.style.width = s.step_total ? (100 * s.step_idx / s.step_total) + "%" : "0";
-  }
+  s.stages.forEach((x, k) => {
+    const li = c.stages.children[k]; if (!li) return;
+    const cls = x.result || "";
+    if (li.className !== cls) {
+      li.className = cls;
+      li.firstChild.innerHTML = cls === "PASS" ? icon("check") : cls === "FAIL" ? icon("x") : "";
+    }
+  });
+  c.stages.hidden = !s.stages.length;
+
   renderAsk(c, s);
-  c.pass.hidden = s.state !== "pass";
   const f = s.fail;
   c.fail.hidden = !(f && (s.state === "fail" || s.state === "stopped"));
   if (f) {
-    text(c.fstep, "ไม่ผ่าน: " + (f.step || f.stage));
-    text(c.fdetail, f.detail || ""); text(c.fhelp, f.help || "");
+    text(c.fstep, f.step || f.stage || "");
+    text(c.fdetail, f.detail || ""); text(c.fhelptext, f.help || "");
     c.fhelp.hidden = !f.help;
   }
   if (s.log && !c.log.hidden) {
@@ -378,12 +663,15 @@ function renderSlot(c, s) {
       c.log.textContent = t; if (atEnd) c.log.scrollTop = c.log.scrollHeight;
     }
   }
-  c.start.disabled = !(s.state === "ready" && s.port) || !!state.profile_error || state.firmware.some((x) => !x.ok);
-  c.start.hidden = active || s.state !== "ready";
+  const active = s.state === "running" || s.state === "ask";
+  const blocked = !!state.profile_error || state.firmware.some((x) => !x.ok);
+  c.start.hidden = s.state !== "ready";
+  c.start.disabled = !s.port || blocked;
   c.stop.hidden = !active; c.stop.disabled = s.stopping;
   c.clear.hidden = active || s.state === "empty" || s.state === "ready";
   c.logbtn.hidden = s.state === "empty";
-  text(c.elapsed, s.elapsed ? fmtTime(s.elapsed) : "");
+  const el = s.elapsed ? fmtTime(s.elapsed) : "";
+  if (c.elapsed.dataset.v !== el) { c.elapsed.dataset.v = el; c.elapsed.innerHTML = el ? icon("clock") : ""; if (el) c.elapsed.appendChild(document.createTextNode(el)); }
 }
 
 function fillSelect(sel, opts, value) {
@@ -401,21 +689,38 @@ function render() {
   fillSelect(document.getElementById("stage"), st.stage_options, st.stage);
   document.getElementById("product").disabled = st.busy;
   document.getElementById("stage").disabled = st.busy;
-  const fw = document.getElementById("fw"); fw.innerHTML = "";
-  for (const f of st.firmware) {
-    const e = document.createElement("span"); e.className = "fwchip" + (f.ok ? "" : " bad");
-    e.textContent = f.ok ? `${f.kind} ${f.version} ✓ ${f.by}` : `${f.kind}: ${f.msg}`;
-    e.title = f.ok ? f.id : f.msg; fw.appendChild(e);
+  text(document.getElementById("subtitle"), (st.product_name || "สถานีผลิต") + (st.station ? " · " + st.station : ""));
+  text(document.getElementById("clock"), st.now || "");
+
+  const fw = document.getElementById("fw");
+  const fwKey = JSON.stringify(st.firmware);
+  if (fw.dataset.key !== fwKey) {
+    fw.dataset.key = fwKey; fw.innerHTML = "";
+    for (const f of st.firmware) {
+      const e = document.createElement("span"); e.className = "fwchip" + (f.ok ? "" : " bad");
+      e.innerHTML = icon(f.ok ? "check" : "x");
+      e.appendChild(document.createTextNode(f.ok ? `${f.kind} ${f.version} ` : `${f.kind}: ${f.msg}`));
+      if (f.ok) { const sm = document.createElement("small"); sm.textContent = "· " + f.by; e.appendChild(sm); }
+      e.title = f.ok ? f.id : f.msg; fw.appendChild(e);
+    }
   }
-  document.getElementById("counts").innerHTML =
-    `ผ่าน <b class="p">${st.counts.pass}</b> · ไม่ผ่าน <b class="f">${st.counts.fail}</b>`;
+  const by = (k) => st.slots.filter((s) => s.state === k).length;
+  text(document.getElementById("k-ready"), String(by("ready")));
+  text(document.getElementById("k-run"), String(by("running")));
+  const asks = by("ask");
+  text(document.getElementById("k-ask"), String(asks));
+  document.getElementById("k-ask-box").classList.toggle("hot", asks > 0);
+  text(document.getElementById("k-pass"), String(st.counts.pass));
+  text(document.getElementById("k-fail"), String(st.counts.fail));
+
   document.getElementById("demo").hidden = !st.demo;
+  document.getElementById("guide").classList.toggle("quiet", st.slots.some((s) => s.state !== "ready" && s.state !== "empty"));
   const err = document.getElementById("err");
   const msg = st.profile_error || (st.incomplete.length ? "profile ยังไม่ครบ: " + st.incomplete.join(" · ") : "");
   err.hidden = !msg; text(err, msg);
+
   while (cards.length < st.slots.length) cards.push(makeCard(cards.length));
   st.slots.forEach((s, i) => renderSlot(cards[i], s));
-  const asks = st.slots.filter((s) => s.question).length;
   const maxQ = Math.max(0, ...st.slots.map((s) => s.question ? s.question.id : 0));
   if (maxQ > lastQ) { lastQ = maxQ; beep(); }
   document.title = (asks ? `(${asks}) ` : "") + "mCOLD Station";
@@ -440,7 +745,7 @@ const menu = document.getElementById("menu");
 document.getElementById("menubtn").onclick = (e) => { e.stopPropagation(); menu.classList.toggle("open"); };
 document.addEventListener("click", () => menu.classList.remove("open"));
 document.getElementById("savelayout").onclick = async () => {
-  const j = await post("/api/layout/save"); if (j.saved) toast("บันทึกตำแหน่งช่องแล้ว: " + j.saved);
+  const j = await post("/api/layout/save"); if (j.saved) toast("บันทึกตำแหน่งช่องแล้ว", true);
 };
 document.getElementById("forgetlayout").onclick = () => post("/api/layout/forget");
 const hist = document.getElementById("hist");

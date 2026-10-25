@@ -96,7 +96,7 @@ def test_stop_while_waiting_for_an_answer(station):
     run = station.db.history()[0]
     assert run["result"] == "FAIL"
     assert station.db.steps(run["id"])[0]["detail"] == "stopped by the operator"
-    with pytest.raises(RuntimeError, match="no longer open"):
+    with pytest.raises(RuntimeError, match="ตอบไปแล้ว"):
         station.answer(1, 999, True)
 
 

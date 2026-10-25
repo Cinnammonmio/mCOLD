@@ -173,7 +173,7 @@ class Station:
     def set_product(self, product: str) -> None:
         with self.lock:
             if any(s.busy for s in self.slots):
-                raise RuntimeError("a slot is running")
+                raise RuntimeError("มีช่องที่กำลังทำงานอยู่ เปลี่ยนสินค้าไม่ได้")
             try:
                 self.profile = proflib.load(product)
                 self.profile_error = ""
@@ -311,11 +311,11 @@ class Station:
             if not self.profile:
                 raise RuntimeError(self.profile_error)
             if s.busy:
-                raise RuntimeError(f"slot {i + 1} is running")
+                raise RuntimeError(f"ช่อง {i + 1} กำลังทำงานอยู่")
             if not s.port:
-                raise RuntimeError(f"slot {i + 1} has no box")
+                raise RuntimeError(f"ช่อง {i + 1} ไม่มีบอร์ด")
             if self.profile.incomplete:
-                raise RuntimeError(f"profile {self.profile.product} is incomplete")
+                raise RuntimeError(f"profile {self.profile.product} ยังไม่ครบ")
             bad = [f for f in self.firmware_status() if not f["ok"]]
             if bad:
                 raise RuntimeError(bad[0]["msg"])
@@ -360,7 +360,7 @@ class Station:
         with self.lock:
             s = self.slots[i]
             if s.busy:
-                raise RuntimeError(f"slot {i + 1} is running")
+                raise RuntimeError(f"ช่อง {i + 1} กำลังทำงานอยู่")
             s.reset()
             if self.on_clear:
                 self.on_clear(i)
@@ -369,7 +369,7 @@ class Station:
     def answer(self, i: int, qid: int, value) -> None:
         q = self.slots[i].question
         if not q or q.id != qid:
-            raise RuntimeError("that question is no longer open")
+            raise RuntimeError("คำถามนี้ตอบไปแล้ว")
         q.answer = value
         q.done.set()
 
@@ -389,14 +389,16 @@ class Station:
                 "port": port.device if port else "", "port_kind": self.port_kind(port),
                 "port_serial": port.serial if port else "",
                 "mac": box.mac if box else "", "sn": box.sn if box else "", "firmware": fw,
+                # before a run, the stages it would go through, so the slot shows the plan
                 "stages": [{"name": st, "label": stage_label(st), "result": s.results.get(st, "")}
-                           for st in s.stages],
+                           for st in (s.stages or (self.stages() if s.state == "ready" else []))],
                 "stage": s.stage, "stage_label": stage_label(s.stage),
                 "step_idx": s.step_idx, "step_total": s.step_total, "step_name": s.step_name,
                 "fail": s.fail, "stopping": s.stop.is_set() and s.busy,
                 "question": {"id": q.id, "kind": q.kind, "text": q.text, "default": q.default}
                 if q else None,
                 "elapsed": int((s.finished or time.time()) - s.started) if s.started else 0,
+                "progress": self._progress(s),
                 "log": list(s.log)[-150:] if log_slots is None or s.index in log_slots else None,
             })
         p = self.profile
@@ -414,6 +416,23 @@ class Station:
             "now": dt.datetime.now().strftime("%H:%M:%S"),
             "slots": slots,
         }
+
+    def _progress(self, s: Slot) -> float:
+        """Steps done over steps in the whole run, 0..1, for the slot's ring."""
+        if not self.profile or not s.stages:
+            return 0.0
+        if s.state == "pass":
+            return 1.0
+        total = done = 0
+        for st in s.stages:
+            n = len(self.profile.stages.get(st) or [])
+            total += n
+            r = s.results.get(st, "")
+            if r == "PASS":
+                done += n
+            elif st == s.stage and r in ("running", "FAIL"):
+                done += min(s.step_idx, n)
+        return round(done / total, 3) if total else 0.0
 
     def history(self, limit: int = 40) -> list[dict]:
         return [dict(r) for r in self.db.history("", limit)]
