@@ -51,7 +51,7 @@ struct Config {
   int32_t epd_inset_r;        //   right
   int32_t sleep_en;           // 0 keeps the box awake on battery (bench, measurement)
   int32_t idle_wake_s;        // on battery, the longest sleep with nothing due
-  int32_t gnss_period_s;      // on battery, during a trip: one GNSS session this often
+  int32_t gnss_period_s;      // one GNSS session this often (on battery: only during a trip)
   int32_t upload_period_s;    // on battery: the longest records wait for Wi-Fi
   int32_t sleep_usb;          // bench: behave as on battery with USB in (pm.h)
   int32_t sleep_meas;         // bench: measure each sleep's current (costs 0.33 mA)

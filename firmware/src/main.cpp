@@ -140,7 +140,6 @@ const uint32_t GNSS_SESSION_MS = 120000;   // give up on a fix after this
 // Until the first fix since power-up: a module starting cold, with no
 // almanac, needs minutes of open sky, more than a routine session gives.
 const uint32_t GNSS_COLD_SESSION_MS = 600000;
-const uint32_t GNSS_PERIOD_MS = 600000;    // between sessions
 const int GNSS_FIXES_WANTED = 5;
 // Console "gnss hold N": keep the module on for N minutes, for an antenna
 // test by a window. A cold start can need longer than one session.
@@ -164,9 +163,14 @@ GnssMemo g_gnss_before = {};   // the memo as found at boot: before the reset
 // On battery a GNSS session keeps the whole box awake, not just the
 // module, so sessions are planned: only during a trip (or while the clock
 // has no time and satellites are the way to get it), once every
-// gnss_period_s, and stretched while they keep failing -- indoors there
-// is nothing to find, and looking every half hour would cost more than
-// all the sampling. Kept through deep sleep.
+// gnss_period_s. Kept through deep sleep.
+//
+// Every five minutes, failing or not (decided 2026-10-26): a position on
+// every 5-minute row is what a trip is for, and boxes are not on trips
+// all day, so the battery can take it. The default was 30 minutes,
+// stretched x2..x16 while sessions failed; a box driven from Ratchaburi
+// to Bangkok (2026-10-25) drew its route as straight lines 25-29 km long.
+// Indoors a session still gives up after GNSS_NOTHING_HEARD_MS.
 struct GnssPlan {
   uint32_t magic;
   uint32_t next_at;         // mono_ms(); 0: due now
@@ -221,6 +225,29 @@ struct SamplePlan {
 };
 const uint32_t SAMPLE_PLAN_MAGIC = 0x53504C31;   // "SPL1"
 RTC_DATA_ATTR SamplePlan g_sample_plan;
+
+// When the next GNSS session starts: gnss_period_s from now, and during a
+// trip moved onto the sample grid, GNSS_SAMPLE_LEAD_MS ahead of a sample
+// -- a row is "fix" only with a fix younger than the sample period, and a
+// session that ends just before the sample gives one. A hot fix takes
+// seconds; the five in a row a session waits for, five more.
+const uint32_t GNSS_SAMPLE_LEAD_MS = 40000;
+uint32_t gnss_plan_next(uint32_t now) {
+  const uint32_t period = (uint32_t)config().gnss_period_s * 1000;
+  uint32_t at = now + period;
+  TripStatus s;
+  trip_status(&s);
+  const uint32_t sp = (uint32_t)config().sample_period_s * 1000;
+  if (s.active && sp && g_sample_plan.magic == SAMPLE_PLAN_MAGIC && g_sample_plan.trip == s.id) {
+    // The first sample whose lead starts at least a period less one
+    // sample from now (a period of one sample: the first still ahead).
+    const uint32_t earliest = now + (period > sp ? period - sp : 0) + 5000;
+    uint32_t start = g_sample_plan.next - GNSS_SAMPLE_LEAD_MS;
+    for (int i = 0; i < 4096 && (int32_t)(start - earliest) < 0; i++) start += sp;
+    at = start;
+  }
+  return at ? at : 1;
+}
 
 const uint32_t NFC_POLL_MS = 300;
 const uint32_t FIRST_SAMPLE_WAIT_MS = 10000;   // uptime limit, see task_trip
@@ -460,8 +487,7 @@ void task_gnss(void *) {
         // Due, but the module cannot be had (failing, or its health is
         // backing off): try again a period from now. Left at a time
         // already past, the plan would keep the chip awake for it.
-        g_gnss_plan.next_at = t0 + (uint32_t)config().gnss_period_s * 1000;
-        if (!g_gnss_plan.next_at) g_gnss_plan.next_at = 1;
+        g_gnss_plan.next_at = gnss_plan_next(t0);
         pm_next(Duty::Gnss, g_gnss_plan.next_at);
       }
       pm_done(Duty::Gnss);
@@ -555,12 +581,9 @@ void task_gnss(void *) {
     const bool have = gnss_last_fix(&f);
     const bool got = have && f.valid && now_ms() - f.at_ms < 5000;
     g_gnss_plan.misses = got ? 0 : (uint8_t)(g_gnss_plan.misses < 4 ? g_gnss_plan.misses + 1 : 4);
-    // On battery the period stretches x2, x4, x8, x16 while sessions fail
-    // (with the default 30 min, up to 8 h between tries indoors).
-    const uint32_t period = battery ? ((uint32_t)config().gnss_period_s * 1000) << g_gnss_plan.misses
-                                    : GNSS_PERIOD_MS;
-    g_gnss_plan.next_at = now_ms() + period;
-    if (!g_gnss_plan.next_at) g_gnss_plan.next_at = 1;
+    // No stretching while sessions fail (2026-10-26): every period, on
+    // battery or USB alike.
+    g_gnss_plan.next_at = gnss_plan_next(now_ms());
     if (got) {
       printf("[gnss] fix %.6f, %.6f  %u sats  hdop %.1f\n", f.lat_deg,
              f.lon_deg, f.sats, f.hdop);

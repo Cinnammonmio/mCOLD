@@ -66,7 +66,7 @@ constexpr Field FIELDS[] = {
     F(buzzer_volume, 1, 100, 100, "%"),
     F(sleep_en, 0, 1, 1, ""),
     F(idle_wake_s, 300, 86400, 3600, "s"),
-    F(gnss_period_s, 300, 86400, 1800, "s"),
+    F(gnss_period_s, 300, 86400, 300, "s"),
     F(upload_period_s, 60, 86400, 300, "s"),
     F(sleep_usb, 0, 1, 0, ""),
     F(sleep_meas, 0, 1, 0, ""),

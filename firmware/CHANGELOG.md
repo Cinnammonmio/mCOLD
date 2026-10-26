@@ -41,6 +41,13 @@ P7, power: in progress.
 - A footer icon that is off (no Wi-Fi, no server, no GNSS) is drawn red
   instead of struck through on panels with red (2026-10-24; a red strike
   was tried first), still struck on the mono panel. 0.7.0-dev.61.
+- **GNSS every five minutes** (2026-10-26): `gnss_period_s` defaults to
+  300 s (was 1800), on battery and USB alike, with no stretching while
+  sessions fail; indoors a session still gives up after 60 s with
+  nothing heard. During a trip each session is timed to start 40 s
+  before a sample, so every row can carry a fresh fix ("fix", not
+  "last"). On 2026-10-25 a box driven Ratchaburi–Bangkok had a fix every
+  30 min, 25–29 km apart. 0.7.0-dev.63.
 - **Back to the READY page within five minutes** (2026-10-24): a closed
   trip's summary (C1) stays five minutes, not an hour, then the READY
   page; on battery the box wakes for it. A page put up from the console

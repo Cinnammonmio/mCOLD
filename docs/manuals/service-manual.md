@@ -144,7 +144,7 @@ range and whether it is the default.
 | `uplink_en` | 0–1 | 1 | Bench: 0 keeps the box off the broker (a retained `online` "0" is sent first) |
 | `sleep_en` | 0–1 | 1 | Deep sleep on battery |
 | `idle_wake_s` | 300–86400 | 3600 | Longest sleep with nothing due |
-| `gnss_period_s` | 300–86400 | 1800 | On battery in a trip: one GNSS session this often |
+| `gnss_period_s` | 300–86400 | 300 | One GNSS session this often, timed to end just before a sample during a trip (on battery: only in a trip) |
 | `upload_period_s` | 60–86400 | 300 | On battery: one upload session this often |
 | `sleep_usb` | 0–1 | 0 | Bench: behave as on battery with USB in |
 | `sleep_meas` | 0–1 | 0 | Bench: measure each sleep's current (+0.33 mA) |
