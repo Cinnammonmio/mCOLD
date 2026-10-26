@@ -1,9 +1,9 @@
 ---
 name: User-Manual_EN
 lang: en
-version: 0.6
+version: 0.7
 status: draft
-date: 2026-10-05
+date: 2026-10-24
 firmware: 0.7.0-dev.8
 ---
 
@@ -146,7 +146,7 @@ it; the alarm history is kept in full.
 ### Stopping a trip
 
 The middle light blinks blue once, and the screen shows the trip's
-summary for about an hour.
+summary for 5 minutes, then goes back to the home page (READY).
 
 ## 8. Connections
 
