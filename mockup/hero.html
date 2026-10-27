@@ -5,40 +5,31 @@
 @font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Medium.ttf);font-weight:500}
 @font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-SemiBold.ttf);font-weight:600}
 @font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Bold.ttf);font-weight:700}
-:root{--ink:#14293a;--navy:#0b3550;--navy2:#12506f;--teal:#0e8391;--teal2:#1aa5b5;--mint:#e6f5f6;--muted:#5f707c;--line:#dfe7ec}
+:root{--ink:#14293a;--navy:#0b3550;--teal:#0e8391;--teal2:#1aa5b5;--muted:#5f707c;--line:#dfe7ec}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{width:1920px;height:1080px;overflow:hidden}
-body{font-family:Plex,sans-serif;color:var(--ink);
-  background:radial-gradient(1100px 820px at 34% 52%,#ffffff 0%,#f2f8fa 48%,#e1eef2 100%)}
-#bgfx{position:absolute;inset:0;pointer-events:none}
-#gl{position:absolute;left:0;top:0;width:1180px;height:1080px}
-.panel{position:absolute;left:1180px;top:0;width:740px;height:1080px;padding:118px 96px 0 30px}
-.brand{display:flex;align-items:center;gap:14px;font-weight:700;letter-spacing:.16em;color:var(--navy);font-size:20px}
-.brand i{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--teal2),var(--navy));display:block}
-.kicker{margin-top:80px;font-size:17px;font-weight:600;letter-spacing:.24em;color:var(--teal);text-transform:uppercase}
-h1{font-size:112px;line-height:1;font-weight:700;color:var(--navy);letter-spacing:-.02em;margin-top:14px}
+body{font-family:Plex,sans-serif;color:var(--ink);position:relative;
+  background:radial-gradient(1200px 860px at 46% 50%,#ffffff 0%,#f2f8fa 50%,#e1eef2 100%)}
+#gl,#lines{position:absolute;left:0;top:0;width:1920px;height:1080px}
+.title{position:absolute;left:96px;top:84px;width:560px}
+.kicker{font-size:16px;font-weight:600;letter-spacing:.24em;color:var(--teal);text-transform:uppercase}
+h1{font-size:104px;line-height:1;font-weight:700;color:var(--navy);letter-spacing:-.02em;margin-top:12px}
 h1 span{color:var(--teal)}
-.lead{margin-top:22px;font-size:27px;line-height:1.5;font-weight:400;color:#33495a;max-width:560px}
-.feat{margin-top:46px;display:grid;grid-template-columns:1fr 1fr;gap:22px 26px}
-.f{display:flex;gap:16px;align-items:flex-start}
-.f .ic{flex:0 0 54px;height:54px;border-radius:16px;background:#fff;border:1px solid var(--line);
-  box-shadow:0 6px 18px rgba(11,53,80,.07);display:flex;align-items:center;justify-content:center;color:var(--teal)}
-.f .ic svg{width:28px;height:28px}
-.f b{display:block;font-size:20px;font-weight:600;color:var(--navy);line-height:1.3;margin-top:3px}
-.f small{display:block;font-size:16px;color:var(--muted);line-height:1.4;margin-top:2px}
-.foot{position:absolute;left:30px;bottom:66px;display:flex;gap:12px}
-.chip{font-size:15px;font-weight:500;color:var(--navy2);background:rgba(255,255,255,.75);border:1px solid var(--line);border-radius:999px;padding:8px 18px}
-/* callouts over the render */
-.co{position:absolute;font-size:17px;line-height:1.35;color:var(--navy)}
+.lead{margin-top:18px;font-size:24px;line-height:1.5;color:#33495a}
+.chips{margin-top:22px;display:flex;flex-wrap:wrap;gap:10px}
+.chip{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500;color:#12506f;background:rgba(255,255,255,.8);border:1px solid var(--line);border-radius:999px;padding:7px 15px 7px 11px}
+.chip svg{width:18px;height:18px;color:var(--teal)}
+.co{position:absolute;font-size:16px;line-height:1.35;color:var(--navy)}
 .co b{font-weight:600;display:block;font-size:18px}
-.co small{color:var(--muted);font-size:15px}
-.co.r{text-align:left}.co.l{text-align:right}
-svg#lines{position:absolute;left:0;top:0;width:1180px;height:1080px;pointer-events:none}
-.inset{position:absolute;width:236px;height:236px;border-radius:50%;overflow:hidden;
-  border:6px solid #fff;box-shadow:0 18px 40px rgba(11,53,80,.18),0 0 0 1px var(--line)}
-.inset img{width:100%;height:100%;object-fit:cover;object-position:50% 60%;filter:saturate(1.05) contrast(1.04)}
-.insetcap{position:absolute;font-size:15px;color:var(--muted);text-align:center;width:300px}
-.insetcap b{display:block;color:var(--navy);font-size:17px;font-weight:600}
+.co small{color:var(--muted);font-size:15px;display:block}
+.co.l{text-align:right}
+.dots{display:inline-flex;gap:6px;margin-right:8px;vertical-align:1px}
+.dots i{width:10px;height:10px;border-radius:50%;display:inline-block}
+.applabel{position:absolute;text-align:center;width:420px}
+.applabel b{display:block;font-size:19px;color:var(--navy);font-weight:600}
+.applabel small{font-size:15px;color:var(--muted)}
+.tap{position:absolute;font-size:15px;font-weight:600;color:var(--teal);background:#fff;border:1px solid var(--line);border-radius:99px;padding:6px 14px;display:flex;gap:7px;align-items:center;box-shadow:0 6px 16px rgba(11,53,80,.08)}
+.tap svg{width:18px;height:18px}
 </style>
 <script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
 </head><body>
@@ -46,213 +37,87 @@ svg#lines{position:absolute;left:0;top:0;width:1180px;height:1080px;pointer-even
 <svg id="lines"></svg>
 <div id="callouts"></div>
 
-<div class="panel">
+<div class="title">
   <div class="kicker">Medical Cold-Chain Monitor</div>
   <h1>m<span>COLD</span></h1>
-  <p class="lead">อุปกรณ์ติดตามอุณหภูมิกล่องขนส่งยาและเวชภัณฑ์ บันทึกและแจ้งเตือนตลอดเส้นทางขนส่ง</p>
-  <div class="feat">
-    <div class="f"><div class="ic" data-i="temperature"></div><div><b>Thermocouple Type K</b><small>หัววัดสแตนเลส ติดกล่องโฟม</small></div></div>
-    <div class="f"><div class="ic" data-i="eye"></div><div><b>จอ e-Paper 2.13″</b><small>อ่านง่าย ภาพค้างได้โดยไม่ใช้ไฟ</small></div></div>
-    <div class="f"><div class="ic" data-i="nfc"></div><div><b>สแกนเริ่มทริปด้วย NFC</b><small>แตะมือถือเพื่อเริ่ม/หยุดทริป</small></div></div>
-    <div class="f"><div class="ic" data-i="map-pin"></div><div><b>GNSS ระบุตำแหน่ง</b><small>รู้ว่ากล่องอยู่ตรงไหนของเส้นทาง</small></div></div>
-    <div class="f"><div class="ic" data-i="door"></div><div><b>เซ็นเซอร์ฝา & แรงกระแทก</b><small>บันทึกทุกการเปิดและการกระแทก</small></div></div>
-    <div class="f"><div class="ic" data-i="cloud-upload"></div><div><b>ส่งข้อมูลขึ้นระบบ</b><small>Wi-Fi · BLE · USB (CSV)</small></div></div>
+  <p class="lead">อุปกรณ์ติดตามอุณหภูมิกล่องขนส่งยาและเวชภัณฑ์ บันทึกทุก 5 นาที แจ้งเตือนเมื่อออกนอกช่วง ตลอดเส้นทางขนส่ง</p>
+  <div class="chips">
+    <span class="chip" data-i="temperature">Thermocouple Type K</span>
+    <span class="chip" data-i="nfc">แตะ NFC เริ่มทริป</span>
+    <span class="chip" data-i="map-pin">GNSS</span>
+    <span class="chip" data-i="wifi">Wi-Fi · BLE</span>
+    <span class="chip" data-i="door">ฝากล่อง & การกระแทก</span>
   </div>
-  <div class="foot"><span class="chip">ESP32-S3</span><span class="chip">USB-C PD</span><span class="chip">Dock ชาร์จ 6 ช่อง</span></div>
 </div>
 
 <script type="module">
 import * as THREE from 'three';
-import {STLLoader} from 'three/addons/loaders/STLLoader.js';
-import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
-import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
+import * as K from './scene.js';
+import {PHONE_CSS, tripScreen} from './phone.js';
 
-// icons
-for (const el of document.querySelectorAll('.ic')) el.innerHTML = await (await fetch('../mcold-spec/icons/'+el.dataset.i+'.svg')).text();
-await document.fonts.load('700 40px Plex'); await document.fonts.load('600 40px Plex'); await document.fonts.ready;
+for (const el of document.querySelectorAll('.chip')) el.insertAdjacentHTML('afterbegin', await (await fetch('../mcold-spec/icons/' + el.dataset.i + '.svg')).text());
+document.head.insertAdjacentHTML('beforeend', `<style>${PHONE_CSS}</style>`);
+await K.fonts();
 
-const W=1180,H=1080, DPR=window.devicePixelRatio;
-const canvas=document.getElementById('gl');
-const R=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,preserveDrawingBuffer:true});
-R.setPixelRatio(DPR); R.setSize(W,H,false);
-R.toneMapping=THREE.ACESFilmicToneMapping; R.toneMappingExposure=1.05;
-R.outputColorSpace=THREE.SRGBColorSpace;
-R.shadowMap.enabled=true; R.shadowMap.type=THREE.VSMShadowMap;
-const S=new THREE.Scene();
-const pm=new THREE.PMREMGenerator(R); S.environment=pm.fromScene(new RoomEnvironment(),0.04).texture;
+const W = 1920, H = 1080;
+const R = K.renderer(document.getElementById('gl'), W, H);
+const S = new THREE.Scene();
+const FLOOR = -92;
+K.studio(R, S, {floorY: FLOOR});
+const cam = new THREE.PerspectiveCamera(24, W / H, 10, 3000);
+const CP = K.qjson('cam', [60, 135, 520, 23, -40, 12]);
+cam.position.set(CP[0], CP[1], CP[2]); cam.lookAt(CP[3], CP[4], CP[5]);
 
-const cam=new THREE.PerspectiveCamera(24,W/H,10,3000);
-const CP=JSON.parse(new URLSearchParams(location.search).get('cam')||'[100,135,480,30,-42,12]'); cam.position.set(CP[0],CP[1],CP[2]); cam.lookAt(CP[3],CP[4],CP[5]);
-
-const key=new THREE.DirectionalLight(0xffffff,2.0); key.position.set(-90,260,170); key.castShadow=true;
-key.shadow.mapSize.set(2048,2048); Object.assign(key.shadow.camera,{left:-200,right:200,top:200,bottom:-200,near:10,far:800}); key.shadow.radius=26; key.shadow.blurSamples=32; key.shadow.bias=-0.0006;
-S.add(key);
-const rim=new THREE.DirectionalLight(0xbfefff,1.1); rim.position.set(220,60,-120); S.add(rim);
-S.add(new THREE.HemisphereLight(0xffffff,0xd8e8ee,0.55));
-
-const FLOOR=-92;
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(2000,2000),new THREE.ShadowMaterial({opacity:.16}));
-floor.rotation.x=-Math.PI/2; floor.position.y=FLOOR; floor.receiveShadow=true; S.add(floor);
-
-// ---------- device ----------
-const C=new THREE.Vector3(-21.5,5.8,15.65);  // model centre
-const dev=new THREE.Group(); S.add(dev);
-dev.rotation.set(-0.16,-0.42,0.0); dev.position.set(-8,-6,0);
-
-const L=new STLLoader();
-const load=f=>new Promise(r=>L.load('build/stl/'+f+'.stl',g=>{g.translate(-C.x,-C.y,-C.z);g.computeVertexNormals();r(g)}));
-const front=new THREE.MeshPhysicalMaterial({color:0xf3f6f7,roughness:.42,metalness:0,clearcoat:.35,clearcoatRoughness:.35});
-const back=new THREE.MeshPhysicalMaterial({color:0x0f6f80,roughness:.38,metalness:.05,clearcoat:.5,clearcoatRoughness:.25});
-const pipeOff=new THREE.MeshPhysicalMaterial({color:0xe9f1f3,roughness:.25,transmission:.0,clearcoat:1,emissive:0x8aa7b0,emissiveIntensity:.08});
-const pipeOn=new THREE.MeshPhysicalMaterial({color:0x2fcf74,roughness:.2,clearcoat:1,emissive:0x16b85a,emissiveIntensity:.9});
-const add=(g,m,shadow=true)=>{const o=new THREE.Mesh(g,m);o.castShadow=shadow;o.receiveShadow=false;dev.add(o);return o};
-add(await load('Main_Case_BOT_80CM_24_08_26_V2x_2'),front);
-add(await load('Main_Case_TOP_80CM_24_08_26_V2x_3'),back);
-add(await load('2_13_Flexible_Monochrome_eInk_212x104_v1_8'),new THREE.MeshStandardMaterial({color:0x1d2326,roughness:.6}));
-add(await load('Resin_5'),pipeOff); add(await load('Resin_6'),pipeOn); add(await load('Resin_7'),pipeOff); add(await load('Resin_10'),pipeOff);
-// glow halo for LED2
-{const c=document.createElement('canvas');c.width=c.height=128;const x=c.getContext('2d');
- const g=x.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,'rgba(40,210,110,.55)');g.addColorStop(.35,'rgba(40,200,110,.18)');g.addColorStop(1,'rgba(40,200,110,0)');
- x.fillStyle=g;x.fillRect(0,0,128,128);
- const sp=new THREE.Mesh(new THREE.PlaneGeometry(8,8),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c),transparent:true,depthWrite:false,toneMapped:false}));
- sp.position.set(0,-24,6.4); dev.add(sp);}
-
-// e-paper screen (window x -24..24, y -11.5..11.5 in centred coords)
-const tex=await new THREE.TextureLoader().loadAsync('build/screen_tex.png');
-tex.colorSpace=THREE.SRGBColorSpace; tex.anisotropy=8;
-const scr=new THREE.Mesh(new THREE.PlaneGeometry(48.4,23.6),new THREE.MeshPhysicalMaterial({map:tex,roughness:.55,clearcoat:.6,clearcoatRoughness:.15,emissive:0xffffff,emissiveMap:tex,emissiveIntensity:.18}));
-scr.position.set(0,0,5.62); dev.add(scr);
-
-// front print: wordmark + NFC mark
-{const c=document.createElement('canvas');c.width=1600;c.height=480;const x=c.getContext('2d');
- x.textAlign='center';x.textBaseline='middle';
- x.font='700 170px Plex';
- const t1='m',t2='COLD';const w1=x.measureText(t1).width,w2=x.measureText(t2).width;const sx=800-(w1+w2)/2;
- x.textAlign='left';x.fillStyle='#0b3550';x.fillText(t1,sx,190);x.fillStyle='#0e8391';x.fillText(t2,sx+w1,190);
- x.textAlign='center';x.font='600 54px Plex';x.fillStyle='#6b7f8b';x.letterSpacing='14px';x.fillText('COLD-CHAIN MONITOR',800,370);
- const m=new THREE.Mesh(new THREE.PlaneGeometry(40,12),new THREE.MeshPhysicalMaterial({map:new THREE.CanvasTexture(c),transparent:true,roughness:.4,clearcoat:.35,polygonOffset:true,polygonOffsetFactor:-2}));
- m.material.map.colorSpace=THREE.SRGBColorSpace; m.material.map.anisotropy=8;
- m.position.set(0,26.5,6.17); dev.add(m);}
+const dev = await K.device(S);
+dev.rotation.set(-0.16, -0.42, 0); dev.position.set(-8, -6, 0);
 dev.updateMatrixWorld(true);
-const P=(x,y,z)=>new THREE.Vector3(x,y,z).applyMatrix4(dev.matrixWorld);
+const P = (x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(dev.matrixWorld);
 
-// ---------- thermocouple ----------
-function braidTexture(){
-  const c=document.createElement('canvas');c.width=512;c.height=256;const x=c.getContext('2d');
-  x.fillStyle='#8d959b';x.fillRect(0,0,512,256);
-  const n=16, cw=512/n, ch=256/8;
-  for(let i=0;i<n;i++)for(let j=0;j<8;j++){
-    const dir=(i+j)%2; const blue=(j===((i*1)%8)) || (j===((i+4)%8));
-    const g=x.createLinearGradient(i*cw,j*ch,(i+1)*cw,(j+1)*ch);
-    if(blue){g.addColorStop(0,'#1f78c8');g.addColorStop(.5,'#3aa0ec');g.addColorStop(1,'#14609f');}
-    else{g.addColorStop(0,'#c9d0d5');g.addColorStop(.45,'#f6f8f9');g.addColorStop(1,'#9aa3a9');}
-    x.save();x.translate(i*cw+cw/2,j*ch+ch/2);x.rotate(dir?0.5:-0.5);
-    x.fillStyle=g;x.beginPath();x.roundRect(-cw*.62,-ch*.34,cw*1.24,ch*.68,ch*.3);x.fill();
-    x.strokeStyle='rgba(60,66,72,.55)';x.lineWidth=1.5;
-    for(let k=-2;k<=2;k++){x.beginPath();x.moveTo(-cw*.55,k*ch*.12);x.lineTo(cw*.55,k*ch*.12);x.stroke();}
-    x.restore();}
-  const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=8;return t;}
+// cable leaves the bottom edge, loops on the floor and ends at the probe
+const exit = P(4, -43.2, .5), down = new THREE.Vector3(0, -1, 0).transformDirection(dev.matrixWorld);
+const cr = 1.9, fy = FLOOR + cr;
+const rel = [[-3, 14, 16], [-10, 1, 34], [-36, 0, 46], [-64, 0, 36], [-70, 0, 14], [-56, 0, 2], [-42, 0, 14], [-48, 0, 34], [-70, 0, 44], [-96, 0, 44]];
+const curve = new THREE.CatmullRomCurve3([exit.clone().addScaledVector(down, -2), exit.clone(), exit.clone().addScaledVector(down, 10),
+  ...rel.map(([x, y, z]) => new THREE.Vector3(exit.x + x, fy + y, exit.z + z))], false, 'centripetal');
+const tc = K.thermocouple(S, curve, {floorY: FLOOR, spin: +(K.Q.get('pr') || 4.71), fromTip: true});
+{const g = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 3, 40), K.M.back());
+ g.position.copy(P(4, -43.6, .5)); g.quaternion.copy(dev.quaternion); g.castShadow = true; S.add(g);}
 
-const exit=P(4,-43.2,0.5);                       // cable exits bottom edge, slightly right of centre
-const down=new THREE.Vector3(0,-1,0).transformDirection(dev.matrixWorld);
-const cr=1.9, fy=FLOOR+cr;
-const pts=[exit.clone().addScaledVector(down,-2), exit.clone(), exit.clone().addScaledVector(down,10),
-  new THREE.Vector3(exit.x+3, fy+14, exit.z+16),
-  new THREE.Vector3(exit.x+10, fy+1, exit.z+34),
-  new THREE.Vector3(exit.x+36, fy+0, exit.z+46),
-  new THREE.Vector3(exit.x+64, fy+0, exit.z+36),
-  new THREE.Vector3(exit.x+70, fy+0, exit.z+14),
-  new THREE.Vector3(exit.x+56, fy+0, exit.z+2),
-  new THREE.Vector3(exit.x+42, fy+0, exit.z+14),
-  new THREE.Vector3(exit.x+48, fy+0, exit.z+34),
-  new THREE.Vector3(exit.x+70, fy+0, exit.z+44),
-  new THREE.Vector3(exit.x+96, fy+0, exit.z+44)];
-const curve=new THREE.CatmullRomCurve3(pts,false,'centripetal');
-const len=curve.getLength();
-const bt=braidTexture(); bt.repeat.set(len/5.0,1);
-const cable=new THREE.Mesh(new THREE.TubeGeometry(curve,900,cr,24,false),
-  new THREE.MeshPhysicalMaterial({map:bt,metalness:.75,roughness:.38,clearcoat:.2}));
-cable.castShadow=cable.receiveShadow=true; S.add(cable);
-// strain relief grommet at exit
-{const g=new THREE.Mesh(new THREE.CylinderGeometry(3.4,3.4,3,40),new THREE.MeshPhysicalMaterial({color:0x0f6f80,roughness:.4,clearcoat:.4}));
- g.position.copy(P(4,-43.6,0.5)); g.quaternion.copy(dev.quaternion); g.castShadow=true; S.add(g);}
+R.render(S, cam);
 
-// probe: crimp collar + stainless sheath + chamfered tip, lying on the floor along the curve tangent
-const end=curve.getPoint(1), tan=curve.getTangent(1).setY(0).normalize();
-const steel=new THREE.MeshPhysicalMaterial({color:0xd6dadd,metalness:1,roughness:.24,clearcoat:.3});
-function engraving(){const c=document.createElement('canvas');c.width=1024;c.height=2048;const x=c.getContext('2d');
-  x.fillStyle='#d4d8db';x.fillRect(0,0,1024,2048);
-  // brushed finish runs along the sheath
-  for(let i=0;i<700;i++){const v=Math.random()<.5?255:110;x.strokeStyle=`rgba(${v},${v},${v+5},.05)`;x.beginPath();const u=Math.random()*1024;x.moveTo(u,0);x.lineTo(u+Math.random()*2,2048);x.stroke();}
-  // laser marking, reads from the collar toward the tip so it is upright in the hero shot (canvas top = tip end)
-  x.save();x.translate(256,2048-250);x.rotate(-Math.PI/2);
-  x.font='700 118px Plex';x.textBaseline='middle';const txt='T/C K(S) 75309005 /08-26';
-  const w=x.measureText(txt).width;x.scale(Math.min(1,1560/w),1);x.fillStyle='#2a2e32';x.fillText(txt,0,0);x.restore();
-  const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;t.anisotropy=8;return t;}
-const probe=new THREE.Group(); S.add(probe);
-const sheathL=34, sr=2.45;
-// LatheGeometry along +y: collar, sheath, tip
-{const collar=new THREE.Mesh(new THREE.CylinderGeometry(2.75,2.75,5.5,48),steel); collar.position.y=2.75; probe.add(collar);
- const slot=new THREE.Mesh(new THREE.BoxGeometry(1.2,2.2,0.6),new THREE.MeshStandardMaterial({color:0x444a50,metalness:.6,roughness:.5})); slot.position.set(0,3.2,2.6); probe.add(slot);
- const neck=new THREE.Mesh(new THREE.CylinderGeometry(sr,2.75,0.8,48),steel); neck.position.y=5.9; probe.add(neck);
- const em=engraving(); em.rotation=0;
- const sh=new THREE.Mesh(new THREE.CylinderGeometry(sr,sr,sheathL,64,1,true),new THREE.MeshPhysicalMaterial({map:em,metalness:1,roughness:.26,clearcoat:.3}));
- sh.position.y=6.3+sheathL/2; probe.add(sh);
- const tip=new THREE.Mesh(new THREE.CylinderGeometry(0.35,sr,3.2,64),steel); tip.position.y=6.3+sheathL+1.6; probe.add(tip);
- probe.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});}
-probe.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),tan);
-// rotate about own axis so the engraving faces the camera
-probe.rotateY(+(new URLSearchParams(location.search).get('pr')||4.71));
-probe.position.copy(end).setY(FLOOR+2.75);
-// tiny filler between cable end and collar
-{const f=new THREE.Mesh(new THREE.CylinderGeometry(cr,cr,3,24),new THREE.MeshPhysicalMaterial({map:bt,metalness:.75,roughness:.38}));
- f.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),tan); f.position.copy(end).addScaledVector(tan,-0.5).setY(fy); S.add(f);}
-
-// contact shadows for the thin parts (VSM blur washes them out)
-{const sm=new THREE.MeshBasicMaterial({color:0x0b3550,transparent:true,opacity:.10,depthWrite:false});
- const flat=new THREE.CatmullRomCurve3(curve.getPoints(400).filter(v=>v.y<fy+3).map(v=>new THREE.Vector3(v.x+1.2,FLOOR+0.05,v.z-0.8)));
- const sh=new THREE.Mesh(new THREE.TubeGeometry(flat,600,cr*1.25,8,false),sm); sh.scale.set(1,1,1); S.add(sh);
- sh.geometry.applyMatrix4(new THREE.Matrix4().makeTranslation(0,0,0));
- const ps=new THREE.Mesh(new THREE.CylinderGeometry(3,3,44,24),sm); ps.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),tan);
- ps.scale.set(1,1,0.15); ps.position.copy(end).addScaledVector(tan,22).setY(FLOOR+0.05); S.add(ps);}
-if(new URLSearchParams(location.search).get('clean')){document.querySelector('.panel').style.display='none';}
-R.render(S,cam);
-
-// ---------- callouts (project 3D anchors to screen) ----------
-const proj=v=>{const p=v.clone().project(cam);return [(p.x+1)/2*W,(1-p.y)/2*H]};
-const anchors={
-  screen:proj(P(17,-3,5.7)),
-  led:proj(P(3.2,-24,6.3)),
-  side:proj(P(-20,43.5,1)),
-  probe:proj(probe.localToWorld(new THREE.Vector3(0,3,2.8))),
-  cable:proj(curve.getPoint(0.42)),
-  back:proj(P(43.6,-6,-3.2)),
+// ---------- overlays ----------
+const pj = K.projector(cam, W, H);
+const svg = document.getElementById('lines'), box = document.getElementById('callouts');
+const A = {
+  screen: pj(P(-28, -4, 6.4)), led: pj(P(-11.2, -24, 6.3)), back: pj(P(43.6, -6, -3.2)),
+  probe: pj(tc.probe.localToWorld(new THREE.Vector3(0, 3, 2.8))), nfc: pj(P(0, 36, 6.2)),
 };
-const lines=document.getElementById('lines'), box=document.getElementById('callouts');
-function callout(a,tx,ty,side,title,sub){
-  const [ax,ay]=anchors[a];
-  const ex=side==='r'?tx-14:tx+14;
-  lines.insertAdjacentHTML('beforeend',`<polyline points="${ax},${ay} ${ex-(side==='r'?24:-24)},${ty+12} ${ex},${ty+12}" fill="none" stroke="#0e8391" stroke-width="1.6" stroke-opacity=".75"/><circle cx="${ax}" cy="${ay}" r="5.5" fill="#fff" stroke="#0e8391" stroke-width="2.4"/>`);
-  const d=document.createElement('div');d.className='co '+side;d.innerHTML=`<b>${title}</b><small>${sub}</small>`;
-  d.style.top=ty+'px'; if(side==='r') d.style.left=tx+'px'; else d.style.right=(W-tx+1180-1180)+'px';
-  if(side==='l'){d.style.right='auto';d.style.left=(tx-300)+'px';d.style.width='300px'}
-  box.appendChild(d);}
-window.anchors=anchors;
-const A=JSON.parse(new URLSearchParams(location.search).get('co')||'null');
-const def=A||[
-  ['screen',860,236,'r','จอ e-Paper 2.13″','หน้าจอ TRIP ACTIVE · อุณหภูมิ / MIN · MAX'],
-  ['led',860,560,'r','ไฟสถานะ RGB','สีเขียว = ทริปทำงานปกติ'],
-  ['back',860,404,'r','เคสหลังสีเทอร์ควอยซ์','ตัวเครื่องหนา 12 มม.'],
-  ['probe',930,770,'r','Thermocouple Type K','หัววัดสแตนเลส สายถักโลหะ'],
-];
-if(!new URLSearchParams(location.search).get('clean')){for(const c of def) callout(...c);
-// thermocouple photo inset
-const ins=document.createElement('div');ins.className='inset';ins.innerHTML='<img src="assets/thermocouple.jpg">';
-const [ix,iy]=JSON.parse(new URLSearchParams(location.search).get('ins')||'[96,690]');
-ins.style.left=ix+'px';ins.style.top=iy+'px';document.body.appendChild(ins);
-const cap=document.createElement('div');cap.className='insetcap';cap.innerHTML='<b>ภาพจริง · หัววัด Thermocouple</b>Type K ปลอกสแตนเลส สายถักลายฟ้า';
-cap.style.left=(ix+118-150)+'px';cap.style.top=(iy+250)+'px';document.body.appendChild(cap);
-}
-console.log(JSON.stringify(anchors));
-window.done=1;
+const co = K.qjson('co', {screen: [520, 480], led: [520, 640], back: [1060, 560], probe: [150, 880]});
+K.callout(svg, box, A.screen, co.screen[0], co.screen[1], 'l', 'จอ e-Paper 2.13″', 'กรอบเลนส์สีเข้ม · หน้าจอ TRIP ACTIVE<br>อุณหภูมิล่าสุด และ MIN / MAX ของทริป', {w: 340});
+K.callout(svg, box, A.led, co.led[0], co.led[1], 'l',
+  '<span class="dots"><i style="background:#ff3b3b"></i><i style="background:#22c8f0"></i><i style="background:#ffb020"></i></span>ไฟสถานะ RGB 3 ดวง',
+  'ซ้าย สินค้า (แดง = alarm) · กลาง ทริป (ฟ้า)<br>ขวา ตัวเครื่อง (เหลือง = ต้องตรวจ)', {w: 380});
+K.callout(svg, box, A.back, co.back[0], co.back[1], 'r', 'เคสหลังสีเทอร์ควอยซ์', 'ตัวเครื่อง 87 × 87 × 12 มม.');
+K.callout(svg, box, A.probe, co.probe[0], co.probe[1], 'r', 'Thermocouple Type K', 'หัววัดสแตนเลส สายถักโลหะ');
+
+// phone with the app, tapping the NFC area of the box
+const ph = K.qjson('ph', [1330, 170]);
+const phone = document.createElement('div'); phone.className = 'phone'; phone.innerHTML = tripScreen();
+phone.style.left = ph[0] + 'px'; phone.style.top = ph[1] + 'px'; phone.style.transform = 'perspective(1600px) rotateY(-14deg) rotateZ(2deg)';
+document.body.appendChild(phone);
+const lab = document.createElement('div'); lab.className = 'applabel';
+lab.innerHTML = '<b>แอป mCOLD</b><small>ดูอุณหภูมิสด กราฟทั้งทริป เริ่ม/หยุดทริป และส่งออก CSV</small>';
+lab.style.left = (ph[0] - 45) + 'px'; lab.style.top = (ph[1] + 718) + 'px'; document.body.appendChild(lab);
+// NFC link: dashed arc from the NFC area on the box to the phone
+const [nx, ny] = A.nfc, px = ph[0] + 6, py = ph[1] + 150;
+svg.insertAdjacentHTML('beforeend', `<path d="M${nx},${ny} Q${(nx + px) / 2},${Math.min(ny, py) - 120} ${px},${py}" fill="none" stroke="${K.COL.teal2}" stroke-width="2.2" stroke-dasharray="2 8" stroke-linecap="round"/>
+  ${[14, 24, 34].map((r, i) => `<path d="M${nx - r * .7},${ny - r * .7} A${r},${r} 0 0 1 ${nx + r * .7},${ny - r * .7}" fill="none" stroke="${K.COL.teal2}" stroke-width="2" stroke-opacity="${.9 - i * .25}"/>`).join('')}
+  <circle cx="${nx}" cy="${ny}" r="5.5" fill="#fff" stroke="${K.COL.teal}" stroke-width="2.4"/>`);
+const tap = document.createElement('div'); tap.className = 'tap';
+tap.innerHTML = (await (await fetch('../mcold-spec/icons/nfc.svg')).text()) + 'แตะ NFC → เชื่อมต่อ BLE';
+tap.style.left = ((nx + px) / 2 - 60) + 'px'; tap.style.top = (Math.min(ny, py) - 112) + 'px'; document.body.appendChild(tap);
+
+await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+console.log(JSON.stringify(A));
+window.done = 1;
 </script></body></html>

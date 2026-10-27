@@ -1,0 +1,161 @@
+<!doctype html><html><head><meta charset="utf-8">
+<style>
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-SemiBold.ttf);font-weight:600}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Bold.ttf);font-weight:700}
+:root{--ink:#14293a;--navy:#0b3550;--teal:#0e8391;--muted:#5f707c;--line:#dfe7ec}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden}
+body{font-family:Plex,sans-serif;color:var(--ink);position:relative;
+  background:radial-gradient(1300px 900px at 42% 52%,#ffffff 0%,#f2f8fa 52%,#e1eef2 100%)}
+#gl,#lines{position:absolute;left:0;top:0;width:1920px;height:1080px}
+.title{position:absolute;left:96px;top:76px}
+.kicker{font-size:16px;font-weight:600;letter-spacing:.24em;color:var(--teal);text-transform:uppercase}
+h1{font-size:56px;line-height:1.15;font-weight:700;color:var(--navy);margin-top:8px}
+h1 span{color:var(--teal)}
+.co{position:absolute;font-size:15px;line-height:1.35;color:var(--navy)}
+.co b{font-weight:600;display:block;font-size:17px}
+.co b em{font-style:normal;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--navy);color:#fff;font-size:13px;margin-right:8px;vertical-align:1px}
+.co small{color:var(--muted);font-size:14.5px;display:block}
+.co.l{text-align:right}
+.inset{position:absolute;border-radius:24px;background:rgba(255,255,255,.72);border:1px solid var(--line);box-shadow:0 20px 50px rgba(11,53,80,.10)}
+.inset h3{position:absolute;left:24px;top:18px;font-size:17px;font-weight:600;color:var(--navy)}
+.inset h3 small{display:block;font-size:13.5px;font-weight:400;color:var(--muted)}
+#gl2,#lines2{position:absolute}
+.tag{position:absolute;font-size:13.5px;font-weight:600;color:var(--navy);background:#fff;border:1px solid var(--line);border-radius:8px;padding:3px 9px;white-space:nowrap;box-shadow:0 4px 10px rgba(11,53,80,.08)}
+.tag small{font-weight:400;color:var(--muted);margin-left:4px}
+</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head><body>
+<canvas id="gl"></canvas>
+<svg id="lines"></svg>
+<div id="callouts"></div>
+<div class="title"><div class="kicker">Exploded View</div><h1>ส่วนประกอบภายใน m<span>COLD</span></h1></div>
+
+<div class="inset" id="inset"><h3>บอร์ดหลัก · ด้านอุปกรณ์<small>มองจากด้านหลังเครื่อง</small></h3></div>
+<canvas id="gl2"></canvas><svg id="lines2"></svg>
+
+<script type="module">
+import * as THREE from 'three';
+import * as K from './scene.js';
+
+await K.fonts();
+const W = 1920, H = 1080;
+const R = K.renderer(document.getElementById('gl'), W, H);
+const S = new THREE.Scene();
+const FLOOR = -118;
+K.studio(R, S, {floorY: FLOOR, key: [-60, 300, 220], shadowOpacity: .06});
+const cam = new THREE.PerspectiveCamera(24, W / H, 10, 4000);
+const CP = K.qjson('cam', [0, 120, 620, 10, -20, 0]);
+cam.position.set(CP[0], CP[1], CP[2]); cam.lookAt(CP[3], CP[4], CP[5]);
+
+// load everything once; geometries are shared with the PCB inset
+const G = {};
+for (const [k, f] of Object.entries({bot: K.PART.bot, top: K.PART.top, eink: K.PART.eink, plate: K.PART.plate, nfc: K.PART.nfc, battery: K.PART.battery, }))
+  G[k] = await K.load(f);
+G.pipes = []; for (const p of K.PART.pipes) G.pipes.push(await K.load(p));
+G.pcb = {}; for (const k of ['board', 'metal', 'tin', 'tan', 'black']) G.pcb[k] = await K.load('pcb_' + k);
+
+// stack, back to front; dz = offset along the case's front axis (mm)
+const stack = new THREE.Group(); S.add(stack);
+const ROT = K.qjson('rot', [-0.1, -0.85, 0]);
+stack.rotation.set(...ROT);
+const DZ = K.qjson('dz', {top: 0, battery: 40, pcb: 80, plate: 116, nfc: 144, eink: 176, pipes: 208, bot: 250});
+const MID = (DZ.top + DZ.bot) / 2;   // centre the stack on the origin
+const layer = (k) => { const g = new THREE.Group(); g.position.z = DZ[k] - MID; stack.add(g); return g; };
+
+const Lt = layer('top'); K.mesh(G.top, K.M.back(), Lt);
+const Lb = layer('battery'); K.mesh(G.battery, K.M.battery(), Lb);
+{ // battery label print on the front face
+  const c = document.createElement('canvas'); c.width = 1180; c.height = 740; const x = c.getContext('2d');
+  x.fillStyle = '#0b3550'; x.fillRect(0, 0, 1180, 740); x.fillStyle = '#0e8391'; x.fillRect(0, 600, 1180, 140);
+  x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff'; x.font = '700 150px Plex'; x.fillText('Li-Po 3.7 V', 590, 250);
+  x.font = '500 70px Plex'; x.fillStyle = '#9fdde5'; x.fillText('59 × 37 × 5 mm', 590, 420); x.fillStyle = '#fff'; x.font = '600 56px Plex'; x.fillText('mCOLD', 590, 670);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(55, 34), new THREE.MeshPhysicalMaterial({map: t, roughness: .5, clearcoat: .3}));
+  G.battery.computeBoundingBox(); m.position.set(0, 0, G.battery.boundingBox.max.z + .03); Lb.add(m);
+}
+const Lp = layer('pcb'); for (const k in G.pcb) K.mesh(G.pcb[k], K.M[k](), Lp);
+const Lpl = layer('plate'); K.mesh(G.plate, K.M.plate(), Lpl);
+const Ln = layer('nfc'); K.mesh(G.nfc, K.M.board(), Ln);
+{ // NFC antenna coil on the eSENSE board (x -20..20, y 21..39)
+  const c = document.createElement('canvas'); c.width = 1000; c.height = 450; const x = c.getContext('2d');
+  x.strokeStyle = '#d9a441'; x.lineWidth = 9;
+  for (let i = 0; i < 6; i++) { const p = 30 + i * 22; x.beginPath(); x.roundRect(p, p * .8, 1000 - 2 * p, 450 - 1.6 * p, 30); x.stroke(); }
+  x.fillStyle = '#1d2023'; x.fillRect(440, 190, 120, 80);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(39, 17.5), new THREE.MeshPhysicalMaterial({map: t, transparent: true, metalness: .5, roughness: .4}));
+  G.nfc.computeBoundingBox(); m.position.set(0, 30, G.nfc.boundingBox.max.z + .03); Ln.add(m);
+}
+const Le = layer('eink'); K.mesh(G.eink, K.M.eink(), Le); await K.screen(Le, 20.84 - 15.65 + .03);
+const Lpi = layer('pipes'); const pipes = G.pipes.map(g => K.mesh(g, K.M.pipe(), Lpi));
+pipes.forEach((p, i) => p.material = new THREE.MeshBasicMaterial({color: K.LED_COL[i], toneMapped: false}));
+const Lf = layer('bot'); K.mesh(G.bot, K.M.front(), Lf); K.bezel(Lf); K.frontPrint(Lf);
+K.leds(Lf, [], [], {labels: true});
+
+// thermocouple: leaves the PCB layer's bottom edge, drops to the floor, probe lies in front
+stack.updateMatrixWorld(true);
+const P = (g, x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(g.matrixWorld);
+const ex0 = P(Lt, 4, -43.4, .5);
+{const g = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 3, 40), K.M.back()); g.position.copy(P(Lt, 4, -43.8, .5)); g.quaternion.copy(stack.quaternion); S.add(g);}
+const fy = FLOOR + 1.9;
+const curve = new THREE.CatmullRomCurve3([ex0.clone().add(new THREE.Vector3(0, 2, 0)), ex0, ex0.clone().add(new THREE.Vector3(0, -14, 2)),
+  ...K.qjson('tc', [[-6, 8, 20], [-20, 0, 44], [-60, 0, 62], [-100, 0, 70], [-140, 0, 72]]).map(([x, y, z]) => new THREE.Vector3(ex0.x + x, fy + y, ex0.z + z))], false, 'centripetal');
+const tc = K.thermocouple(S, curve, {floorY: FLOOR, spin: +(K.Q.get('pr') || 4.71), fromTip: true});
+
+R.render(S, cam);
+
+// ---------- callouts ----------
+const pj = K.projector(cam, W, H);
+const svg = document.getElementById('lines'), box = document.getElementById('callouts');
+const n = (i, t) => `<em>${i}</em>${t}`;
+const parts = [
+  // [anchor, label x, label y, side, title, sub]
+  [pj(P(Lf, -38, 30, 6)), 330, 420, 'l', n(1, 'เคสหน้า'), 'ช่องจอ 48 × 23 มม. · กรอบเลนส์สีเข้ม<br>พิมพ์ชื่อไฟ CARGO · TRIP · DEVICE'],
+  [pj(P(Lpi, 7.5, -24, 6)), 330, 640, 'l', n(2, 'ท่อนำแสงไฟสถานะ'), 'RGB 3 ดวง: แดง สินค้า · ฟ้า ทริป · เหลือง เครื่อง'],
+  [pj(P(Le, 20, -8, 5.3)), 980, 800, 'r', n(3, 'จอ e-Paper 2.13″'), '250 × 122 px · ภาพค้างได้โดยไม่ใช้ไฟ'],
+  [pj(P(Ln, -14, 34, 4.4)), 560, 222, 'l', n(4, 'บอร์ด NFC'), 'ST25DV04KC · แตะมือถือเพื่อเชื่อมต่อ'],
+  [pj(P(Lpl, -6, 18, 4)), 1000, 170, 'r', n(5, 'แผ่นรองจอ'), 'ยึดจอและบอร์ด NFC'],
+  [pj(P(Lp, -38, 36, 2.8)), 1330, 170, 'r', n(6, 'บอร์ดหลัก'), 'ESP32-S3 · GNSS · MAX6675<br>charger BQ25601 · NFC · RTC'],
+  [pj(P(Lb, 10, -10, 2.8)), 1460, 400, 'r', n(7, 'แบตเตอรี่ Li-Po'), '59 × 37 × 5 มม. · ชาร์จ USB-C PD'],
+  [pj(P(Lt, 43.4, -8, -2)), 1460, 530, 'r', n(8, 'เคสหลัง'), 'สีเทอร์ควอยซ์ · หนารวม 12 มม.'],
+  [pj(tc.probe.localToWorld(new THREE.Vector3(0, 3, 2.8))), 400, 900, 'l', n(9, 'Thermocouple Type K'), 'หัววัดสแตนเลส · อ่านผ่าน MAX6675'],
+];
+const OV = K.qjson('lab', {});
+parts.forEach((p, i) => { const o = OV[i + 1]; K.callout(svg, box, p[0], o ? o[0] : p[1], o ? o[1] : p[2], o ? o[2] || p[3] : p[3], p[4], p[5], {w: 330}); });
+
+// ---------- PCB component side inset ----------
+const IN = K.qjson('in', [1360, 640, 500, 400]);
+const ins = document.getElementById('inset'); Object.assign(ins.style, {left: IN[0] + 'px', top: IN[1] + 'px', width: IN[2] + 'px', height: IN[3] + 'px'});
+const c2 = document.getElementById('gl2'); Object.assign(c2.style, {left: IN[0] + 'px', top: IN[1] + 'px', width: IN[2] + 'px', height: IN[3] + 'px'});
+const R2 = K.renderer(c2, IN[2], IN[3]); R2.shadowMap.enabled = false;
+const S2 = new THREE.Scene(); K.studio(R2, S2, {key: [80, 200, -260]});
+const pcb = new THREE.Group(); S2.add(pcb); for (const k in G.pcb) K.mesh(G.pcb[k], K.M[k](), pcb, false);
+pcb.rotation.set(0.5, Math.PI + 0.25, 0);   // seen from behind, tilted
+const cam2 = new THREE.PerspectiveCamera(24, IN[2] / IN[3], 10, 2000); cam2.position.set(0, 0, 250); cam2.lookAt(0, 8, 0);
+R2.render(S2, cam2);
+pcb.updateMatrixWorld(true);
+const pj2 = K.projector(cam2, IN[2], IN[3]);
+const q = (x, y, z) => pj2(new THREE.Vector3(x - K.C.x, y - K.C.y, z - K.C.z).applyMatrix4(pcb.matrixWorld));
+const l2 = document.getElementById('lines2'); Object.assign(l2.style, {left: IN[0] + 'px', top: IN[1] + 'px', width: IN[2] + 'px', height: IN[3] + 'px'});
+// component centres in STEP mm, on the back side of the board (z ~ 14–16)
+const tags = [
+  [q(-41.9, 35.5, 13.6), 'ESP32-S3', 'WROOM-1U', [-150, -40]],
+  [q(-21.2, 33.0, 14.3), 'GNSS', 'ATGM336H', [20, -70]],
+  [q(-1.5, -26.8, 14.8), 'microSD', '', [-30, 60]],
+  [q(-58.9, -14.2, 13.6), 'USB-C', 'PD', [70, 40]],
+  [q(13.5, -21.2, 12.8), 'Buzzer', '', [-120, 52]],
+];
+for (const [[x, y], t, s, [dx, dy]] of tags) {
+  const tx = x + dx, ty = y + dy;
+  l2.insertAdjacentHTML('beforeend', `<line x1="${x}" y1="${y}" x2="${tx}" y2="${ty}" stroke="${K.COL.teal}" stroke-width="1.5"/><circle cx="${x}" cy="${y}" r="4" fill="#fff" stroke="${K.COL.teal}" stroke-width="2"/>`);
+  const d = document.createElement('div'); d.className = 'tag'; d.innerHTML = t + (s ? `<small>${s}</small>` : '');
+  d.style.left = (IN[0] + tx) + 'px'; d.style.top = (IN[1] + ty - 12) + 'px'; document.body.appendChild(d);
+  if (dx < 0) d.style.transform = 'translateX(-100%)';
+}
+
+await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+console.log(JSON.stringify(parts.map(p => p[0].map(Math.round))));
+window.done = 1;
+</script></body></html>

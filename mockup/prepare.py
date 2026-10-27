@@ -12,7 +12,7 @@ from OCP.collections import Sequence_TDF_Label as TDF_LabelSequence
 from OCP.TDataStd import TDataStd_Name
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
 from OCP.TopExp import TopExp_Explorer
-from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED
+from OCP.TopAbs import TopAbs_FACE, TopAbs_SHELL, TopAbs_REVERSED
 from OCP.BRep import BRep_Tool
 from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS
@@ -53,8 +53,8 @@ def walk(l, loc):
 for i in range(1, labels.Length()+1):
     walk(labels.Value(i), TopLoc_Location())
 
-for idx,(nm, shp) in enumerate(parts):
-    BRepMesh_IncrementalMesh(shp, 0.05, False, 0.3, True)
+def mesh(shp):
+    """Triangles of every face in shp (already meshed) as one trimesh."""
     V, Fs, off = [], [], 0
     ex = TopExp_Explorer(shp, TopAbs_FACE)
     while ex.More():
@@ -70,7 +70,32 @@ for idx,(nm, shp) in enumerate(parts):
                 Fs.append((a+off-1, c+off-1, b+off-1) if rev else (a+off-1, b+off-1, c+off-1))
             off += t.NbNodes()
         ex.Next()
-    m = trimesh.Trimesh(np.array(V), np.array(Fs), process=True)
+    return trimesh.Trimesh(np.array(V).reshape(-1, 3), np.array(Fs, dtype=int).reshape(-1, 3), process=True)
+
+def pcb_kind(lo, hi):
+    """The PCB STEP carries no colours, so sort its 2148 shells by size for the explode render."""
+    d = hi - lo; area = d[0] * d[1]
+    if area > 5000: return 'board'
+    if 8.5 < lo[0] + 0.3 < 9.6 and -26 < lo[1] < -25: return 'black'      # buzzer MLT-8530
+    if area >= 60: return 'metal'                                       # ESP32 shield, GNSS, microSD, USB-C
+    if d[2] < 0.3: return 'tin'                                         # pins and pads
+    if area < 6 and d[2] < 1.0: return 'tan'                            # chip passives
+    return 'black'
+
+for idx,(nm, shp) in enumerate(parts):
+    BRepMesh_IncrementalMesh(shp, 0.05, False, 0.3, True)
+    m = mesh(shp)
     fn = "".join(ch if ch.isalnum() else "_" for ch in nm)[:40]+f"_{idx}"
     m.export(f"{out}/{fn}.stl")
     print(f"{nm!r:60} faces={len(m.faces):7} min={np.round(m.bounds[0],1)} max={np.round(m.bounds[1],1)} -> {fn}.stl")
+    if nm.startswith('3D_PCB_foam'):
+        groups = {}
+        ex = TopExp_Explorer(shp, TopAbs_SHELL)
+        while ex.More():
+            sm = mesh(ex.Current())
+            if len(sm.faces):
+                groups.setdefault(pcb_kind(*sm.bounds), []).append(sm)
+            ex.Next()
+        for k, ms in groups.items():
+            trimesh.util.concatenate(ms).export(f"{out}/pcb_{k}.stl")
+            print(f"  pcb_{k}.stl  shells={len(ms)}")
