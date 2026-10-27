@@ -56,10 +56,10 @@
 
 | ไฟล์ | เนื้อหา |
 |---|---|
-| `spec_sheet_*.png` | สเปกทั้งหมดในแผ่นเดียว พร้อมโลโก้และหมายเหตุ |
+| `spec_sheet_*.png` | สเปกทั้งหมดในแผ่นเดียว พร้อมภาพขนาดตัวเครื่อง โลโก้ และหมายเหตุ |
 | `spec_card_temp/body/sense/link/data/power_*.png` | การ์ดแยกหมวด: การวัดอุณหภูมิ, ตัวเครื่อง, การติดตาม, การเชื่อมต่อ, การเก็บข้อมูล, พลังงาน |
 | `spec_kpi_1…6_*.png` | ตัวเลขเด่น: 0.25 °C, 5 นาที, ~268 วัน, 7 วัน, 87×87×12.3 มม., 2.13″ |
-| `spec_dimensions_*.png` | ภาพขนาดด้านหน้าและด้านข้าง วาดแบบ orthographic จาก STEP (7 px ต่อ มม. ที่ 1×) |
+| `spec_dimensions_*.png` | ภาพขนาดด้านหน้าและด้านข้าง วาดแบบ orthographic จาก STEP (7 px ต่อ มม. ที่ 1×) มีสำเนาที่ `out/objects/device_dimensions_*.png` |
 
 ตัวเลขทุกตัวมาจากเอกสารใน repo: `README.md`, `docs/mCOLD_Firmware_Requirements_2026-09-19.md`,
 `docs/manuals/user-manual-th.md`, `docs/app/device-settings.md` และขนาดวัดจาก STEP

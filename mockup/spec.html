@@ -10,7 +10,7 @@
 @font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-SemiBold.ttf);font-weight:600}
 @font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Bold.ttf);font-weight:700}
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:1920px;height:1080px;overflow:hidden;background:transparent;font-family:Plex,sans-serif}
+html,body{width:1920px;height:100vh;overflow:hidden;background:transparent;font-family:Plex,sans-serif}
 :root{--card:#ffffff;--line:#e3eaee;--ink:#14293a;--head:#0b3550;--muted:#5f707c;--accent:#0e8391;--chip:#e6f5f6;--tag:#fdf2dc;--tagi:#b87a07;--shadow:0 18px 40px rgba(11,53,80,.10)}
 body.dark{--card:#0e3a56;--line:rgba(255,255,255,.12);--ink:#eef6f8;--head:#ffffff;--muted:#9fc0cc;--accent:#5ee0ec;--chip:rgba(94,224,236,.14);--tag:rgba(243,195,94,.16);--tagi:#f3c35e;--shadow:0 18px 40px rgba(0,0,0,.25)}
 #stage{position:absolute;left:40px;top:40px}
@@ -118,27 +118,37 @@ else if (o === 'kpi') {
   stage.innerHTML = `<div class="kpi"><i>${await icon(ic)}</i><div><div class="n">${n}<small>${u}</small></div><div class="d">${d}</div></div></div>`;
 } else if (o === 'sheet') {
   const logo = t === 'dark' ? 'TCOLD_lockup_on_dark' : 'TCOLD_lockup';
-  const cols = [['body', 'temp'], ['sense', 'link'], ['data', 'power']];
+  // first column opens with the dimension drawing; the page is rendered taller than 1080 for this
+  const cols = [['dims', 'body'], ['temp', 'sense'], ['link', 'data', 'power']];
   let html = `<div class="sheet"><div class="top"><img src="brand/${logo}.svg"><div><b>ข้อมูลจำเพาะ</b>Specifications · THANES Smart Cold Chain</div></div><div class="grid">`;
-  for (const c of cols) { html += '<div style="display:flex;flex-direction:column;gap:22px">'; for (const g of c) html += await card(g); html += '</div>'; }
+  for (const c of cols) {
+    html += '<div style="display:flex;flex-direction:column;gap:22px">';
+    for (const g of c) html += g === 'dims'
+      ? `<div class="card"><h3><i>${await icon('device-tablet')}</i>ขนาดตัวเครื่อง<small>Dimensions</small></h3><div id="dimslot"></div></div>`
+      : await card(g);
+    html += '</div>';
+  }
   html += `</div><div class="foot"><em>${T}</em>ค่าออกแบบ ยังไม่ได้วัดจริงบนเครื่องต้นแบบ · ความละเอียด 0.25 °C ไม่ใช่ความแม่นยำ ความแม่นยำขึ้นกับผลสอบเทียบ</div></div>`;
   stage.innerHTML = html;
+  const slot = document.getElementById('dimslot');
+  await dims(slot, slot.clientWidth, {gap: 56, ml: 40, labels: false});
 } else if (o === 'dims') {
-  await dims();
+  await dims(stage, 1500);
 }
 await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 window.done = 1;
 
 // Orthographic front and side views at a known mm -> px scale, with dimension lines
-async function dims() {
+async function dims(parent, avail, {gap = 120, ml = 60, labels = true} = {}) {
   const THREE = await import('three');
-  const PX = 7;                                  // CSS px per mm
-  const wrap = document.createElement('div'); wrap.id = 'dims'; stage.appendChild(wrap);
+  const wrap = document.createElement('div'); wrap.id = 'dims'; parent.appendChild(wrap);
   const S = new THREE.Scene(); const dev = await K.device(S);
   // measure the case shells only (first two meshes: front and back case), not the prints on top
   const box = new THREE.Box3().setFromObject(dev.children[0]).union(new THREE.Box3().setFromObject(dev.children[1])); const sz = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
-  const M = 30, FW = Math.ceil(sz.x * PX) + 2 * M, FH = Math.ceil(sz.y * PX) + 2 * M, SW = Math.ceil(sz.z * PX) + 2 * M;
-  const ox = 0, oy = 60, sx = FW + 120;           // front at (ox,oy), side at (sx,oy)
+  const M = 30;
+  const PX = Math.min(7, (avail - ml - gap - 40 - 4 * M) / (sz.x + sz.z));   // CSS px per mm, at most 7
+  const FW = Math.ceil(sz.x * PX) + 2 * M, FH = Math.ceil(sz.y * PX) + 2 * M, SW = Math.ceil(sz.z * PX) + 2 * M;
+  const ox = 0, oy = 60, sx = FW + gap;           // front at (ox,oy), side at (sx,oy)
   // one canvas, two viewports (front and side), so both share the renderer's environment
   const CW = sx + SW, cv = document.createElement('canvas'); wrap.appendChild(cv);
   Object.assign(cv.style, {left: '0px', top: oy + 'px', width: CW + 'px', height: FH + 'px'});
@@ -164,9 +174,11 @@ async function dims() {
     ${ext(x0, y0, x0, top - 6)}${ext(x1, y0, x1, top - 6)}${lineH(x0, x1, top, f(sz.x) + ' มม.')}
     ${ext(x0, y0, left - 6, y0)}${ext(x0, y1, left - 6, y1)}${lineV(y0, y1, left, f(sz.y) + ' มม.')}
     ${ext(s0, y0, s0, top - 6)}${ext(s1, y0, s1, top - 6)}${lineH(s0, s1, top, f(sz.z) + ' มม.')}
-    <text x="${(x0 + x1) / 2}" y="${oy + FH + 34}" text-anchor="middle" font-size="16" fill="${col}" opacity=".8">ด้านหน้า</text>
-    <text x="${(s0 + s1) / 2}" y="${oy + FH + 34}" text-anchor="middle" font-size="16" fill="${col}" opacity=".8">ด้านข้าง</text></svg>`;
+    ${labels ? `<text x="${(x0 + x1) / 2}" y="${oy + FH + 34}" text-anchor="middle" font-size="16" fill="${col}" opacity=".8">ด้านหน้า</text>
+    <text x="${(s0 + s1) / 2}" y="${oy + FH + 34}" text-anchor="middle" font-size="16" fill="${col}" opacity=".8">ด้านข้าง</text>` : ''}</svg>`;
   wrap.insertAdjacentHTML('beforeend', svg);
-  wrap.style.width = (sx + SW + 40) + 'px'; wrap.style.height = (oy + FH + 60) + 'px'; wrap.style.marginLeft = '60px';
+  const hh = oy + FH + (labels ? 60 : 10);
+  wrap.querySelector('svg').setAttribute('height', hh);
+  wrap.style.width = (sx + SW + 40) + 'px'; wrap.style.height = hh + 'px'; wrap.style.marginLeft = ml + 'px';
 }
 </script></body></html>
