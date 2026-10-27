@@ -1,0 +1,63 @@
+<!doctype html><html><head><meta charset="utf-8">
+<!-- TCOLD DOCK Station logo board (brand/dock_logo.py writes the logos) -->
+<style>
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-SemiBold.ttf);font-weight:600}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Bold.ttf);font-weight:700}
+:root{--navy:#0b3550;--teal:#0e8391;--muted:#5f707c;--line:#dfe7ec}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden}
+body{font-family:Plex,sans-serif;color:#14293a;background:#f4f8fa;padding:64px 80px}
+.head{display:flex;justify-content:space-between;align-items:flex-end}
+.kicker{font-size:15px;font-weight:600;letter-spacing:.24em;color:var(--teal);text-transform:uppercase}
+h1{font-size:40px;font-weight:700;color:var(--navy);margin-top:6px}
+.head p{font-size:15px;color:var(--muted);text-align:right;line-height:1.55}
+.grid{display:grid;grid-template-columns:1.62fr 1fr;grid-template-rows:380px 400px;gap:24px;margin-top:34px}
+.card{background:#fff;border:1px solid var(--line);border-radius:24px;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.card.dark{background:var(--navy);border-color:var(--navy)}
+.card .lab{position:absolute;left:24px;top:18px;font-size:13px;font-weight:600;letter-spacing:.12em;color:var(--muted);text-transform:uppercase}
+.card.dark .lab{color:#9fc0cc}
+.main img{width:84%}
+.sub{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.sub .card img{width:78%}
+.sym{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.sym .card{flex-direction:column;gap:14px}
+.sym .row{display:flex;align-items:flex-end;gap:14px}
+.use{display:grid;grid-template-columns:1.25fr 1fr;gap:24px}
+.use .card img.dock{width:96%;margin-top:26px}
+.notes{padding:26px 28px;align-items:flex-start;justify-content:flex-start;flex-direction:column;gap:12px}
+.notes b{font-size:16px;color:var(--navy);font-weight:600}
+.notes p{font-size:14.5px;color:#33495a;line-height:1.5}
+.sw{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px;width:100%}
+.sw div{height:52px;border-radius:12px;padding:8px 10px;font-size:12px;font-weight:600;color:#fff;display:flex;align-items:flex-end}
+</style></head><body>
+<div class="head">
+  <div><div class="kicker">THANES · Smart Cold Chain</div><h1>TCOLD DOCK Station · โลโก้</h1></div>
+  <p>ตัว T จากโลโก้ THANES · COLD, DOCK และ STATION ใช้ Unbounded<br>ชุดเดียวกับโลโก้ TCOLD ทุกไฟล์แปลงเป็นเส้นแล้ว</p>
+</div>
+<div class="grid">
+  <div class="card main"><span class="lab">หลัก · แนวนอน</span><img src="brand/TCOLD_DOCK_STATION_logo.svg"></div>
+  <div class="sym">
+    <div class="card" style="background:#e6eef1"><span class="lab">Symbol · ไอคอน</span>
+      <div class="row"><img src="brand/TCOLD_DOCK_STATION_symbol.svg" style="width:130px"><img src="brand/TCOLD_DOCK_STATION_symbol.svg" style="width:70px"><img src="brand/TCOLD_DOCK_STATION_symbol.svg" style="width:40px"></div></div>
+    <div class="card"><span class="lab">Symbol · พื้นสว่าง</span><img src="brand/TCOLD_DOCK_STATION_symbol_on_light.svg" style="width:190px"></div>
+  </div>
+  <div class="sub">
+    <div class="card dark"><span class="lab">แนวนอน · พื้นเข้ม</span><img src="brand/TCOLD_DOCK_STATION_logo_on_dark.svg"></div>
+    <div class="card"><span class="lab">แนวตั้ง</span><img src="brand/TCOLD_DOCK_STATION_stacked.svg" style="width:70%"></div>
+  </div>
+  <div class="use">
+    <div class="card"><span class="lab">บนตัว Dock</span><img class="dock" src="out/objects/dock_front.png"></div>
+    <div class="card notes">
+      <b>ความหมาย</b>
+      <p>Symbol คือ Dock มองจากด้านหน้า มี TCOLD 6 เครื่องตั้งอยู่ จุดสีเขียวคือไฟข้างเครื่องตอนกำลังชาร์จ</p>
+      <b>สี</b>
+      <div class="sw"><div style="background:#0b3550">#0B3550</div><div style="background:#0e8391">#0E8391</div><div style="background:#1aa5b5">#1AA5B5</div><div style="background:#3fd47a">#3FD47A</div></div>
+    </div>
+  </div>
+</div>
+<script type="module">
+await document.fonts.ready; await Promise.all([...document.images].map(i => i.decode()));
+window.done = 1;
+</script></body></html>

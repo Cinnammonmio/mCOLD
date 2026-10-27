@@ -181,14 +181,14 @@ export function seat(dev, slot) {
   dev.position.set(DOCK.slotX[slot], DOCK.floorY + 43.5, DOCK.plugZ - 20);
 }
 
-// front print: TCOLD wordmark and DOCK on the navy front face (Z min)
+// front print: the TCOLD DOCK Station logo (brand/dock_logo.py) on the navy front face (Z min)
 async function dockPrint(parent) {
-  const img = new Image(); img.src = 'brand/TCOLD_logo_on_dark.svg'; await img.decode();
-  const c = document.createElement('canvas'); c.width = 1800; c.height = 300; const x = c.getContext('2d');
-  const lh = 170, lw = lh * img.width / img.height; x.drawImage(img, 0, (300 - lh) / 2, lw, lh);
-  x.font = '600 120px Plex'; x.fillStyle = '#9fdde5'; x.textBaseline = 'middle'; x.letterSpacing = '24px'; x.fillText('DOCK', lw + 70, 156);
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(60, 10), new THREE.MeshPhysicalMaterial({map: canvasTex(c), transparent: true, roughness: .4, clearcoat: .5, polygonOffset: true, polygonOffsetFactor: -2}));
-  m.rotation.y = Math.PI; m.position.set(-21.1 + 4, -2, -17.35); parent.add(m);
+  const img = new Image(); img.src = 'brand/TCOLD_DOCK_STATION_logo_on_dark.svg'; await img.decode();
+  const c = document.createElement('canvas'); c.width = 2400; c.height = Math.round(2400 * img.height / img.width); const x = c.getContext('2d');
+  x.drawImage(img, 0, 0, c.width, c.height);
+  const w = 66, h = w * c.height / c.width;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshPhysicalMaterial({map: canvasTex(c), transparent: true, roughness: .4, clearcoat: .5, polygonOffset: true, polygonOffsetFactor: -2}));
+  m.rotation.y = Math.PI; m.position.set(-21.1, -2, -17.35); parent.add(m);
 }
 
 // the dock, optionally holding n devices (charging screens D1..D6, side light green)

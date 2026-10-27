@@ -1,6 +1,7 @@
 """Transparent PNG cut-outs of every object, for placing on slides with their own theme.
 
-usage: python mockup/objects.py        (after prepare.py and npm install)
+usage: python mockup/objects.py [word]   (after prepare.py and npm install)
+       word: only render objects whose name contains it, e.g. "dock"
        -> mockup/out/objects/*.png, trimmed to the object with a small margin
 """
 import json, subprocess, sys
@@ -80,11 +81,14 @@ def logos():
 
 if __name__ == "__main__":
     TMP.mkdir(parents=True, exist_ok=True); OUT.mkdir(parents=True, exist_ok=True)
+    only = sys.argv[1] if len(sys.argv) > 1 else ""
+    SCENES = {n: q for n, q in SCENES.items() if only in n}
+    SPEC = {n: q for n, q in SPEC.items() if only in n}
     jobs = [[f"objects.html?{q}", str(TMP / f"{n}.png"), 1920, 1080, 2, 1] for n, q in SCENES.items()]
     # the sheet carries the dimension drawing and runs taller than a 1080 page
     jobs += [[f"spec.html?{q}&t={t}", str(TMP / f"{n}_{t}.png"), 1920, 1340 if n == "spec_sheet" else 1080, 2, 1]
              for n, q in SPEC.items() for t in ("light", "dark")]
-    jobs += list(logos())
+    jobs += [j for j in logos() if only in Path(j[1]).stem.lower() or not only]
     subprocess.run(["node", str(HERE / "render.js"), json.dumps(jobs)], check=True)
     for n in SCENES:
         trim(TMP / f"{n}.png", OUT / f"{n}.png")
@@ -95,8 +99,9 @@ if __name__ == "__main__":
             trim(TMP / f"{n}_{t}.png", OUT / "spec" / f"{n}_{t}.png", pad=48)   # room for the card shadow
     # the dimension drawing also at the top level, where it is easy to find
     for t in ("light", "dark"):
-        (OUT / f"device_dimensions_{t}.png").write_bytes((OUT / "spec" / f"spec_dimensions_{t}.png").read_bytes())
-        (OUT / f"dock_dimensions_{t}.png").write_bytes((OUT / "spec" / f"spec_dock_dimensions_{t}.png").read_bytes())
+        for a, b in (("device_dimensions", "spec_dimensions"), ("dock_dimensions", "spec_dock_dimensions")):
+            if (OUT / "spec" / f"{b}_{t}.png").exists():
+                (OUT / f"{a}_{t}.png").write_bytes((OUT / "spec" / f"{b}_{t}.png").read_bytes())
     # the e-paper screen itself, at 4x (1000 x 488), with the same shadow as the rest
     scr = Image.open(HERE / "build" / "screen_tex.png").convert("RGBA").resize((1000, 488), Image.LANCZOS)
     shadow(scr).save(OUT / "epaper_screen_trip.png", optimize=True)

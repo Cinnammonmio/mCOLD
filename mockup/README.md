@@ -34,6 +34,21 @@
 
 ทั้งสองภาพขนาด 3840×2160 (16:9)
 
+## โลโก้ TCOLD DOCK Station (`out/TCOLD_DOCK_STATION_logo_board.png`)
+
+สร้างด้วย `python mockup/brand/dock_logo.py` ต่อยอดจากโลโก้ TCOLD: ตัว T จาก THANES, DOCK เป็น
+Unbounded Bold เหมือน COLD, STATION เป็น Unbounded Regular ระยะห่างตัวอักษรกว้าง
+
+| ไฟล์ (`brand/`) | ใช้กับ |
+|---|---|
+| `TCOLD_DOCK_STATION_logo.svg` / `_on_dark.svg` | หลัก แนวนอน: TCOLD │ DOCK / STATION |
+| `TCOLD_DOCK_STATION_stacked.svg` / `_on_dark.svg` | แนวตั้ง: TCOLD เหนือ DOCK · STATION |
+| `TCOLD_DOCK_STATION_symbol.svg` | ไอคอนพื้น navy มุมโค้ง: ตัว T เหนือ Dock ที่มี TCOLD 6 เครื่อง จุดเขียว = ไฟชาร์จ |
+| `TCOLD_DOCK_STATION_symbol_on_light.svg` | symbol พื้นใส สำหรับพื้นสว่าง |
+
+PNG กว้าง 2400 px อยู่ใน `out/objects/` บอร์ดโลโก้วาดด้วย `brand_dock.html`
+ด้านหน้า Dock ในภาพ 3D ใช้โลโก้แนวนอนพื้นเข้ม
+
 ## TCOLD Dock (`out/TCOLD_dock.png`, หน้า `dock.html`)
 
 แท่นชาร์จ 6 ช่องจาก `../Dock Assy.rar` (Dock Assy.STEP) พร้อม TCOLD 6 เครื่องเสียบอยู่
