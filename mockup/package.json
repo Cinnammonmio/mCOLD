@@ -1,0 +1,8 @@
+{
+  "name": "mcold-mockup",
+  "private": true,
+  "description": "Product mock-up renderer for mCOLD",
+  "dependencies": {
+    "three": "0.169.0"
+  }
+}

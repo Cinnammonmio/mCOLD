@@ -33,6 +33,7 @@ docs/
   SCH_Schematic_foam_dock_P.3_2026-09-19.pdf  schematic dock
 display-mock/                                 renderer + ภาพหน้าจอทุก state ขนาดจริง
 led-mock/                                     renderer + ภาพ pattern ไฟและผังตำแหน่ง
+mockup/                                       ภาพ mock-up นำเสนอสินค้า เรนเดอร์จากไฟล์ STEP ของเคส
 mcold-spec/                                   ต้นฉบับเอกสารสเปกสำหรับผู้บริหาร/ฝ่ายขาย
 mCOLD_Functions_and_Usage_Flow_2026-09-20.pdf เอกสารที่ build ออกมาแล้ว (8 หน้า)
 ```

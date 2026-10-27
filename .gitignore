@@ -8,3 +8,8 @@ __pycache__/
 # Files made for people, not sources: trip CSVs pulled from a box (they
 # can carry positions) and copies of the PDFs packed for sending.
 exports/
+
+# mockup: meshes made from the STEP, and npm packages
+mockup/build/
+mockup/node_modules/
+mockup/package-lock.json
