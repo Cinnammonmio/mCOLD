@@ -50,6 +50,22 @@
 | `thermocouple.png` | สายและหัววัด |
 | `epaper_screen_trip.png` | ภาพหน้าจอ e-paper TRIP ACTIVE |
 
+### สเปกเครื่อง (`out/objects/spec/`, หน้า `spec.html`)
+
+ทุกชิ้นมีทั้ง `_light` (การ์ดขาว) และ `_dark` (การ์ด navy) พื้นนอกการ์ดใส
+
+| ไฟล์ | เนื้อหา |
+|---|---|
+| `spec_sheet_*.png` | สเปกทั้งหมดในแผ่นเดียว พร้อมโลโก้และหมายเหตุ |
+| `spec_card_temp/body/sense/link/data/power_*.png` | การ์ดแยกหมวด: การวัดอุณหภูมิ, ตัวเครื่อง, การติดตาม, การเชื่อมต่อ, การเก็บข้อมูล, พลังงาน |
+| `spec_kpi_1…6_*.png` | ตัวเลขเด่น: 0.25 °C, 5 นาที, ~268 วัน, 7 วัน, 87×87×12.3 มม., 2.13″ |
+| `spec_dimensions_*.png` | ภาพขนาดด้านหน้าและด้านข้าง วาดแบบ orthographic จาก STEP (7 px ต่อ มม. ที่ 1×) |
+
+ตัวเลขทุกตัวมาจากเอกสารใน repo: `README.md`, `docs/mCOLD_Firmware_Requirements_2026-09-19.md`,
+`docs/manuals/user-manual-th.md`, `docs/app/device-settings.md` และขนาดวัดจาก STEP
+ค่าที่ติดป้าย **เป้าหมาย** (แบต 1500 mAh, ใช้งาน 7 วัน) ยังไม่ได้วัดจริงบนต้นแบบ
+ความละเอียด 0.25 °C ของ MAX6675 ไม่ใช่ความแม่นยำ และ MAX6675 อ่านค่าติดลบไม่ได้ จึงเขียนช่วงวัดว่า "0 °C ขึ้นไป"
+
 ## หมายเหตุ
 
 - จอ e-paper คือ state A2 TRIP ACTIVE วาดด้วย `../display-mock/render.py` โดยเปลี่ยนรหัสเครื่องเป็น TCOLD-0117

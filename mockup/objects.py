@@ -32,6 +32,11 @@ SCENES = {
     "part_8b_back_case_outside": "o=back_case_outside",
 }
 
+# spec objects from spec.html, light and dark
+SPEC = {"spec_sheet": "o=sheet", "spec_dimensions": "o=dims"}
+SPEC.update({f"spec_card_{g}": f"o=card&g={g}" for g in ["temp", "body", "sense", "link", "data", "power"]})
+SPEC.update({f"spec_kpi_{i + 1}_{n}": f"o=kpi&k={i}" for i, n in enumerate(["resolution", "interval", "storage", "runtime", "size", "display"])})
+
 def trim(src, dst, pad=24):
     im = Image.open(src).convert("RGBA")
     a = im.getchannel("A").point(lambda v: 255 if v > 3 else 0)
@@ -51,10 +56,15 @@ def logos():
 if __name__ == "__main__":
     TMP.mkdir(parents=True, exist_ok=True); OUT.mkdir(parents=True, exist_ok=True)
     jobs = [[f"objects.html?{q}", str(TMP / f"{n}.png"), 1920, 1080, 2, 1] for n, q in SCENES.items()]
+    jobs += [[f"spec.html?{q}&t={t}", str(TMP / f"{n}_{t}.png"), 1920, 1080, 2, 1] for n, q in SPEC.items() for t in ("light", "dark")]
     jobs += list(logos())
     subprocess.run(["node", str(HERE / "render.js"), json.dumps(jobs)], check=True)
     for n in SCENES:
         trim(TMP / f"{n}.png", OUT / f"{n}.png")
         print(n, Image.open(OUT / f"{n}.png").size)
+    (OUT / "spec").mkdir(exist_ok=True)
+    for n in SPEC:
+        for t in ("light", "dark"):
+            trim(TMP / f"{n}_{t}.png", OUT / "spec" / f"{n}_{t}.png", pad=48)   # room for the card shadow
     # the e-paper screen itself, at 4x (1000 x 488)
     Image.open(HERE / "build" / "screen_tex.png").resize((1000, 488), Image.LANCZOS).save(OUT / "epaper_screen_trip.png")

@@ -101,7 +101,7 @@ export function bezel(parent, z = FRONT_Z + 0.03) {
   };
   const outer = rr(new THREE.Shape(), WIN.w + 3.2, WIN.h + 3.2, 1.4);   // 1.6 mm frame each side
   outer.holes.push(rr(new THREE.Path(), WIN.w, WIN.h, 0.6));
-  const g = new THREE.ExtrudeGeometry(outer, {depth: .35, bevelEnabled: true, bevelThickness: .15, bevelSize: .25, bevelSegments: 3, curveSegments: 24});
+  const g = new THREE.ExtrudeGeometry(outer, {depth: .1, bevelEnabled: true, bevelThickness: .05, bevelSize: .15, bevelSegments: 2, curveSegments: 24});
   const m = new THREE.Mesh(g, new THREE.MeshPhysicalMaterial({color: 0x18252e, roughness: .18, clearcoat: 1, clearcoatRoughness: .05}));
   m.position.z = z; parent.add(m);
   // thin teal keyline on the outer edge

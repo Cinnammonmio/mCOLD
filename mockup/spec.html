@@ -1,0 +1,172 @@
+<!doctype html><html><head><meta charset="utf-8">
+<!-- TCOLD specification as slide objects. One object per load on a transparent page:
+     ?o=sheet | card&g=<group> | kpi&k=<n> | dims   and  &t=light|dark
+     objects.py renders every combination and trims each to its alpha.
+     Sources for every number: README.md, docs/mCOLD_Firmware_Requirements_2026-09-19.md,
+     docs/manuals/user-manual-th.md, docs/app/device-settings.md, the case STEP. -->
+<style>
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-SemiBold.ttf);font-weight:600}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Bold.ttf);font-weight:700}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:1080px;overflow:hidden;background:transparent;font-family:Plex,sans-serif}
+:root{--card:#ffffff;--line:#e3eaee;--ink:#14293a;--head:#0b3550;--muted:#5f707c;--accent:#0e8391;--chip:#e6f5f6;--tag:#fdf2dc;--tagi:#b87a07;--shadow:0 18px 40px rgba(11,53,80,.10)}
+body.dark{--card:#0e3a56;--line:rgba(255,255,255,.12);--ink:#eef6f8;--head:#ffffff;--muted:#9fc0cc;--accent:#5ee0ec;--chip:rgba(94,224,236,.14);--tag:rgba(243,195,94,.16);--tagi:#f3c35e;--shadow:0 18px 40px rgba(0,0,0,.25)}
+#stage{position:absolute;left:40px;top:40px}
+.card{width:560px;background:var(--card);border:1px solid var(--line);border-radius:26px;padding:24px 26px 14px;box-shadow:var(--shadow)}
+.card h3{display:flex;align-items:center;gap:12px;font-size:21px;font-weight:600;color:var(--head);margin-bottom:10px}
+.card h3 i{width:40px;height:40px;border-radius:12px;background:var(--chip);color:var(--accent);display:flex;align-items:center;justify-content:center}
+.card h3 i svg{width:22px;height:22px}
+.card h3 small{font-size:13px;font-weight:500;letter-spacing:.14em;color:var(--muted);text-transform:uppercase;margin-left:auto}
+.row{display:grid;grid-template-columns:170px 1fr;gap:14px;padding:9px 0;border-top:1px solid var(--line);font-size:16px;line-height:1.45}
+.row:first-of-type{border-top:0}
+.row b{font-weight:500;color:var(--muted)}
+.row span{color:var(--ink)}
+.row span em{font-style:normal;font-size:12px;font-weight:600;color:var(--tagi);background:var(--tag);border-radius:99px;padding:1px 8px;margin-left:6px;vertical-align:1px;white-space:nowrap}
+.sheet{width:1840px}
+.sheet .top{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:26px}
+.sheet .top img{height:112px;display:block}
+.sheet .top div{text-align:right;color:var(--muted);font-size:16px;line-height:1.5}
+.sheet .top div b{display:block;font-size:30px;color:var(--head);font-weight:700}
+.sheet .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;align-items:start}
+.sheet .card{width:auto}
+.sheet .foot{margin-top:18px;font-size:14px;color:var(--muted)}
+.sheet .foot em{font-style:normal;font-size:12px;font-weight:600;color:var(--tagi);background:var(--tag);border-radius:99px;padding:1px 8px;margin-right:6px}
+.kpi{width:360px;height:200px;background:var(--card);border:1px solid var(--line);border-radius:26px;padding:24px 26px;box-shadow:var(--shadow);display:flex;flex-direction:column;justify-content:space-between}
+.kpi i{width:40px;height:40px;border-radius:12px;background:var(--chip);color:var(--accent);display:flex;align-items:center;justify-content:center}
+.kpi i svg{width:22px;height:22px}
+.kpi .n{font-size:50px;font-weight:700;color:var(--head);line-height:1;letter-spacing:-.01em}
+.kpi .n small{font-size:22px;font-weight:600;color:var(--accent);margin-left:6px}
+.kpi .d{font-size:16px;color:var(--muted)}
+.kpi .d em{font-style:normal;font-size:12px;font-weight:600;color:var(--tagi);background:var(--tag);border-radius:99px;padding:1px 8px;margin-left:6px}
+#dims{position:relative}
+#dims canvas{position:absolute}
+#dims svg{position:absolute;left:0;top:0;overflow:visible}
+</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head><body><div id="stage"></div>
+<script type="module">
+import * as K from './scene.js';
+const o = K.Q.get('o') || 'sheet', t = K.Q.get('t') || 'light';
+if (t === 'dark') document.body.classList.add('dark');
+await K.fonts();
+const icon = async n => await (await fetch('../mcold-spec/icons/' + n + '.svg')).text();
+const T = 'เป้าหมาย';   // value is a design target, not yet measured on a prototype
+const tg = s => `<em>${s}</em>`;
+
+const GROUPS = {
+  body: ['ตัวเครื่อง', 'Device', 'device-tablet', [
+    ['ขนาด', '87 × 87 × 12.3 มม.'],
+    ['จอแสดงผล', 'e-Paper 2.13″ · 250 × 122 px · 4 สี<br>ภาพค้างได้โดยไม่ใช้ไฟ'],
+    ['ไฟสถานะ', 'RGB 3 ดวง: สินค้า · ทริป · เครื่อง<br>ไฟข้างบอกสถานะชาร์จ'],
+    ['เสียงเตือน', 'Buzzer ดังเมื่อเกิด alarm'],
+    ['สวิตช์', 'เปิด/ปิด ตัดไฟทั้งเครื่อง'],
+  ]],
+  temp: ['การวัดอุณหภูมิ', 'Temperature', 'temperature', [
+    ['หัววัด', 'Thermocouple Type K<br>ปลอกสแตนเลส สายถักโลหะ'],
+    ['ตัวแปลงสัญญาณ', 'MAX6675 · ความละเอียด 0.25 °C'],
+    ['ช่วงวัด', '0 °C ขึ้นไป · เหมาะกับ 2–8 °C'],
+    ['รอบบันทึก', 'ทุก 5 นาที (ตั้งได้ 5–60 นาที)'],
+    ['Alarm', 'นอกช่วงต่อเนื่อง 5 นาที (ตั้งได้)<br>กลับเข้าช่วงลึก 0.5 °C จึงหาย'],
+  ]],
+  sense: ['การติดตาม', 'Tracking', 'activity', [
+    ['ตำแหน่ง', 'GNSS ATGM336H'],
+    ['ฝากล่อง', 'Reed switch บันทึกการเปิด-ปิด'],
+    ['การขยับ', 'LIS2DW12 นับการขยับและแรงกระแทก'],
+    ['นาฬิกา', 'RTC เดินต่อแม้ปิดเครื่อง<br>ตั้งเวลาเองจากอินเทอร์เน็ต/ดาวเทียม'],
+  ]],
+  link: ['การเชื่อมต่อ', 'Connectivity', 'wifi', [
+    ['Wi-Fi', '2.4 GHz · จำได้ 5 เครือข่าย<br>ส่งข้อมูลขึ้น server ผ่าน MQTT'],
+    ['Bluetooth', 'BLE เปิด 60 วินาทีหลังแตะ NFC'],
+    ['NFC', 'ST25DV04KC · แตะมือถือเพื่อเชื่อมต่อ<br>และยืนยันสิทธิ์ ไม่ต้องจับคู่'],
+    ['USB-C', 'ชาร์จ · เป็นไดรฟ์ USB ส่งออก CSV'],
+  ]],
+  data: ['การเก็บข้อมูล', 'Storage', 'database', [
+    ['หน่วยความจำ', 'Flash 16 MB'],
+    ['ความจุ', 'ประมาณ 268 วัน ที่บันทึกทุก 5 นาที'],
+    ['ความปลอดภัยข้อมูล', 'ลบเฉพาะเมื่อ server ยืนยันว่าได้รับ<br>ไม่หายเมื่อไฟดับหรือแบตหมด'],
+    ['การ์ดเสริม', 'microSD (optional)'],
+  ]],
+  power: ['พลังงาน', 'Power', 'battery-3', [
+    ['แบตเตอรี่', `Li-Po 1 เซลล์ 1500 mAh${tg(T)}<br>59 × 37 × 5 มม.`],
+    ['ใช้งานต่อเนื่อง', `7 วัน บันทึกทุก 5 นาที${tg(T)}`],
+    ['การชาร์จ', 'USB-C PD · Dock ชาร์จ 6 ช่อง'],
+    ['ป้องกันแบต', 'ต่ำกว่า 10% ไม่เริ่มทริปใหม่<br>ต่ำกว่า 5% ปิดเครื่องเองเพื่อถนอมแบต'],
+    ['ประมวลผล', 'ESP32-S3 · PSRAM 8 MB'],
+  ]],
+};
+const KPIS = [
+  ['temperature', '0.25', '°C', 'ความละเอียดการวัด'],
+  ['clock', '5', 'นาที', 'รอบบันทึกอุณหภูมิ'],
+  ['database', '~268', 'วัน', 'เก็บข้อมูลในเครื่อง'],
+  ['battery-3', '7', 'วัน', `ใช้งานต่อเนื่อง${tg(T)}`],
+  ['device-tablet', '87×87', '× 12.3 มม.', 'ขนาดตัวเครื่อง'],
+  ['eye', '2.13″', 'e-Paper', '250 × 122 px · 4 สี'],
+];
+
+async function card(g) {
+  const [th, en, ic, rows] = GROUPS[g];
+  return `<div class="card"><h3><i>${await icon(ic)}</i>${th}<small>${en}</small></h3>` +
+    rows.map(([k, v]) => `<div class="row"><b>${k}</b><span>${v}</span></div>`).join('') + '</div>';
+}
+const stage = document.getElementById('stage');
+
+if (o === 'card') stage.innerHTML = await card(K.Q.get('g'));
+else if (o === 'kpi') {
+  const [ic, n, u, d] = KPIS[+K.Q.get('k')];
+  stage.innerHTML = `<div class="kpi"><i>${await icon(ic)}</i><div><div class="n">${n}<small>${u}</small></div><div class="d">${d}</div></div></div>`;
+} else if (o === 'sheet') {
+  const logo = t === 'dark' ? 'TCOLD_lockup_on_dark' : 'TCOLD_lockup';
+  const cols = [['body', 'temp'], ['sense', 'link'], ['data', 'power']];
+  let html = `<div class="sheet"><div class="top"><img src="brand/${logo}.svg"><div><b>ข้อมูลจำเพาะ</b>Specifications · THANES Smart Cold Chain</div></div><div class="grid">`;
+  for (const c of cols) { html += '<div style="display:flex;flex-direction:column;gap:22px">'; for (const g of c) html += await card(g); html += '</div>'; }
+  html += `</div><div class="foot"><em>${T}</em>ค่าออกแบบ ยังไม่ได้วัดจริงบนเครื่องต้นแบบ · ความละเอียด 0.25 °C ไม่ใช่ความแม่นยำ ความแม่นยำขึ้นกับผลสอบเทียบ</div></div>`;
+  stage.innerHTML = html;
+} else if (o === 'dims') {
+  await dims();
+}
+await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+window.done = 1;
+
+// Orthographic front and side views at a known mm -> px scale, with dimension lines
+async function dims() {
+  const THREE = await import('three');
+  const PX = 7;                                  // CSS px per mm
+  const wrap = document.createElement('div'); wrap.id = 'dims'; stage.appendChild(wrap);
+  const S = new THREE.Scene(); const dev = await K.device(S);
+  // measure the case shells only (first two meshes: front and back case), not the prints on top
+  const box = new THREE.Box3().setFromObject(dev.children[0]).union(new THREE.Box3().setFromObject(dev.children[1])); const sz = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  const M = 30, FW = Math.ceil(sz.x * PX) + 2 * M, FH = Math.ceil(sz.y * PX) + 2 * M, SW = Math.ceil(sz.z * PX) + 2 * M;
+  const ox = 0, oy = 60, sx = FW + 120;           // front at (ox,oy), side at (sx,oy)
+  // one canvas, two viewports (front and side), so both share the renderer's environment
+  const CW = sx + SW, cv = document.createElement('canvas'); wrap.appendChild(cv);
+  Object.assign(cv.style, {left: '0px', top: oy + 'px', width: CW + 'px', height: FH + 'px'});
+  const R = K.renderer(cv, CW, FH); R.setClearColor(0, 0); K.studio(R, S); R.setScissorTest(true);
+  const view = (w, pos, left) => {
+    const cam = new THREE.OrthographicCamera(-w / 2 / PX, w / 2 / PX, FH / 2 / PX, -FH / 2 / PX, 1, 2000);
+    cam.position.copy(c).add(new THREE.Vector3(...pos)); cam.up.set(0, 1, 0); cam.lookAt(c);
+    R.setViewport(left, 0, w, FH); R.setScissor(left, 0, w, FH); R.render(S, cam);
+  };
+  view(FW, [0, 0, 500], ox);
+  view(SW, [500, 0, 0], sx);                      // seen from the right: front face on the left
+  const col = t === 'dark' ? '#cfe3ea' : '#33495a', acc = t === 'dark' ? '#5ee0ec' : '#0e8391';
+  const x0 = ox + M, x1 = ox + M + sz.x * PX, y0 = oy + M, y1 = oy + M + sz.y * PX, s0 = sx + M, s1 = sx + M + sz.z * PX;
+  const f = v => v.toFixed(1).replace(/\.0$/, '');
+  const lineH = (a, b, y, txt) => `<line x1="${a}" y1="${y}" x2="${b}" y2="${y}" stroke="${acc}" stroke-width="1.6" marker-start="url(#a)" marker-end="url(#a)"/>
+    <text x="${(a + b) / 2}" y="${y - 10}" text-anchor="middle" font-size="20" font-weight="600" fill="${col}">${txt}</text>`;
+  const lineV = (a, b, x, txt) => `<line x1="${x}" y1="${a}" x2="${x}" y2="${b}" stroke="${acc}" stroke-width="1.6" marker-start="url(#a)" marker-end="url(#a)"/>
+    <text x="${x - 12}" y="${(a + b) / 2}" text-anchor="middle" font-size="20" font-weight="600" fill="${col}" transform="rotate(-90 ${x - 12} ${(a + b) / 2})">${txt}</text>`;
+  const ext = (xA, yA, xB, yB) => `<line x1="${xA}" y1="${yA}" x2="${xB}" y2="${yB}" stroke="${col}" stroke-opacity=".45" stroke-width="1" stroke-dasharray="4 4"/>`;
+  const top = oy - 10, left = ox - 14;
+  const svg = `<svg width="${sx + SW + 40}" height="${oy + FH + 60}" font-family="Plex">
+    <defs><marker id="a" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,2 L5,5 L0,8" fill="none" stroke="${acc}" stroke-width="1.6"/></marker></defs>
+    ${ext(x0, y0, x0, top - 6)}${ext(x1, y0, x1, top - 6)}${lineH(x0, x1, top, f(sz.x) + ' มม.')}
+    ${ext(x0, y0, left - 6, y0)}${ext(x0, y1, left - 6, y1)}${lineV(y0, y1, left, f(sz.y) + ' มม.')}
+    ${ext(s0, y0, s0, top - 6)}${ext(s1, y0, s1, top - 6)}${lineH(s0, s1, top, f(sz.z) + ' มม.')}
+    <text x="${(x0 + x1) / 2}" y="${oy + FH + 34}" text-anchor="middle" font-size="16" fill="${col}" opacity=".8">ด้านหน้า</text>
+    <text x="${(s0 + s1) / 2}" y="${oy + FH + 34}" text-anchor="middle" font-size="16" fill="${col}" opacity=".8">ด้านข้าง</text></svg>`;
+  wrap.insertAdjacentHTML('beforeend', svg);
+  wrap.style.width = (sx + SW + 40) + 'px'; wrap.style.height = (oy + FH + 60) + 'px'; wrap.style.marginLeft = '60px';
+}
+</script></body></html>
