@@ -99,7 +99,9 @@ let cam;
 K.studio(R, S, shadow ? {floorY: (FLOOR = -92), shadowOpacity: .18} : {});
 
 if (o === 'device' || o === 'device_front' || o === 'device_back') {
-  const dev = await K.device(S);
+  // ?scr=A1|A2|A3|A4|C1 picks the e-paper state, ?led=r,c,a lights LEDs by index (- = off)
+  const lit = (K.Q.get('led') || '0,1,2').split(',').map(v => v === '-' ? null : K.LED_COL[+v]);
+  const dev = await K.device(S, {screen: K.Q.get('scr') ? 'screen_' + K.Q.get('scr') : 'screen_tex', lit});
   if (o === 'device') {
     // hero pose with cable and probe
     dev.rotation.set(-0.16, -0.42, 0); dev.position.set(-8, -6, 0); dev.updateMatrixWorld(true);

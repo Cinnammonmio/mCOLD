@@ -34,6 +34,17 @@
 
 ทั้งสองภาพขนาด 3840×2160 (16:9)
 
+## สไลด์นำเสนอ (`out/TCOLD_presentation.pptx`)
+
+ร่าง 20 สไลด์ 16:9 แบ่ง 3 section: **หน้าตาโปรดักต์ · FUNCTION · SPECIFICATION**
+วางเนื้อหาและรูปไว้ครบบนธีมเรียบ (ปก/คั่น section สี navy, เนื้อหาพื้นขาว) ข้อความใช้ฟอนต์ของธีม
+(Leelawadee UI) เท่านั้น เมื่อคัดลอกสไลด์ไปวางในเทมเพลตของบริษัทแบบ "Use Destination Theme"
+ข้อความจะเปลี่ยนเป็นฟอนต์ของเทมเพลตเอง กราฟการแจ้งเตือนเป็นกราฟ PowerPoint แก้ตัวเลขได้
+แต่ละสไลด์มี speaker notes
+
+สร้างใหม่ด้วย `python mockup/objects.py` แล้ว `node mockup/deck/build.js`
+ภาพเครื่องในแต่ละสถานะ (`state_*.png`) ใช้หน้าจอจาก `prepare.py --screens`
+
 ## ชิ้นงานแยก (PNG พื้นใส) สำหรับวางบนธีมสไลด์
 
 `out/objects/` ตัดขอบให้พอดีชิ้นแล้ว ไม่มีพื้นหลัง ไม่มีป้ายชี้ ทุกชิ้นมีเงานุ่มสี navy
@@ -49,6 +60,7 @@
 | `part_1_front_case.png` … `part_8b_back_case_outside.png` | แต่ละชิ้นในมุมเดียวกับ explode ใช้เรียงเองในสไลด์ได้ (6b = บอร์ดหลักด้านอุปกรณ์, 8b = ฝาหลังด้านนอก) |
 | `thermocouple.png` | สายและหัววัด |
 | `epaper_screen_trip.png` | ภาพหน้าจอ e-paper TRIP ACTIVE |
+| `state_A1_ready` … `state_C1_summary.png` | ตัวเครื่องในแต่ละสถานะ: READY, TRIP, นอกช่วง, ALARM, สรุปทริป พร้อมไฟที่ติดตามสถานะนั้น |
 
 ### สเปกเครื่อง (`out/objects/spec/`, หน้า `spec.html`)
 

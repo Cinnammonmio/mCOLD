@@ -17,6 +17,12 @@ SCENES = {
     "device_front": "o=device_front",
     "device_back": "o=device_back",
     "explode_stack": "o=explode",
+    # the device in each state, LED lit as the firmware does it (docs/led-design.md)
+    "state_A1_ready": "o=device_front&scr=A1&led=-,-,-",
+    "state_A2_trip": "o=device_front&scr=A2&led=-,1,-",
+    "state_A3_out_of_range": "o=device_front&scr=A3&led=-,1,-",
+    "state_A4_alarm": "o=device_front&scr=A4&led=0,-,-",
+    "state_C1_summary": "o=device_front&scr=C1&led=-,-,-",
     "thermocouple": "o=thermocouple",
     "phone_app": "o=phone",
     "phone_app_tilted": "o=phone&tilt=1",

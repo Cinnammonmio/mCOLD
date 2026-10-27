@@ -1,6 +1,7 @@
 """Tessellate the case STEP into one STL per part for the mockup renderer.
 
 usage: python mockup/prepare.py "path/to/Assy CASE_80CM_V2x.STEP"
+       python mockup/prepare.py --screens      (only the e-paper textures)
 """
 import sys, os, numpy as np
 from OCP.STEPCAFControl import STEPCAFControl_Reader
@@ -22,18 +23,45 @@ src = sys.argv[1]
 here = os.path.dirname(os.path.abspath(__file__))
 out = os.path.join(here, 'build', 'stl')
 
-# e-paper texture: A2 TRIP ACTIVE drawn by display-mock with the TCOLD device ID,
-# at 8x, inks mapped to panel tones
+# e-paper textures: screens drawn by display-mock with the TCOLD device ID, at 8x,
+# each ink mapped to its panel tone. screen_tex.png is A2 TRIP ACTIVE; the others
+# (screen_<code>.png) show the device in other states on the FUNCTION slides.
 from PIL import Image
 sys.path.insert(0, os.path.join(here, '..', 'display-mock'))
 import render as epd
 os.makedirs(os.path.join(here, 'build'), exist_ok=True)
 epd.OUT = __import__('pathlib').Path(here) / 'build'
-epd.monitor('epd_a2', device='TCOLD-0117', **epd.LIVE)
-a2 = Image.open(os.path.join(here, 'build', 'epd_a2.png')).convert('L')
-a2 = a2.resize((a2.width * 8, a2.height * 8), Image.NEAREST).point(lambda v: 255 if v > 128 else 0)
-Image.composite(Image.new('RGB', a2.size, (234, 233, 226)), Image.new('RGB', a2.size, (28, 29, 31)), a2).save(
-    os.path.join(here, 'build', 'screen_tex.png'))
+ID = dict(device='TCOLD-0117')
+SCREENS = {
+    'A1': lambda: epd.ready('epd_A1', battery=78, storage=2, **ID),
+    'A2': lambda: epd.monitor('epd_A2', **ID, **epd.LIVE),
+    'A3': lambda: epd.monitor('epd_A3', temp='8.4', red=True, minmax=('2.8', '8.4'), **ID, **epd.LIVE),
+    'A4': lambda: epd.monitor('epd_A4', temp='11.6', alarm=True, minmax=('2.8', '11.6'), trip=True, shock=True,
+                              wifi=True, cloud=False, gnss=True, battery=61, storage=7, **ID),
+    'C1': lambda: epd.detail('epd_C1', title='TRIP 0142', state='CLOSED', rows=(
+        ('Duration', '3d 06h 12m'), ('Temperature', '2.8 / 6.1 ~C'), ('Alarms', '1 high|2 shock')),
+        wifi=True, cloud=True, gnss=True, battery=74, storage=9, **ID),
+}
+PANEL = {epd.WHITE: (234, 233, 226), epd.BLACK: (28, 29, 31), epd.RED: (184, 50, 46)}
+def texture(code):
+    SCREENS[code]()
+    im = Image.open(os.path.join(here, 'build', f'epd_{code}.png')).convert('RGB')
+    im = im.resize((im.width * 8, im.height * 8), Image.NEAREST)
+    pal = list(PANEL)
+    near = {}
+    def tone(p):
+        if p not in near:
+            near[p] = PANEL[min(pal, key=lambda q: sum((a - b) ** 2 for a, b in zip(p, q)))]
+        return near[p]
+    out = Image.new('RGB', im.size); out.putdata([tone(p) for p in im.getdata()])
+    return out
+for code in SCREENS:
+    t = texture(code)
+    t.save(os.path.join(here, 'build', f'screen_{code}.png'))
+    if code == 'A2':
+        t.save(os.path.join(here, 'build', 'screen_tex.png'))
+if len(sys.argv) > 1 and sys.argv[1] == '--screens':
+    sys.exit(0)
 os.makedirs(out, exist_ok=True)
 doc = TDocStd_Document(TCollection_ExtendedString("doc"))
 r = STEPCAFControl_Reader(); r.SetNameMode(True); r.SetColorMode(True)

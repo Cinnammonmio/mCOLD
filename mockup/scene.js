@@ -83,8 +83,8 @@ function canvasTex(c) {
 }
 
 // The A2 TRIP ACTIVE screen, sitting just under the front face
-export async function screen(parent, z = 5.62) {
-  const tex = await new THREE.TextureLoader().loadAsync('build/screen_tex.png');
+export async function screen(parent, z = 5.62, file = 'screen_tex') {
+  const tex = await new THREE.TextureLoader().loadAsync(`build/${file}.png`);
   tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
   const s = new THREE.Mesh(new THREE.PlaneGeometry(WIN.w + .4, WIN.h + .6), new THREE.MeshPhysicalMaterial({
     map: tex, roughness: .55, clearcoat: .6, clearcoatRoughness: .15, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: .18}));
@@ -115,7 +115,8 @@ export function bezel(parent, z = FRONT_Z + 0.03) {
 // Front LEDs: lit light pipes in their position colours, no glow and no print
 export function leds(parent, pipes, colors = LED_COL) {
   pipes.forEach((p, i) => {
-    p.material = new THREE.MeshBasicMaterial({color: new THREE.Color(colors[i]), toneMapped: false});
+    // null = unlit: a frosted pipe instead of a lit one
+    p.material = colors[i] == null ? M.pipe() : new THREE.MeshBasicMaterial({color: new THREE.Color(colors[i]), toneMapped: false});
     // grey ring so the pipe reads against the white case
     const r = new THREE.Mesh(new THREE.RingGeometry(1.55, 2.1, 48), new THREE.MeshPhysicalMaterial({color: 0x9fb0b8, roughness: .4, polygonOffset: true, polygonOffsetFactor: -2}));
     r.position.set(LED_X[i], LED_Y, FRONT_Z + .02); parent.add(r);
@@ -135,7 +136,8 @@ export async function frontPrint(parent) {
 }
 
 // Whole assembled device in a group, ready to place
-export async function device(parent) {
+// screen: build/<screen>.png texture; lit: colour per front LED (null = off), default all three lit
+export async function device(parent, {screen: scr = 'screen_tex', lit = LED_COL} = {}) {
   const g = new THREE.Group(); parent.add(g);
   mesh(await load(PART.bot), M.front(), g);
   mesh(await load(PART.top), M.back(), g);
@@ -143,7 +145,7 @@ export async function device(parent) {
   const pipes = [];
   for (const p of PART.pipes) pipes.push(mesh(await load(p), M.pipe(), g));
   mesh(await load(PART.side), M.pipe(), g);
-  await screen(g); bezel(g); leds(g, pipes); await frontPrint(g);
+  await screen(g, 5.62, scr); bezel(g); leds(g, pipes, lit); await frontPrint(g);
   return g;
 }
 
