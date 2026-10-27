@@ -3,6 +3,7 @@
   "private": true,
   "description": "Product mock-up renderer for mCOLD",
   "dependencies": {
+    "@fontsource/unbounded": "5.1.0",
     "three": "0.169.0"
   }
 }

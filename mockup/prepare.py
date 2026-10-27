@@ -22,11 +22,16 @@ src = sys.argv[1]
 here = os.path.dirname(os.path.abspath(__file__))
 out = os.path.join(here, 'build', 'stl')
 
-# e-paper texture: the A2 TRIP ACTIVE screen at 8x, inks mapped to panel tones
+# e-paper texture: A2 TRIP ACTIVE drawn by display-mock with the TCOLD device ID,
+# at 8x, inks mapped to panel tones
 from PIL import Image
-a2 = Image.open(os.path.join(here, '..', 'display-mock', 'out', 'A2_trip.png')).convert('L')
-a2 = a2.resize((a2.width * 8, a2.height * 8), Image.NEAREST).point(lambda v: 255 if v > 128 else 0)
+sys.path.insert(0, os.path.join(here, '..', 'display-mock'))
+import render as epd
 os.makedirs(os.path.join(here, 'build'), exist_ok=True)
+epd.OUT = __import__('pathlib').Path(here) / 'build'
+epd.monitor('epd_a2', device='TCOLD-0117', **epd.LIVE)
+a2 = Image.open(os.path.join(here, 'build', 'epd_a2.png')).convert('L')
+a2 = a2.resize((a2.width * 8, a2.height * 8), Image.NEAREST).point(lambda v: 255 if v > 128 else 0)
 Image.composite(Image.new('RGB', a2.size, (234, 233, 226)), Image.new('RGB', a2.size, (28, 29, 31)), a2).save(
     os.path.join(here, 'build', 'screen_tex.png'))
 os.makedirs(out, exist_ok=True)

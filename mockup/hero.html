@@ -13,8 +13,8 @@ body{font-family:Plex,sans-serif;color:var(--ink);position:relative;
 #gl,#lines{position:absolute;left:0;top:0;width:1920px;height:1080px}
 .title{position:absolute;left:96px;top:84px;width:560px}
 .kicker{font-size:16px;font-weight:600;letter-spacing:.24em;color:var(--teal);text-transform:uppercase}
-h1{font-size:104px;line-height:1;font-weight:700;color:var(--navy);letter-spacing:-.02em;margin-top:12px}
-h1 span{color:var(--teal)}
+h1{margin-top:18px}
+h1 img{width:470px;display:block}
 .lead{margin-top:18px;font-size:24px;line-height:1.5;color:#33495a}
 .chips{margin-top:22px;display:flex;flex-wrap:wrap;gap:10px}
 .chip{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:500;color:#12506f;background:rgba(255,255,255,.8);border:1px solid var(--line);border-radius:999px;padding:7px 15px 7px 11px}
@@ -38,8 +38,8 @@ h1 span{color:var(--teal)}
 <div id="callouts"></div>
 
 <div class="title">
-  <div class="kicker">Medical Cold-Chain Monitor</div>
-  <h1>m<span>COLD</span></h1>
+  <div class="kicker">THANES · Smart Cold Chain</div>
+  <h1><img src="brand/TCOLD_lockup.svg" alt="TCOLD"></h1>
   <p class="lead">อุปกรณ์ติดตามอุณหภูมิกล่องขนส่งยาและเวชภัณฑ์ บันทึกทุก 5 นาที แจ้งเตือนเมื่อออกนอกช่วง ตลอดเส้นทางขนส่ง</p>
   <div class="chips">
     <span class="chip" data-i="temperature">Thermocouple Type K</span>
@@ -106,7 +106,7 @@ const phone = document.createElement('div'); phone.className = 'phone'; phone.in
 phone.style.left = ph[0] + 'px'; phone.style.top = ph[1] + 'px'; phone.style.transform = 'perspective(1600px) rotateY(-14deg) rotateZ(2deg)';
 document.body.appendChild(phone);
 const lab = document.createElement('div'); lab.className = 'applabel';
-lab.innerHTML = '<b>แอป mCOLD</b><small>ดูอุณหภูมิสด กราฟทั้งทริป เริ่ม/หยุดทริป และส่งออก CSV</small>';
+lab.innerHTML = '<b>แอป TCOLD</b><small>ดูอุณหภูมิสด กราฟทั้งทริป เริ่ม/หยุดทริป และส่งออก CSV</small>';
 lab.style.left = (ph[0] - 45) + 'px'; lab.style.top = (ph[1] + 718) + 'px'; document.body.appendChild(lab);
 // NFC link: dashed arc from the NFC area on the box to the phone
 const [nx, ny] = A.nfc, px = ph[0] + 6, py = ph[1] + 150;

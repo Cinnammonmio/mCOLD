@@ -1,0 +1,146 @@
+<!doctype html><html><head><meta charset="utf-8">
+<!-- One object per load on a transparent page, for PNG cut-outs to drop on slides.
+     objects.py loads this with ?o=<name> and trims the result to its alpha. -->
+<style>
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-SemiBold.ttf);font-weight:600}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Bold.ttf);font-weight:700}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1920px;height:1080px;overflow:hidden;background:transparent}
+#gl{position:absolute;left:0;top:0;width:1920px;height:1080px}
+.center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head><body>
+<canvas id="gl"></canvas>
+<script type="module">
+import * as THREE from 'three';
+import * as K from './scene.js';
+import {PHONE_CSS, tripScreen} from './phone.js';
+
+await K.fonts();
+const o = K.Q.get('o');
+const W = 1920, H = 1080;
+
+if (o === 'phone') {
+  document.head.insertAdjacentHTML('beforeend', `<style>${PHONE_CSS}</style>`);
+  const c = document.createElement('div'); c.className = 'center'; document.body.appendChild(c);
+  const ph = document.createElement('div'); ph.className = 'phone'; ph.style.position = 'relative'; ph.innerHTML = tripScreen();
+  if (K.Q.get('tilt')) ph.style.transform = 'perspective(1600px) rotateY(-14deg) rotateZ(2deg)';
+  ph.style.zoom = 1.0; c.appendChild(ph);
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); window.done = 1;
+} else {
+
+const R = K.renderer(document.getElementById('gl'), W, H);
+R.setClearColor(0x000000, 0);
+const S = new THREE.Scene();
+const shadow = K.Q.get('shadow') === '1';
+const box = new THREE.Box3();
+let FLOOR = null;
+
+// fit the camera to an object seen from direction dir (world), with a margin
+function frame(obj, dir, {up = [0, 1, 0], margin = 1.12, fov = 22} = {}) {
+  box.setFromObject(obj); const sp = box.getBoundingSphere(new THREE.Sphere());
+  const cam = new THREE.PerspectiveCamera(fov, W / H, 1, 5000);
+  const d = sp.radius * margin / Math.sin(THREE.MathUtils.degToRad(fov / 2));
+  cam.position.copy(sp.center).addScaledVector(new THREE.Vector3(...dir).normalize(), d);
+  cam.up.set(...up); cam.lookAt(sp.center); return cam;
+}
+
+const G = {};
+const loadAll = async () => {
+  for (const [k, f] of Object.entries({bot: K.PART.bot, top: K.PART.top, eink: K.PART.eink, plate: K.PART.plate, nfc: K.PART.nfc, battery: K.PART.battery, side: K.PART.side}))
+    G[k] = await K.load(f);
+  G.pipes = []; for (const p of K.PART.pipes) G.pipes.push(await K.load(p));
+  G.pcb = {}; for (const k of ['board', 'metal', 'tin', 'tan', 'black']) G.pcb[k] = await K.load('pcb_' + k);
+};
+
+// each exploded part on its own, same orientation as the explode slide
+const ROT = [-0.1, -0.85, 0], DIR = [0.15, 0.25, 1];
+async function part(name) {
+  await loadAll();
+  const g = new THREE.Group(); S.add(g); g.rotation.set(...ROT);
+  const add = (geo, m) => K.mesh(geo, m, g);
+  switch (name) {
+    case 'front_case': add(G.bot, K.M.front()); K.bezel(g); await K.frontPrint(g); K.leds(g, [], [], {labels: true}); break;
+    case 'light_pipes': G.pipes.forEach((p, i) => add(p, new THREE.MeshBasicMaterial({color: K.LED_COL[i], toneMapped: false}))); break;
+    case 'epaper': add(G.eink, K.M.eink()); await K.screen(g, 20.84 - 15.65 + .03); break;
+    case 'nfc_board': {
+      add(G.nfc, K.M.board()); G.nfc.computeBoundingBox();
+      const c = document.createElement('canvas'); c.width = 1000; c.height = 450; const x = c.getContext('2d');
+      x.strokeStyle = '#d9a441'; x.lineWidth = 9;
+      for (let i = 0; i < 6; i++) { const p = 30 + i * 22; x.beginPath(); x.roundRect(p, p * .8, 1000 - 2 * p, 450 - 1.6 * p, 30); x.stroke(); }
+      x.fillStyle = '#1d2023'; x.fillRect(440, 190, 120, 80);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(39, 17.5), new THREE.MeshPhysicalMaterial({map: t, transparent: true, metalness: .5, roughness: .4}));
+      m.position.set(0, 30, G.nfc.boundingBox.max.z + .03); g.add(m); break; }
+    case 'plate': add(G.plate, K.M.plate()); break;
+    case 'main_board': for (const k in G.pcb) add(G.pcb[k], K.M[k]()); break;
+    case 'main_board_back': for (const k in G.pcb) add(G.pcb[k], K.M[k]()); g.rotation.set(0.5, Math.PI + 0.25, 0); break;
+    case 'battery': {
+      add(G.battery, K.M.battery()); G.battery.computeBoundingBox();
+      const c = document.createElement('canvas'); c.width = 1180; c.height = 740; const x = c.getContext('2d');
+      x.fillStyle = '#0b3550'; x.fillRect(0, 0, 1180, 740); x.fillStyle = '#0e8391'; x.fillRect(0, 600, 1180, 140);
+      x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff'; x.font = '700 150px Plex'; x.fillText('Li-Po 3.7 V', 590, 250);
+      x.font = '500 70px Plex'; x.fillStyle = '#9fdde5'; x.fillText('59 × 37 × 5 mm', 590, 420); x.fillStyle = '#fff'; x.font = '600 56px Plex'; x.fillText('TCOLD', 590, 670);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(55, 34), new THREE.MeshPhysicalMaterial({map: t, roughness: .5, clearcoat: .3}));
+      m.position.set(0, 0, G.battery.boundingBox.max.z + .03); g.add(m); break; }
+    case 'back_case': add(G.top, K.M.back()); break;
+    case 'back_case_outside': add(G.top, K.M.back()); g.rotation.set(-0.1, Math.PI - 0.6, 0); break;
+  }
+  return frame(g, DIR, {margin: 1.05});
+}
+
+let cam;
+K.studio(R, S, shadow ? {floorY: (FLOOR = -92), shadowOpacity: .18} : {});
+
+if (o === 'device' || o === 'device_front' || o === 'device_back') {
+  const dev = await K.device(S);
+  if (o === 'device') {
+    // hero pose with cable and probe
+    dev.rotation.set(-0.16, -0.42, 0); dev.position.set(-8, -6, 0); dev.updateMatrixWorld(true);
+    const P = (x, y, z) => new THREE.Vector3(x, y, z).applyMatrix4(dev.matrixWorld);
+    const exit = P(4, -43.2, .5), down = new THREE.Vector3(0, -1, 0).transformDirection(dev.matrixWorld);
+    const fy = -92 + 1.9;
+    const rel = [[-3, 14, 16], [-10, 1, 34], [-36, 0, 46], [-64, 0, 36], [-70, 0, 14], [-56, 0, 2], [-42, 0, 14], [-48, 0, 34], [-70, 0, 44], [-96, 0, 44]];
+    const curve = new THREE.CatmullRomCurve3([exit.clone().addScaledVector(down, -2), exit.clone(), exit.clone().addScaledVector(down, 10),
+      ...rel.map(([x, y, z]) => new THREE.Vector3(exit.x + x, fy + y, exit.z + z))], false, 'centripetal');
+    K.thermocouple(S, curve, {floorY: -92, spin: 4.71, fromTip: true, contact: shadow});
+    const gr = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 3, 40), K.M.back()); gr.position.copy(P(4, -43.6, .5)); gr.quaternion.copy(dev.quaternion); S.add(gr);
+    cam = new THREE.PerspectiveCamera(24, W / H, 10, 3000); cam.position.set(60, 135, 520); cam.lookAt(-30, -40, 12);
+  } else if (o === 'device_front') {
+    cam = frame(dev, [0, 0, 1], {margin: 1.0});
+  } else {
+    dev.rotation.y = Math.PI - 0.45; cam = frame(dev, [0.1, 0.2, 1], {margin: 1.0});
+  }
+} else if (o === 'explode') {
+  // the explode slide's stack and probe, no labels
+  await loadAll();
+  const stack = new THREE.Group(); S.add(stack); stack.rotation.set(...ROT);
+  const DZ = {top: 0, battery: 40, pcb: 80, plate: 116, nfc: 144, eink: 176, pipes: 208, bot: 250}, MID = 125;
+  const L = k => { const g = new THREE.Group(); g.position.z = DZ[k] - MID; stack.add(g); return g; };
+  K.mesh(G.top, K.M.back(), L('top'));
+  const Lb = L('battery'); K.mesh(G.battery, K.M.battery(), Lb);
+  const Lp = L('pcb'); for (const k in G.pcb) K.mesh(G.pcb[k], K.M[k](), Lp);
+  K.mesh(G.plate, K.M.plate(), L('plate'));
+  K.mesh(G.nfc, K.M.board(), L('nfc'));
+  const Le = L('eink'); K.mesh(G.eink, K.M.eink(), Le); await K.screen(Le, 20.84 - 15.65 + .03);
+  const Lpi = L('pipes'); G.pipes.forEach((p, i) => K.mesh(p, new THREE.MeshBasicMaterial({color: K.LED_COL[i], toneMapped: false}), Lpi));
+  const Lf = L('bot'); K.mesh(G.bot, K.M.front(), Lf); K.bezel(Lf); await K.frontPrint(Lf); K.leds(Lf, [], [], {labels: true});
+  cam = new THREE.PerspectiveCamera(24, W / H, 10, 4000); cam.position.set(0, 120, 620); cam.lookAt(10, -20, 0);
+} else if (o === 'thermocouple') {
+  // a short loose length of cable ending in the probe
+  const curve = new THREE.CatmullRomCurve3([[-90, 1.9, -20], [-60, 1.9, 6], [-25, 1.9, 14], [10, 1.9, 6], [40, 1.9, 0]].map(p => new THREE.Vector3(...p)));
+  K.thermocouple(S, curve, {floorY: 0, spin: 4.71, contact: false});
+  const grp = new THREE.Group(); [...S.children].filter(c => c.isMesh || c.isGroup).forEach(c => grp.add(c)); S.add(grp);
+  cam = frame(grp, [0, 0.9, 1], {margin: 1.0});
+} else {
+  cam = await part(o);
+}
+
+R.render(S, cam);
+window.done = 1;
+}
+</script></body></html>

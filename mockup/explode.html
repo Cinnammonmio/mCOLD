@@ -13,7 +13,7 @@ body{font-family:Plex,sans-serif;color:var(--ink);position:relative;
 .title{position:absolute;left:96px;top:76px}
 .kicker{font-size:16px;font-weight:600;letter-spacing:.24em;color:var(--teal);text-transform:uppercase}
 h1{font-size:56px;line-height:1.15;font-weight:700;color:var(--navy);margin-top:8px}
-h1 span{color:var(--teal)}
+h1 img{height:44px;vertical-align:-3px;margin-left:10px}
 .co{position:absolute;font-size:15px;line-height:1.35;color:var(--navy)}
 .co b{font-weight:600;display:block;font-size:17px}
 .co b em{font-style:normal;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--navy);color:#fff;font-size:13px;margin-right:8px;vertical-align:1px}
@@ -31,7 +31,7 @@ h1 span{color:var(--teal)}
 <canvas id="gl"></canvas>
 <svg id="lines"></svg>
 <div id="callouts"></div>
-<div class="title"><div class="kicker">Exploded View</div><h1>ส่วนประกอบภายใน m<span>COLD</span></h1></div>
+<div class="title"><div class="kicker">Exploded View</div><h1>ส่วนประกอบภายใน <img src="brand/TCOLD_logo.svg" alt="TCOLD"></h1></div>
 
 <div class="inset" id="inset"><h3>บอร์ดหลัก · ด้านอุปกรณ์<small>มองจากด้านหลังเครื่อง</small></h3></div>
 <canvas id="gl2"></canvas><svg id="lines2"></svg>
@@ -71,7 +71,7 @@ const Lb = layer('battery'); K.mesh(G.battery, K.M.battery(), Lb);
   const c = document.createElement('canvas'); c.width = 1180; c.height = 740; const x = c.getContext('2d');
   x.fillStyle = '#0b3550'; x.fillRect(0, 0, 1180, 740); x.fillStyle = '#0e8391'; x.fillRect(0, 600, 1180, 140);
   x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#fff'; x.font = '700 150px Plex'; x.fillText('Li-Po 3.7 V', 590, 250);
-  x.font = '500 70px Plex'; x.fillStyle = '#9fdde5'; x.fillText('59 × 37 × 5 mm', 590, 420); x.fillStyle = '#fff'; x.font = '600 56px Plex'; x.fillText('mCOLD', 590, 670);
+  x.font = '500 70px Plex'; x.fillStyle = '#9fdde5'; x.fillText('59 × 37 × 5 mm', 590, 420); x.fillStyle = '#fff'; x.font = '600 56px Plex'; x.fillText('TCOLD', 590, 670);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
   const m = new THREE.Mesh(new THREE.PlaneGeometry(55, 34), new THREE.MeshPhysicalMaterial({map: t, roughness: .5, clearcoat: .3}));
   G.battery.computeBoundingBox(); m.position.set(0, 0, G.battery.boundingBox.max.z + .03); Lb.add(m);
@@ -91,7 +91,7 @@ const Ln = layer('nfc'); K.mesh(G.nfc, K.M.board(), Ln);
 const Le = layer('eink'); K.mesh(G.eink, K.M.eink(), Le); await K.screen(Le, 20.84 - 15.65 + .03);
 const Lpi = layer('pipes'); const pipes = G.pipes.map(g => K.mesh(g, K.M.pipe(), Lpi));
 pipes.forEach((p, i) => p.material = new THREE.MeshBasicMaterial({color: K.LED_COL[i], toneMapped: false}));
-const Lf = layer('bot'); K.mesh(G.bot, K.M.front(), Lf); K.bezel(Lf); K.frontPrint(Lf);
+const Lf = layer('bot'); K.mesh(G.bot, K.M.front(), Lf); K.bezel(Lf); await K.frontPrint(Lf);
 K.leds(Lf, [], [], {labels: true});
 
 // thermocouple: leaves the PCB layer's bottom edge, drops to the floor, probe lies in front

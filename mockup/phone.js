@@ -1,5 +1,5 @@
-// Concept screens of the mCOLD phone app, drawn in HTML for the mockup pages.
-// The numbers match the A2 TRIP ACTIVE e-paper screen (MCOLD-0117, 14:32, 4.2 °C,
+// Concept screens of the TCOLD phone app, drawn in HTML for the mockup pages.
+// The numbers match the A2 TRIP ACTIVE e-paper screen (TCOLD-0117, 14:32, 4.2 °C,
 // MIN 2.8, MAX 6.1, battery 78 %, storage 6 %) so the phone and the box agree.
 
 export const PHONE_CSS = `
@@ -88,7 +88,7 @@ export function tripScreen() {
   <div class="sb"><span>14:32</span><span style="display:flex;gap:6px;align-items:center">
     <svg viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx="1" fill="#14293a"/><rect x="5" y="5" width="3" height="7" rx="1" fill="#14293a"/><rect x="10" y="2" width="3" height="10" rx="1" fill="#14293a"/><rect x="15" y="0" width="3" height="12" rx="1" fill="#14293a"/></svg>
     <svg viewBox="0 0 26 12"><rect x=".5" y=".5" width="22" height="11" rx="3" fill="none" stroke="#14293a" opacity=".5"/><rect x="2" y="2" width="16" height="8" rx="2" fill="#14293a"/><rect x="23.5" y="4" width="2" height="4" rx="1" fill="#14293a" opacity=".5"/></svg></span></div>
-  <div class="hdr"><div><div class="t">MCOLD-0117</div><div class="s"><i></i>เชื่อมต่อแล้ว ผ่าน Bluetooth</div></div><div class="ble">${ic.ble}</div></div>
+  <div class="hdr"><div><div class="t">TCOLD-0117</div><div class="s"><i></i>เชื่อมต่อแล้ว ผ่าน Bluetooth</div></div><div class="ble">${ic.ble}</div></div>
   <div class="hero"><span class="pill"><i></i>ทริปกำลังทำงาน</span>
     <div class="big">4.2<sup>°C</sup></div>
     <div class="rng"><span>เริ่ม 08:07 · 6 ชม. 25 น.</span><span class="ok">ในช่วง 2–8 °C</span></div></div>

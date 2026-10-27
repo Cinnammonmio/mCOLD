@@ -135,13 +135,14 @@ export function leds(parent, pipes, colors = LED_COL, {labels = true} = {}) {
   m.position.set(0, LED_Y - 5, FRONT_Z + .02); parent.add(m);
 }
 
-// mCOLD wordmark printed above the screen
-export function frontPrint(parent) {
+// TCOLD wordmark printed above the screen (brand/TCOLD_logo.svg) with the THANES line under it
+export async function frontPrint(parent) {
+  const img = new Image(); img.src = 'brand/TCOLD_logo.svg'; await img.decode();
   const c = document.createElement('canvas'); c.width = 1600; c.height = 480; const x = c.getContext('2d');
-  x.font = '700 170px Plex'; x.textBaseline = 'middle';
-  const w1 = x.measureText('m').width, w2 = x.measureText('COLD').width, sx = 800 - (w1 + w2) / 2;
-  x.fillStyle = COL.navy; x.fillText('m', sx, 190); x.fillStyle = COL.teal; x.fillText('COLD', sx + w1, 190);
-  x.textAlign = 'center'; x.font = '600 54px Plex'; x.fillStyle = '#6b7f8b'; x.letterSpacing = '14px'; x.fillText('COLD-CHAIN MONITOR', 800, 370);
+  const lw = 1180, lh = lw * img.height / img.width;
+  x.drawImage(img, 800 - lw / 2, 205 - lh / 2, lw, lh);
+  x.textAlign = 'center'; x.textBaseline = 'middle'; x.font = '600 54px Plex'; x.fillStyle = '#6b7f8b'; x.letterSpacing = '14px';
+  x.fillText('THANES · SMART COLD CHAIN', 800, 410);
   const m = new THREE.Mesh(new THREE.PlaneGeometry(40, 12), new THREE.MeshPhysicalMaterial({map: canvasTex(c), transparent: true, roughness: .4, clearcoat: .35, polygonOffset: true, polygonOffsetFactor: -2}));
   m.position.set(0, 28.5, FRONT_Z + .02); parent.add(m);
 }
@@ -155,7 +156,7 @@ export async function device(parent) {
   const pipes = [];
   for (const p of PART.pipes) pipes.push(mesh(await load(p), M.pipe(), g));
   mesh(await load(PART.side), M.pipe(), g);
-  await screen(g); bezel(g); leds(g, pipes); frontPrint(g);
+  await screen(g); bezel(g); leds(g, pipes); await frontPrint(g);
   return g;
 }
 

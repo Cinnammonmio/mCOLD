@@ -1,19 +1,58 @@
 # mockup
 
-ภาพนำเสนอสินค้า เรนเดอร์จากโมเดล 3D จริงของเคส
+ภาพนำเสนอสินค้า **TCOLD** (ชื่อเดิมของโปรเจกต์คือ mCOLD) เรนเดอร์จากโมเดล 3D จริงของเคส
 (`Assy CASE_80CM_V2x.STEP` ที่อยู่ใน `../Assy CASE_80CM_V2x.rar`)
+
+## ชื่อและโลโก้
+
+**TCOLD — Thanes Cold-chain Online Logging Device**
+อักษรแรกของแต่ละคำประกอบเป็น T·C·O·L·D และอยู่ในสาย *Smart Cold Chain* ของ THANES
+
+- ตัว T เอามาจากโลโก้ THANES (วัดจากภาพถ่ายแล้วสร้างใหม่เป็น vector): T ที่ถูกตัดด้วยเส้นทแยง
+  45° เส้นเดียวผ่านแขนซ้ายและหัวก้าน มุมที่เส้นตัดชนขอบมีความโค้ง ครึ่งขวาของคานไม่ถูกตัด
+- COLD ใช้ฟอนต์ Unbounded Bold (OFL) แปลงเป็นเส้นแล้ว ไฟล์ SVG จึงไม่ต้องติดตั้งฟอนต์
+  เลือก Bold เพราะความหนาเส้นใกล้ T มากที่สุด
+- ชื่อเต็มใช้ IBM Plex Sans ใกล้กับแถว "Smart Cold Chain · Smart Lab …" ในโลโก้ THANES
+- ไฟล์อยู่ใน `brand/` สร้างใหม่ด้วย `python mockup/brand/logo.py`
+
+| ไฟล์ | ใช้กับ |
+|---|---|
+| `TCOLD_logo.svg` | พื้นสว่าง (T teal ไล่สี, COLD navy) |
+| `TCOLD_logo_on_dark.svg` | พื้นเข้ม (T teal, COLD ขาว) |
+| `TCOLD_logo_white.svg` / `TCOLD_logo_navy.svg` | สีเดียว |
+| `TCOLD_lockup.svg` / `TCOLD_lockup_on_dark.svg` | โลโก้ + ชื่อเต็ม |
+
+## ภาพสไลด์สำเร็จ
 
 | ไฟล์ | หน้า | เนื้อหา |
 |---|---|---|
-| `out/mCOLD_mockup.png` | `hero.html` | ตัวเครื่อง + thermocouple + แอปบนมือถือ |
-| `out/mCOLD_explode.png` | `explode.html` | exploded view 9 ชิ้น พร้อมภาพบอร์ดหลักด้านอุปกรณ์ |
+| `out/TCOLD_mockup.png` | `hero.html` | ตัวเครื่อง + thermocouple + แอปบนมือถือ |
+| `out/TCOLD_explode.png` | `explode.html` | exploded view 9 ชิ้น พร้อมภาพบอร์ดหลักด้านอุปกรณ์ |
 
-![mCOLD mock-up](out/mCOLD_mockup.png)
-![mCOLD exploded view](out/mCOLD_explode.png)
+![TCOLD mock-up](out/TCOLD_mockup.png)
+![TCOLD exploded view](out/TCOLD_explode.png)
 
 ทั้งสองภาพขนาด 3840×2160 (16:9)
 
-- จอ e-paper คือ state A2 TRIP ACTIVE จาก `../display-mock/out/A2_trip.png`
+## ชิ้นงานแยก (PNG พื้นใส) สำหรับวางบนธีมสไลด์
+
+`out/objects/` ตัดขอบให้พอดีชิ้นแล้ว เว้นขอบ 24 px ไม่มีพื้นหลัง ไม่มีป้ายชี้
+ใส่ป้ายและเงาด้วยธีมของสไลด์เอง
+
+| ไฟล์ | เนื้อหา |
+|---|---|
+| `TCOLD_logo*.png`, `TCOLD_lockup*.png` | โลโก้กว้าง 2400 px |
+| `device_with_probe.png` | ตัวเครื่องมุมเดียวกับสไลด์หลัก พร้อมสายและหัววัด |
+| `device_front.png` / `device_back.png` | ตัวเครื่องตรงหน้า / ด้านหลัง |
+| `phone_app.png` / `phone_app_tilted.png` | มือถือพร้อมหน้าจอแอป ตรง / เอียง |
+| `explode_stack.png` | ชุด explode ทั้งชุด ไม่มีป้าย |
+| `part_1_front_case.png` … `part_8b_back_case_outside.png` | แต่ละชิ้นในมุมเดียวกับ explode ใช้เรียงเองในสไลด์ได้ (6b = บอร์ดหลักด้านอุปกรณ์, 8b = ฝาหลังด้านนอก) |
+| `thermocouple.png` | สายและหัววัด |
+| `epaper_screen_trip.png` | ภาพหน้าจอ e-paper TRIP ACTIVE |
+
+## หมายเหตุ
+
+- จอ e-paper คือ state A2 TRIP ACTIVE วาดด้วย `../display-mock/render.py` โดยเปลี่ยนรหัสเครื่องเป็น TCOLD-0117
   มีกรอบเลนส์สีเข้มรอบช่องจอ (กรอบนี้เป็นสีสำหรับนำเสนอ ไม่มีในไฟล์ STEP)
 - ไฟหน้า 3 ดวงติดทุกดวงเพื่อให้เห็นสีประจำตำแหน่งตาม `../docs/led-design.md`:
   ซ้าย CARGO แดง · กลาง TRIP ฟ้า · ขวา DEVICE เหลือง และพิมพ์ชื่อไว้ใต้ไฟ
@@ -36,7 +75,9 @@ pip install cadquery-ocp trimesh pillow scipy rtree
 bsdtar -xf "Assy CASE_80CM_V2x.rar" -C /tmp          # หรือแตกด้วย WinRAR / 7-Zip
 python mockup/prepare.py "/tmp/Assy CASE_80CM_V2x.STEP" # -> mockup/build/ (STL รายชิ้น + texture จอ)
 cd mockup && npm install
-node render.js '[["hero.html","out/mCOLD_mockup.png",1920,1080,2],["explode.html","out/mCOLD_explode.png",1920,1080,2]]'
+python brand/logo.py                                     # โลโก้ SVG
+node render.js '[["hero.html","out/TCOLD_mockup.png",1920,1080,2],["explode.html","out/TCOLD_explode.png",1920,1080,2]]'
+python objects.py                                         # ชิ้นงานแยก -> out/objects/
 ```
 
 `render.js` ใช้ Playwright + Chromium (WebGL ผ่าน SwiftShader) เปิดหน้าแล้ว screenshot ที่ 2×
