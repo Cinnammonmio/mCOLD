@@ -8,7 +8,9 @@
 @font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Bold.ttf);font-weight:700}
 *{margin:0;padding:0;box-sizing:border-box}
 html,body{width:1920px;height:1080px;overflow:hidden;background:transparent}
-#gl{position:absolute;left:0;top:0;width:1920px;height:1080px}
+#gl{position:absolute;left:0;top:0;width:1920px;height:1080px;
+  /* same soft shadow as the phone (box-shadow 0 40px 80px / 0 10px 24px) so objects read on white slides */
+  filter:drop-shadow(0 40px 40px rgba(11,53,80,.25)) drop-shadow(0 10px 12px rgba(11,53,80,.18))}
 .center{position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
 </style>
 <script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>

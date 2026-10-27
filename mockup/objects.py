@@ -43,6 +43,19 @@ def trim(src, dst, pad=24):
     l, t, r, b = a.getbbox()
     im.crop((max(0, l - pad), max(0, t - pad), min(im.width, r + pad), min(im.height, b + pad))).save(dst, optimize=True)
 
+def shadow(im):
+    """PIL version of the pages' drop-shadow(0 40px 40px .25) + (0 10px 12px .18), at 2x."""
+    from PIL import ImageFilter
+    pad = 260; W, H = im.width + 2 * pad, im.height + 2 * pad
+    out = Image.new("RGBA", (W, H), (0, 0, 0, 0)); a = im.getchannel("A")
+    for dy, blur, op in ((80, 80, .25), (20, 24, .18)):
+        m = Image.new("L", (W, H), 0); m.paste(a, (pad, pad + dy)); m = m.filter(ImageFilter.GaussianBlur(blur / 2))
+        layer = Image.new("RGBA", (W, H), (11, 53, 80, 0)); layer.putalpha(m.point(lambda v: int(v * op)))
+        out = Image.alpha_composite(out, layer)
+    out.alpha_composite(im, (pad, pad))
+    l, t, r, b = out.getchannel("A").point(lambda v: 255 if v > 3 else 0).getbbox()
+    return out.crop((max(0, l - 24), max(0, t - 24), min(W, r + 24), min(H, b + 24)))
+
 def logos():
     """Brand SVGs to PNG at 2400 px wide (transparent)."""
     import re
@@ -66,5 +79,6 @@ if __name__ == "__main__":
     for n in SPEC:
         for t in ("light", "dark"):
             trim(TMP / f"{n}_{t}.png", OUT / "spec" / f"{n}_{t}.png", pad=48)   # room for the card shadow
-    # the e-paper screen itself, at 4x (1000 x 488)
-    Image.open(HERE / "build" / "screen_tex.png").resize((1000, 488), Image.LANCZOS).save(OUT / "epaper_screen_trip.png")
+    # the e-paper screen itself, at 4x (1000 x 488), with the same shadow as the rest
+    scr = Image.open(HERE / "build" / "screen_tex.png").convert("RGBA").resize((1000, 488), Image.LANCZOS)
+    shadow(scr).save(OUT / "epaper_screen_trip.png", optimize=True)
