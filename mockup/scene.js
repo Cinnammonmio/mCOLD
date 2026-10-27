@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import {STLLoader} from 'three/addons/loaders/STLLoader.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+import {toCreasedNormals} from 'three/addons/utils/BufferGeometryUtils.js';
 
 export const Q = new URLSearchParams(location.search);
 export const qjson = (k, d) => JSON.parse(Q.get(k) || JSON.stringify(d));
@@ -62,8 +63,16 @@ export const M = {
 };
 
 const L = new STLLoader();
-export const load = f => new Promise((res, rej) => L.load('build/stl/' + f + '.stl', g => {
+// geometries are cached, so six devices in the dock share one set
+const GEO = {};
+export const load = f => GEO[f] ??= new Promise((res, rej) => L.load('build/stl/' + f + '.stl', g => {
   g.translate(-C.x, -C.y, -C.z); g.computeVertexNormals(); res(g);
+}, undefined, rej));
+// dock parts stay in the dock STEP's own coordinates (slots open to +Y, front of the dock is -Z)
+// smooth normals across facets but keep edges sharper than 35 degrees: the dock's large rounded
+// surfaces otherwise show every triangle
+export const loadDock = f => GEO['dock/' + f] ??= new Promise((res, rej) => L.load('build/stl_dock/' + f + '.stl', g => {
+  res(toCreasedNormals(g, THREE.MathUtils.degToRad(35)));
 }, undefined, rej));
 
 export const PART = {
@@ -137,16 +146,64 @@ export async function frontPrint(parent) {
 
 // Whole assembled device in a group, ready to place
 // screen: build/<screen>.png texture; lit: colour per front LED (null = off), default all three lit
-export async function device(parent, {screen: scr = 'screen_tex', lit = LED_COL} = {}) {
+export async function device(parent, {screen: scr = 'screen_tex', lit = LED_COL, side = null} = {}) {
   const g = new THREE.Group(); parent.add(g);
   mesh(await load(PART.bot), M.front(), g);
   mesh(await load(PART.top), M.back(), g);
   mesh(await load(PART.eink), M.eink(), g);
   const pipes = [];
   for (const p of PART.pipes) pipes.push(mesh(await load(p), M.pipe(), g));
-  mesh(await load(PART.side), M.pipe(), g);
+  // side light: null = off, otherwise lit in that colour (green = charging)
+  mesh(await load(PART.side), side == null ? M.pipe() : new THREE.MeshBasicMaterial({color: new THREE.Color(side), toneMapped: false}), g);
   await screen(g, 5.62, scr); bezel(g); leds(g, pipes, lit); await frontPrint(g);
   return g;
+}
+
+// ---------- 6-slot dock ----------
+// Slot geometry measured from Dock Assy.STEP: slots 14 mm wide on a 20 mm pitch along X,
+// floor at Y -6.3, 89 mm long along Z; the USB-C plug of each slot stands at Z 58–67.5.
+export const DOCK = {
+  slotX: [-70.6, -50.6, -30.6, -10.6, 9.4, 29.4], floorY: -6.3, plugZ: 62.4,
+  box: 'Main_Box_Dock_0', plate: 'Plate_PCB_foam_DOCK_2', pcb: ['metal', 'tin', 'tan', 'black'].map(k => 'pcb_' + k),
+};
+export const DM = {
+  body: () => new THREE.MeshPhysicalMaterial({color: 0x0b3550, roughness: .42, clearcoat: .55, clearcoatRoughness: .3}),
+  plate: () => new THREE.MeshPhysicalMaterial({color: 0x0e8391, roughness: .4, clearcoat: .4}),
+  pcb: () => new THREE.MeshStandardMaterial({color: 0x1d2326, roughness: .6}),
+};
+
+// TCOLD stands in a slot on its left edge (its USB-C port) with the screen facing -X:
+// device +X -> world +Y, device +Y -> world -Z, device +Z (front) -> world -X.
+// The port sits 20 mm below the device centre, so the centre is 20 mm on from the plug.
+export function seat(dev, slot) {
+  const m = new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0));
+  dev.quaternion.setFromRotationMatrix(m);
+  dev.position.set(DOCK.slotX[slot], DOCK.floorY + 43.5, DOCK.plugZ - 20);
+}
+
+// front print: TCOLD wordmark and DOCK on the navy front face (Z min)
+async function dockPrint(parent) {
+  const img = new Image(); img.src = 'brand/TCOLD_logo_on_dark.svg'; await img.decode();
+  const c = document.createElement('canvas'); c.width = 1800; c.height = 300; const x = c.getContext('2d');
+  const lh = 170, lw = lh * img.width / img.height; x.drawImage(img, 0, (300 - lh) / 2, lw, lh);
+  x.font = '600 120px Plex'; x.fillStyle = '#9fdde5'; x.textBaseline = 'middle'; x.letterSpacing = '24px'; x.fillText('DOCK', lw + 70, 156);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(60, 10), new THREE.MeshPhysicalMaterial({map: canvasTex(c), transparent: true, roughness: .4, clearcoat: .5, polygonOffset: true, polygonOffsetFactor: -2}));
+  m.rotation.y = Math.PI; m.position.set(-21.1 + 4, -2, -17.35); parent.add(m);
+}
+
+// the dock, optionally holding n devices (charging screens D1..D6, side light green)
+export async function dock(parent, {n = 6} = {}) {
+  const g = new THREE.Group(); parent.add(g);
+  mesh(await loadDock(DOCK.box), DM.body(), g);
+  mesh(await loadDock(DOCK.plate), DM.plate(), g);
+  for (const p of DOCK.pcb) mesh(await loadDock(p), DM.pcb(), g, false);
+  await dockPrint(g);
+  const devs = [];
+  for (let i = 0; i < n; i++) {
+    const d = await device(g, {screen: 'screen_D' + (i + 1), lit: [null, null, null], side: 0x3fd47a});
+    seat(d, i); devs.push(d);
+  }
+  return {group: g, devices: devs};
 }
 
 // ---------- thermocouple ----------

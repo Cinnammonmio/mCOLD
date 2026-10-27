@@ -134,6 +134,11 @@ if (o === 'device' || o === 'device_front' || o === 'device_back') {
   const Lpi = L('pipes'); G.pipes.forEach((p, i) => K.mesh(p, new THREE.MeshBasicMaterial({color: K.LED_COL[i], toneMapped: false}), Lpi));
   const Lf = L('bot'); K.mesh(G.bot, K.M.front(), Lf); K.bezel(Lf); await K.frontPrint(Lf); 
   cam = new THREE.PerspectiveCamera(24, W / H, 10, 4000); cam.position.set(0, 120, 620); cam.lookAt(10, -20, 0);
+} else if (o.startsWith('dock')) {
+  // ?o=dock (with six devices) | dock_empty | dock_front | dock_back | dock_top
+  const {group} = await K.dock(S, {n: o === 'dock_empty' ? 0 : 6});
+  const DIRS = {dock: [-0.95, 0.75, -1], dock_empty: [-0.95, 0.75, -1], dock_front: [0, 0.3, -1], dock_back: [0.8, 0.6, 1], dock_top: [0, 1, -0.2]};
+  cam = frame(group, DIRS[o], {margin: 0.95});
 } else if (o === 'thermocouple') {
   // a short loose length of cable ending in the probe
   const curve = new THREE.CatmullRomCurve3([[-90, 1.9, -20], [-60, 1.9, 6], [-25, 1.9, 14], [10, 1.9, 6], [40, 1.9, 0]].map(p => new THREE.Vector3(...p)));

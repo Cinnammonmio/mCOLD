@@ -2,6 +2,7 @@
 
 usage: python mockup/prepare.py "path/to/Assy CASE_80CM_V2x.STEP"
        python mockup/prepare.py --screens      (only the e-paper textures)
+       python mockup/prepare.py --dock "path/to/Dock Assy.STEP"
 """
 import sys, os, numpy as np
 from OCP.STEPCAFControl import STEPCAFControl_Reader
@@ -19,9 +20,11 @@ from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS
 import trimesh
 
-src = sys.argv[1]
 here = os.path.dirname(os.path.abspath(__file__))
-out = os.path.join(here, 'build', 'stl')
+if len(sys.argv) > 2 and sys.argv[1] == '--dock':     # the 6-slot dock goes to build/stl_dock
+    src, out = sys.argv[2], os.path.join(here, 'build', 'stl_dock')
+else:
+    src, out = sys.argv[1], os.path.join(here, 'build', 'stl')
 
 # e-paper textures: screens drawn by display-mock with the TCOLD device ID, at 8x,
 # each ink mapped to its panel tone. screen_tex.png is A2 TRIP ACTIVE; the others
@@ -42,6 +45,12 @@ SCREENS = {
         ('Duration', '3d 06h 12m'), ('Temperature', '2.8 / 6.1 ~C'), ('Alarms', '1 high|2 shock')),
         wifi=True, cloud=True, gnss=True, battery=74, storage=9, **ID),
 }
+# six boxes charging in the dock, one per slot, each with its own ID and charge level
+for i, (soc, left) in enumerate([(100, None), (92, 9), (76, 24), (58, 41), (85, 15), (100, None)]):
+    SCREENS[f'D{i + 1}'] = (lambda i=i, soc=soc, left=left: epd.charge(
+        f'epd_D{i + 1}', device=f'TCOLD-{117 + i:04d}', soc=soc, state='CHARGED' if left is None else 'FAST CHARGE',
+        rows=(('SOURCE', 'DOCK'), ('CURRENT', '0.05 A' if left is None else '0.40 A'), ('FULL IN', 'DONE' if left is None else f'{left} MIN')),
+        charging=True, wifi=True, cloud=True, gnss=False, battery=soc, storage=6))
 PANEL = {epd.WHITE: (234, 233, 226), epd.BLACK: (28, 29, 31), epd.RED: (184, 50, 46)}
 def texture(code):
     SCREENS[code]()

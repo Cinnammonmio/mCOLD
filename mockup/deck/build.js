@@ -204,6 +204,18 @@ async function writeTheme(file, {name, colors, bodyFontFace: font}) {
     for (let i = 0; i < rows.length; i++) await iconRow(s, M, 1.65 + i * 1.0, 7.3, ...rows[i], {d: 0.5, fs: 14});
     s.addNotes('หน้าจอในภาพเป็นภาพแนวคิดของแอป ตัวเลขตรงกับหน้าจอบนเครื่อง');
   }
+  {
+    const s = content('01 · PRODUCT', 'TCOLD Dock ชาร์จ 6 เครื่องพร้อมกัน');
+    pic(s, 'dock_with_6', 5.9, 1.35, 5.2, 5.0);
+    pic(s, 'dock_back', 10.85, 4.55, 1.9, 1.75);
+    txt(s, [{text: 'ด้านหลัง: USB-C 2 ช่อง', options: {bold: true, color: C.text2, fontSize: 12, breakLine: true}}, {text: 'ไฟเข้า PD · ต่อคอมพิวเตอร์', options: {color: C.accent6, fontSize: 11}}],
+      {x: 10.6, y: 6.3, w: 2.4, h: 0.55, align: 'center'});
+    const rows = [['plug', 'วางลงช่องแล้วชาร์จทันที', 'ขั้ว USB-C ที่ก้นช่องเสียบเข้าพอร์ตของเครื่องเอง ไฟข้างเครื่องเขียว = กำลังชาร์จ'],
+                  ['file-spreadsheet', 'ดึงไฟล์ CSV ทุกเครื่อง', 'ต่อคอมพิวเตอร์สายเดียว เห็นแต่ละเครื่องเป็นไดรฟ์แยก'],
+                  ['shield-check', 'ป้องกันทุกช่อง', 'ตัดกระแสเกินแยกช่อง · TVS และ eFuse ที่ขาเข้า · ไม่มี firmware ให้ดูแล']];
+    for (let i = 0; i < rows.length; i++) await iconRow(s, M, 1.75 + i * 1.45, 5.0, ...rows[i], {d: 0.56, fs: 14});
+    s.addNotes('Dock ไม่มี MCU และไม่มีไฟบนตัว Dock สถานะชาร์จดูจากไฟข้างของแต่ละเครื่อง ต้องเสียบ adapter USB-C PD เสมอ ใช้ไฟจากคอมพิวเตอร์อย่างเดียวไม่พอ');
+  }
 
   // =====================================================================
   addSection('FUNCTION');
@@ -410,6 +422,18 @@ async function writeTheme(file, {name, colors, bodyFontFace: font}) {
     txt(s, 'ค่าที่ระบุ "เป้าหมาย" เป็นค่าออกแบบ ยังไม่ได้วัดจริงบนเครื่องต้นแบบ',
       {x: M, y: 6.45, w: W - 2 * M - 1.6, h: 0.35, fontSize: 11, color: C.accent6, italic: true});
     s.addNotes('แบตต่ำกว่า 10% เครื่องไม่ให้เริ่มทริปใหม่ ต่ำกว่า 5% จอขึ้น BATTERY EMPTY แล้วปิดเครื่องเองเพื่อถนอมแบต ข้อมูลไม่หาย');
+  }
+  {
+    const s = content('03 · SPECIFICATION', 'ข้อมูลจำเพาะ · TCOLD Dock');
+    pic(s, 'dock_dimensions_light', M, 1.55, 6.6, 3.0);
+    pic(s, 'dock_top', M + 1.2, 4.6, 4.2, 2.2);
+    table(s, 7.55, 1.65, W - M - 7.55, 'TCOLD Dock', [
+      ['จำนวนช่อง', '6 ช่อง ชาร์จพร้อมกัน'], ['ขนาด', '164.5 × 119.4 × 59.4 มม.'], ['ไฟเข้า', 'USB-C PD 45 W' + TGT],
+      ['ไฟแต่ละช่อง', '5 V · ตัดกระแสเกินแยกช่อง'], ['ต่อคอมพิวเตอร์', 'USB-C สายเดียว ผ่าน hub ในตัว'],
+      ['การป้องกัน', 'TVS + eFuse ขาเข้า · ESD'], ['สถานะชาร์จ', 'ไฟข้างของแต่ละเครื่อง'], ['ตัว Dock', 'ไม่มี MCU ไม่มี firmware']]);
+    txt(s, 'ต้องเสียบ adapter PD เสมอ ไฟจากคอมพิวเตอร์อย่างเดียวไม่พอ · ขนาดวัดจากแบบ 3D (Dock Assy.STEP)',
+      {x: M, y: 6.45, w: W - 2 * M - 1.6, h: 0.35, fontSize: 11, color: C.accent6, italic: true});
+    s.addNotes('ตัวเลข Dock มาจากตาราง hardware ใน README และหัวข้อ 6 ของเอกสาร requirement ขนาดวัดจากไฟล์ 3D');
   }
   // closing
   {

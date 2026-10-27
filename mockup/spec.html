@@ -95,6 +95,18 @@ const GROUPS = {
     ['ป้องกันแบต', 'ต่ำกว่า 10% ไม่เริ่มทริปใหม่<br>ต่ำกว่า 5% ปิดเครื่องเองเพื่อถนอมแบต'],
     ['ประมวลผล', 'ESP32-S3 · PSRAM 8 MB'],
   ]],
+  // TCOLD Dock: README.md hardware table, requirements §6, schematic foam_dock P.3
+  dock: ['TCOLD Dock', 'Charging dock', 'battery-charging', [
+    ['จำนวนช่อง', '6 ช่อง ชาร์จพร้อมกัน'],
+    ['ขนาด', '164.5 × 119.4 × 59.4 มม.'],
+    ['ไฟเข้า', `USB-C PD จาก adapter ภายนอก 45&nbsp;W${tg(T)}`],
+    ['ไฟแต่ละช่อง', '5 V · ตัดกระแสเกินแยกทุกช่อง'],
+    ['ต่อคอมพิวเตอร์', 'USB-C สายเดียว ผ่าน hub ในตัว<br>เห็นเครื่องเป็นไดรฟ์แยก ดึง CSV ได้ทุกเครื่อง'],
+    ['การป้องกัน', 'TVS + eFuse ขาเข้า · ESD ทุกพอร์ตข้อมูล'],
+    ['สถานะชาร์จ', 'ไฟข้างของแต่ละเครื่อง<br>เขียวหายใจ = กำลังชาร์จ · เขียวค้าง = เต็ม'],
+    ['ตัว Dock', 'ไม่มี MCU ไม่มี firmware ไม่ต้องอัปเดต'],
+    ['ข้อควรรู้', 'ต้องเสียบ adapter PD เสมอ<br>ไฟจากคอมพิวเตอร์อย่างเดียวไม่พอ'],
+  ]],
 };
 const KPIS = [
   ['temperature', '0.25', '°C', 'ความละเอียดการวัด'],
@@ -103,6 +115,9 @@ const KPIS = [
   ['battery-3', '7', 'วัน', `ใช้งานต่อเนื่อง${tg(T)}`],
   ['device-tablet', '87×87', '× 12.3 มม.', 'ขนาดตัวเครื่อง'],
   ['eye', '2.13″', 'e-Paper', '250 × 122 px · 4 สี'],
+  ['battery-charging', '6', 'ช่อง', 'Dock ชาร์จพร้อมกัน'],
+  ['usb', '1', 'สาย', 'ต่อคอมพิวเตอร์ ดึงข้อมูลทุกเครื่อง'],
+  ['plug', '45', 'W', `adapter USB-C PD${tg(T)}`],
 ];
 
 async function card(g) {
@@ -133,18 +148,20 @@ else if (o === 'kpi') {
   const slot = document.getElementById('dimslot');
   await dims(slot, slot.clientWidth, {gap: 56, ml: 40, labels: false});
 } else if (o === 'dims') {
-  await dims(stage, 1500);
+  await dims(stage, 1500, {what: K.Q.get('what') || 'device'});
 }
 await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 window.done = 1;
 
 // Orthographic front and side views at a known mm -> px scale, with dimension lines
-async function dims(parent, avail, {gap = 120, ml = 60, labels = true} = {}) {
+async function dims(parent, avail, {gap = 120, ml = 60, labels = true, what = 'device'} = {}) {
   const THREE = await import('three');
   const wrap = document.createElement('div'); wrap.id = 'dims'; parent.appendChild(wrap);
-  const S = new THREE.Scene(); const dev = await K.device(S);
-  // measure the case shells only (first two meshes: front and back case), not the prints on top
-  const box = new THREE.Box3().setFromObject(dev.children[0]).union(new THREE.Box3().setFromObject(dev.children[1])); const sz = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+  // measure the shells only (first two meshes: front/back case, or dock body/base plate), not the prints on top
+  const S = new THREE.Scene();
+  const obj = what === 'dock' ? (await K.dock(S, {n: 0})).group : await K.device(S);
+  const front = what === 'dock' ? [0, 0, -500] : [0, 0, 500];     // the dock's front is -Z
+  const box = new THREE.Box3().setFromObject(obj.children[0]).union(new THREE.Box3().setFromObject(obj.children[1])); const sz = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
   const M = 30;
   const PX = Math.min(7, (avail - ml - gap - 40 - 4 * M) / (sz.x + sz.z));   // CSS px per mm, at most 7
   const FW = Math.ceil(sz.x * PX) + 2 * M, FH = Math.ceil(sz.y * PX) + 2 * M, SW = Math.ceil(sz.z * PX) + 2 * M;
@@ -158,7 +175,7 @@ async function dims(parent, avail, {gap = 120, ml = 60, labels = true} = {}) {
     cam.position.copy(c).add(new THREE.Vector3(...pos)); cam.up.set(0, 1, 0); cam.lookAt(c);
     R.setViewport(left, 0, w, FH); R.setScissor(left, 0, w, FH); R.render(S, cam);
   };
-  view(FW, [0, 0, 500], ox);
+  view(FW, front, ox);
   view(SW, [500, 0, 0], sx);                      // seen from the right: front face on the left
   const col = t === 'dark' ? '#cfe3ea' : '#33495a', acc = t === 'dark' ? '#5ee0ec' : '#0e8391';
   const x0 = ox + M, x1 = ox + M + sz.x * PX, y0 = oy + M, y1 = oy + M + sz.y * PX, s0 = sx + M, s1 = sx + M + sz.z * PX;

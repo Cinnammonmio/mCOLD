@@ -23,6 +23,12 @@ SCENES = {
     "state_A3_out_of_range": "o=device_front&scr=A3&led=-,1,-",
     "state_A4_alarm": "o=device_front&scr=A4&led=0,-,-",
     "state_C1_summary": "o=device_front&scr=C1&led=-,-,-",
+    # the 6-slot dock, holding six charging TCOLDs
+    "dock_with_6": "o=dock",
+    "dock_front": "o=dock_front",
+    "dock_back": "o=dock_back",
+    "dock_top": "o=dock_top",
+    "dock_empty": "o=dock_empty",
     "thermocouple": "o=thermocouple",
     "phone_app": "o=phone",
     "phone_app_tilted": "o=phone&tilt=1",
@@ -39,9 +45,9 @@ SCENES = {
 }
 
 # spec objects from spec.html, light and dark
-SPEC = {"spec_sheet": "o=sheet", "spec_dimensions": "o=dims"}
-SPEC.update({f"spec_card_{g}": f"o=card&g={g}" for g in ["temp", "body", "sense", "link", "data", "power"]})
-SPEC.update({f"spec_kpi_{i + 1}_{n}": f"o=kpi&k={i}" for i, n in enumerate(["resolution", "interval", "storage", "runtime", "size", "display"])})
+SPEC = {"spec_sheet": "o=sheet", "spec_dimensions": "o=dims", "spec_dock_dimensions": "o=dims&what=dock"}
+SPEC.update({f"spec_card_{g}": f"o=card&g={g}" for g in ["temp", "body", "sense", "link", "data", "power", "dock"]})
+SPEC.update({f"spec_kpi_{i + 1}_{n}": f"o=kpi&k={i}" for i, n in enumerate(["resolution", "interval", "storage", "runtime", "size", "display", "dock_slots", "dock_cable", "dock_adapter"])})
 
 def trim(src, dst, pad=24):
     im = Image.open(src).convert("RGBA")
@@ -90,6 +96,7 @@ if __name__ == "__main__":
     # the dimension drawing also at the top level, where it is easy to find
     for t in ("light", "dark"):
         (OUT / f"device_dimensions_{t}.png").write_bytes((OUT / "spec" / f"spec_dimensions_{t}.png").read_bytes())
+        (OUT / f"dock_dimensions_{t}.png").write_bytes((OUT / "spec" / f"spec_dock_dimensions_{t}.png").read_bytes())
     # the e-paper screen itself, at 4x (1000 x 488), with the same shadow as the rest
     scr = Image.open(HERE / "build" / "screen_tex.png").convert("RGBA").resize((1000, 488), Image.LANCZOS)
     shadow(scr).save(OUT / "epaper_screen_trip.png", optimize=True)

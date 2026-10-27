@@ -34,6 +34,21 @@
 
 ทั้งสองภาพขนาด 3840×2160 (16:9)
 
+## TCOLD Dock (`out/TCOLD_dock.png`, หน้า `dock.html`)
+
+แท่นชาร์จ 6 ช่องจาก `../Dock Assy.rar` (Dock Assy.STEP) พร้อม TCOLD 6 เครื่องเสียบอยู่
+
+- เครื่องยืนบนขอบซ้าย (ด้านที่มีพอร์ต USB-C) ขั้ว USB-C ของแต่ละช่องอยู่ที่ Z 58–67.5 บนพื้นช่อง Y −6.3
+  ช่องกว้าง 14 มม. ห่างกัน 20 มม. (วัดจาก STEP) ตำแหน่งเครื่องคำนวณใน `scene.js` (`seat()`)
+- สี Dock: ตัวกล่อง navy `#0b3550` ตัดกับเครื่องสีขาว ฐานสี teal `#0e8391` เข้าชุดกับฝาหลังเครื่อง
+  โลโก้ TCOLD DOCK ด้านหน้า (สีและโลโก้สำหรับนำเสนอ ไม่มีในไฟล์ STEP)
+- จอแต่ละเครื่องแสดงหน้า CHARGING (รหัส TCOLD-0117 ถึง 0122, % แบตต่างกัน) ไฟข้างเครื่องเขียว
+- สเปกจาก `../README.md` (ตาราง hardware) และหัวข้อ 6 ของ `../docs/mCOLD_Firmware_Requirements_2026-09-19.md`
+  ขนาด 164.5 × 119.4 × 59.4 มม. วัดจาก STEP
+
+สร้างใหม่: `python mockup/prepare.py --dock "Dock Assy.STEP"` แล้ว `python mockup/objects.py`
+และ `node mockup/render.js '[["dock.html","out/TCOLD_dock.png",1920,1080,2]]'`
+
 ## สไลด์นำเสนอ (`out/TCOLD_presentation.pptx`)
 
 ร่าง 20 สไลด์ 16:9 แบ่ง 3 section: **หน้าตาโปรดักต์ · FUNCTION · SPECIFICATION**
@@ -60,6 +75,8 @@
 | `part_1_front_case.png` … `part_8b_back_case_outside.png` | แต่ละชิ้นในมุมเดียวกับ explode ใช้เรียงเองในสไลด์ได้ (6b = บอร์ดหลักด้านอุปกรณ์, 8b = ฝาหลังด้านนอก) |
 | `thermocouple.png` | สายและหัววัด |
 | `epaper_screen_trip.png` | ภาพหน้าจอ e-paper TRIP ACTIVE |
+| `dock_with_6.png`, `dock_front.png`, `dock_back.png`, `dock_top.png`, `dock_empty.png` | Dock พร้อมเครื่อง 6 เครื่อง (มุมเฉียง / หน้า / หลังเห็นพอร์ต / บน) และ Dock เปล่า |
+| `dock_dimensions_*.png` | ภาพขนาด Dock ด้านหน้าและด้านข้าง |
 | `state_A1_ready` … `state_C1_summary.png` | ตัวเครื่องในแต่ละสถานะ: READY, TRIP, นอกช่วง, ALARM, สรุปทริป พร้อมไฟที่ติดตามสถานะนั้น |
 
 ### สเปกเครื่อง (`out/objects/spec/`, หน้า `spec.html`)
@@ -71,6 +88,7 @@
 | `spec_sheet_*.png` | สเปกทั้งหมดในแผ่นเดียว พร้อมภาพขนาดตัวเครื่อง โลโก้ และหมายเหตุ |
 | `spec_card_temp/body/sense/link/data/power_*.png` | การ์ดแยกหมวด: การวัดอุณหภูมิ, ตัวเครื่อง, การติดตาม, การเชื่อมต่อ, การเก็บข้อมูล, พลังงาน |
 | `spec_kpi_1…6_*.png` | ตัวเลขเด่น: 0.25 °C, 5 นาที, ~268 วัน, 7 วัน, 87×87×12.3 มม., 2.13″ |
+| `spec_card_dock_*.png`, `spec_kpi_7…9_dock_*.png` | การ์ดสเปก Dock และตัวเลขเด่น (6 ช่อง, 1 สาย, 45 W) |
 | `spec_dimensions_*.png` | ภาพขนาดด้านหน้าและด้านข้าง วาดแบบ orthographic จาก STEP (7 px ต่อ มม. ที่ 1×) มีสำเนาที่ `out/objects/device_dimensions_*.png` |
 
 ตัวเลขทุกตัวมาจากเอกสารใน repo: `README.md`, `docs/mCOLD_Firmware_Requirements_2026-09-19.md`,
