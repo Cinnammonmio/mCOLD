@@ -10,7 +10,7 @@ export const qjson = (k, d) => JSON.parse(Q.get(k) || JSON.stringify(d));
 
 // centre of the case in STEP coordinates
 export const C = new THREE.Vector3(-21.5, 5.8, 15.65);
-export const FRONT_Z = 6.15;          // front face of Main Case_BOT after centring
+export const FRONT_Z = 6.2;           // just above the front face of Main Case_BOT (6.12–6.197, not flat)
 export const WIN = {w: 48, h: 23};    // display window, centred on the origin
 export const LED_Y = -24, LED_X = [-7.5, 0, 7.5];   // front light pipes, left to right
 export const COL = {navy: '#0b3550', teal: '#0e8391', teal2: '#1aa5b5', muted: '#5f707c'};
@@ -99,40 +99,27 @@ export function bezel(parent, z = FRONT_Z + 0.03) {
     s.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r); s.lineTo(-w / 2, -h / 2 + r); s.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
     return s;
   };
-  const outer = rr(new THREE.Shape(), WIN.w + 9, WIN.h + 9, 3.2);
+  const outer = rr(new THREE.Shape(), WIN.w + 3.2, WIN.h + 3.2, 1.4);   // 1.6 mm frame each side
   outer.holes.push(rr(new THREE.Path(), WIN.w, WIN.h, 0.6));
   const g = new THREE.ExtrudeGeometry(outer, {depth: .35, bevelEnabled: true, bevelThickness: .15, bevelSize: .25, bevelSegments: 3, curveSegments: 24});
   const m = new THREE.Mesh(g, new THREE.MeshPhysicalMaterial({color: 0x18252e, roughness: .18, clearcoat: 1, clearcoatRoughness: .05}));
   m.position.z = z; parent.add(m);
   // thin teal keyline on the outer edge
-  const ring = rr(new THREE.Shape(), WIN.w + 10.6, WIN.h + 10.6, 3.9);
-  ring.holes.push(rr(new THREE.Path(), WIN.w + 9.4, WIN.h + 9.4, 3.3));
+  const ring = rr(new THREE.Shape(), WIN.w + 4.4, WIN.h + 4.4, 2.0);
+  ring.holes.push(rr(new THREE.Path(), WIN.w + 3.8, WIN.h + 3.8, 1.7));
   const k = new THREE.Mesh(new THREE.ShapeGeometry(ring, 24), new THREE.MeshPhysicalMaterial({color: 0x1aa5b5, roughness: .3, clearcoat: .6, polygonOffset: true, polygonOffsetFactor: -2}));
   k.position.z = FRONT_Z + 0.02; parent.add(k);
   return m;
 }
 
-// Front LEDs: lit light pipes, a soft halo each and the CARGO / TRIP / DEVICE print under them
-export function leds(parent, pipes, colors = LED_COL, {labels = true} = {}) {
+// Front LEDs: lit light pipes in their position colours, no glow and no print
+export function leds(parent, pipes, colors = LED_COL) {
   pipes.forEach((p, i) => {
-    const c = new THREE.Color(colors[i]);
-    p.material = new THREE.MeshBasicMaterial({color: c, toneMapped: false});
-    const cv = document.createElement('canvas'); cv.width = cv.height = 128; const x = cv.getContext('2d');
-    const g = x.createRadialGradient(64, 64, 0, 64, 64, 64), s = `${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)}`;
-    g.addColorStop(0, `rgba(${s},.6)`); g.addColorStop(.32, `rgba(${s},.22)`); g.addColorStop(1, `rgba(${s},0)`);
-    x.fillStyle = g; x.fillRect(0, 0, 128, 128);
-    const h = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.MeshBasicMaterial({map: canvasTex(cv), transparent: true, depthWrite: false, toneMapped: false}));
-    h.position.set(LED_X[i], LED_Y, FRONT_Z + .25); parent.add(h);
-    // dark ring so an unlit pipe still reads against the white case
-    const r = new THREE.Mesh(new THREE.RingGeometry(1.55, 2.3, 48), new THREE.MeshPhysicalMaterial({color: 0x9fb0b8, roughness: .4, polygonOffset: true, polygonOffsetFactor: -2}));
+    p.material = new THREE.MeshBasicMaterial({color: new THREE.Color(colors[i]), toneMapped: false});
+    // grey ring so the pipe reads against the white case
+    const r = new THREE.Mesh(new THREE.RingGeometry(1.55, 2.1, 48), new THREE.MeshPhysicalMaterial({color: 0x9fb0b8, roughness: .4, polygonOffset: true, polygonOffsetFactor: -2}));
     r.position.set(LED_X[i], LED_Y, FRONT_Z + .02); parent.add(r);
   });
-  if (!labels) return;
-  const cv = document.createElement('canvas'); cv.width = 1440; cv.height = 160; const x = cv.getContext('2d');
-  x.font = '700 80px Plex'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#5f707c';
-  ['CARGO', 'TRIP', 'DEVICE'].forEach((t, i) => x.fillText(t, 720 + LED_X[i] * 1440 / 36, 80));
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(36, 4), new THREE.MeshPhysicalMaterial({map: canvasTex(cv), transparent: true, roughness: .4, polygonOffset: true, polygonOffsetFactor: -2}));
-  m.position.set(0, LED_Y - 5, FRONT_Z + .02); parent.add(m);
 }
 
 // TCOLD wordmark printed above the screen (brand/TCOLD_logo.svg) with the THANES line under it

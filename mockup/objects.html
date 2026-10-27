@@ -63,7 +63,7 @@ async function part(name) {
   const g = new THREE.Group(); S.add(g); g.rotation.set(...ROT);
   const add = (geo, m) => K.mesh(geo, m, g);
   switch (name) {
-    case 'front_case': add(G.bot, K.M.front()); K.bezel(g); await K.frontPrint(g); K.leds(g, [], [], {labels: true}); break;
+    case 'front_case': add(G.bot, K.M.front()); K.bezel(g); await K.frontPrint(g); break;
     case 'light_pipes': G.pipes.forEach((p, i) => add(p, new THREE.MeshBasicMaterial({color: K.LED_COL[i], toneMapped: false}))); break;
     case 'epaper': add(G.eink, K.M.eink()); await K.screen(g, 20.84 - 15.65 + .03); break;
     case 'nfc_board': {
@@ -128,7 +128,7 @@ if (o === 'device' || o === 'device_front' || o === 'device_back') {
   K.mesh(G.nfc, K.M.board(), L('nfc'));
   const Le = L('eink'); K.mesh(G.eink, K.M.eink(), Le); await K.screen(Le, 20.84 - 15.65 + .03);
   const Lpi = L('pipes'); G.pipes.forEach((p, i) => K.mesh(p, new THREE.MeshBasicMaterial({color: K.LED_COL[i], toneMapped: false}), Lpi));
-  const Lf = L('bot'); K.mesh(G.bot, K.M.front(), Lf); K.bezel(Lf); await K.frontPrint(Lf); K.leds(Lf, [], [], {labels: true});
+  const Lf = L('bot'); K.mesh(G.bot, K.M.front(), Lf); K.bezel(Lf); await K.frontPrint(Lf); 
   cam = new THREE.PerspectiveCamera(24, W / H, 10, 4000); cam.position.set(0, 120, 620); cam.lookAt(10, -20, 0);
 } else if (o === 'thermocouple') {
   // a short loose length of cable ending in the probe

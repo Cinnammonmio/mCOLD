@@ -92,7 +92,7 @@ const Le = layer('eink'); K.mesh(G.eink, K.M.eink(), Le); await K.screen(Le, 20.
 const Lpi = layer('pipes'); const pipes = G.pipes.map(g => K.mesh(g, K.M.pipe(), Lpi));
 pipes.forEach((p, i) => p.material = new THREE.MeshBasicMaterial({color: K.LED_COL[i], toneMapped: false}));
 const Lf = layer('bot'); K.mesh(G.bot, K.M.front(), Lf); K.bezel(Lf); await K.frontPrint(Lf);
-K.leds(Lf, [], [], {labels: true});
+
 
 // thermocouple: leaves the PCB layer's bottom edge, drops to the floor, probe lies in front
 stack.updateMatrixWorld(true);
@@ -112,7 +112,7 @@ const svg = document.getElementById('lines'), box = document.getElementById('cal
 const n = (i, t) => `<em>${i}</em>${t}`;
 const parts = [
   // [anchor, label x, label y, side, title, sub]
-  [pj(P(Lf, -38, 30, 6)), 330, 420, 'l', n(1, 'เคสหน้า'), 'ช่องจอ 48 × 23 มม. · กรอบเลนส์สีเข้ม<br>พิมพ์ชื่อไฟ CARGO · TRIP · DEVICE'],
+  [pj(P(Lf, -38, 30, 6)), 330, 420, 'l', n(1, 'เคสหน้า'), 'ช่องจอ 48 × 23 มม. · กรอบเลนส์สีเข้ม<br>รูไฟสถานะ 3 ดวง'],
   [pj(P(Lpi, 7.5, -24, 6)), 330, 640, 'l', n(2, 'ท่อนำแสงไฟสถานะ'), 'RGB 3 ดวง: แดง สินค้า · ฟ้า ทริป · เหลือง เครื่อง'],
   [pj(P(Le, 20, -8, 5.3)), 980, 800, 'r', n(3, 'จอ e-Paper 2.13″'), '250 × 122 px · ภาพค้างได้โดยไม่ใช้ไฟ'],
   [pj(P(Ln, -14, 34, 4.4)), 560, 222, 'l', n(4, 'บอร์ด NFC'), 'ST25DV04KC · แตะมือถือเพื่อเชื่อมต่อ'],
