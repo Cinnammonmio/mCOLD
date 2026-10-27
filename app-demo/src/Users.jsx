@@ -81,7 +81,7 @@ export function UserSheet({ onClose }) {
             <div className="tiny muted">{s.org}</div>
           </div>
         </div>
-        <div className="small">อุปกรณ์ mCOLD ลงทะเบียนกับวอร์ด ผู้ใช้ทุกคนในวอร์ดใช้เครื่องร่วมกันได้ และแอปบันทึกว่าใครเป็นผู้เริ่ม จบ รับทราบการแจ้งเตือน และส่งข้อมูล</div>
+        <div className="small">อุปกรณ์ TCOLD ลงทะเบียนกับวอร์ด ผู้ใช้ทุกคนในวอร์ดใช้เครื่องร่วมกันได้ และแอปบันทึกว่าใครเป็นผู้เริ่ม จบ รับทราบการแจ้งเตือน และส่งข้อมูล</div>
         <ThemePicker />
         <div className="stack tight" style={{ border: '1px dashed var(--demo-line)', borderRadius: 12, padding: 10, background: 'var(--demo-bg)' }}>
           <div className="tiny bold" style={{ color: 'var(--demo)' }}>

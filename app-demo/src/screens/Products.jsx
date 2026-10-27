@@ -6,7 +6,7 @@ export const APP_NAME = 'Cold Chain Hub';
 
 const PRODUCTS = [
   { id: 'etemp', name: 'eTEMP', color: 'var(--slate)', icon: 'temperature' },
-  { id: 'mcold', name: 'mCOLD', color: 'var(--teal)', icon: 'snowflake' },
+  { id: 'mcold', name: 'TCOLD', color: 'var(--teal)', icon: 'snowflake' },
   { id: 'smt', name: 'SMT', color: 'var(--slate2)', icon: 'cpu' },
 ];
 

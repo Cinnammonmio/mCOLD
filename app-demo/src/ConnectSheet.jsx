@@ -118,7 +118,7 @@ function ConnectFlow({ req }) {
     <Sheet onClose={() => phase !== 'running' && close(false)} label="เชื่อมต่ออุปกรณ์">
       <div className="stack">
         <div>
-          <h2>{req.sn ? `เชื่อมต่อ ${dev.name}` : 'เชื่อมต่ออุปกรณ์ mCOLD'}</h2>
+          <h2>{req.sn ? `เชื่อมต่อ ${dev.name}` : 'เชื่อมต่ออุปกรณ์ TCOLD'}</h2>
           {req.sn && <div className="small muted">หมายเลขเครื่อง {dev.sn}</div>}
         </div>
         {req.reason && <div className="small">{req.reason}</div>}

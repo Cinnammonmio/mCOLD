@@ -3,7 +3,7 @@
 import { useSyncExternalStore } from 'react';
 
 const STORAGE_KEY = 'cch-prototype-state-v1';
-const SCHEMA = 7;
+const SCHEMA = 8;
 
 export const DEFAULT_CONFIG = {
   sample_period_s: 300,
@@ -113,7 +113,8 @@ function mkDevice(o) {
   };
 }
 
-const devName = (sn) => `mCOLD ${sn.slice(-3)}`;
+// Product renamed mCOLD → TCOLD for the app (2026-10-27); docs, firmware and SNs keep mCOLD.
+const devName = (sn) => `TCOLD ${sn.slice(-3)}`;
 
 /**
  * Mock fleet. A box is not tied to one shipping box: it is clipped onto whatever box goes out,

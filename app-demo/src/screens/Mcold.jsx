@@ -145,7 +145,7 @@ export function McoldHome() {
   const nPending = mine.filter((d) => pendingTrips(s, d).length > 0).length;
   return (
     <div className="screen">
-      <AppBar title="mCOLD" backLabel="กลับ" right={<NetIndicator />} />
+      <AppBar title="TCOLD" backLabel="กลับ" right={<NetIndicator />} />
       <div className="content stack" style={{ gap: 10 }}>
         <WardBar />
         {linkedDev && (
