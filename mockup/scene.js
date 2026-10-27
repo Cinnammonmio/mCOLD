@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import {STLLoader} from 'three/addons/loaders/STLLoader.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 import {toCreasedNormals} from 'three/addons/utils/BufferGeometryUtils.js';
+import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 export const Q = new URLSearchParams(location.search);
 export const qjson = (k, d) => JSON.parse(Q.get(k) || JSON.stringify(d));
@@ -156,6 +157,45 @@ export async function device(parent, {screen: scr = 'screen_tex', lit = LED_COL,
   // side light: null = off, otherwise lit in that colour (green = charging)
   mesh(await load(PART.side), side == null ? M.pipe() : new THREE.MeshBasicMaterial({color: new THREE.Color(side), toneMapped: false}), g);
   await screen(g, 5.62, scr); bezel(g); leds(g, pipes, lit); await frontPrint(g);
+  return g;
+}
+
+// ---------- iPhone ----------
+// iPhone 15 size: 71.6 x 147.6 x 7.8 mm. Local axes: +Y = top (camera end), +Z = screen side.
+export const PHONE = {w: 71.6, h: 147.6, t: 7.8, nfc: [0, 52, -3.9]};   // NFC coil sits behind the top of the back
+
+function roundedRect(w, h, r, seg = 12) {
+  const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
+  s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.absarc(x + w - r, y + r, r, -Math.PI / 2, 0);
+  s.lineTo(x + w, y + h - r); s.absarc(x + w - r, y + h - r, r, 0, Math.PI / 2);
+  s.lineTo(x + r, y + h); s.absarc(x + r, y + h - r, r, Math.PI / 2, Math.PI); s.lineTo(x, y + r); s.absarc(x + r, y + r, r, Math.PI, 1.5 * Math.PI);
+  const g = new THREE.ShapeGeometry(s, seg), uv = g.attributes.uv, p = g.attributes.position;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (p.getX(i) - x) / w, (p.getY(i) - y) / h);   // 0..1 over the rectangle
+  return g;
+}
+
+export async function iphone(parent, screenFile = 'phone_nfc') {
+  const g = new THREE.Group(); parent.add(g);
+  const frame = new THREE.MeshPhysicalMaterial({color: 0x9aa3ab, metalness: 1, roughness: .28, clearcoat: .4});
+  const body = new THREE.Mesh(new RoundedBoxGeometry(PHONE.w, PHONE.h, PHONE.t, 6, 3.6), frame); body.castShadow = true; g.add(body);
+  // back glass, frosted, with the camera block
+  const backMat = new THREE.MeshPhysicalMaterial({color: 0x5f6b75, roughness: .55, clearcoat: .6});
+  const back = new THREE.Mesh(roundedRect(PHONE.w - 1.6, PHONE.h - 1.6, 9.5), backMat); back.rotation.y = Math.PI; back.position.z = -PHONE.t / 2 - .01; g.add(back);
+  const bump = new THREE.Mesh(new RoundedBoxGeometry(31, 31, 1.6, 4, 5), backMat); bump.position.set(PHONE.w / 2 - 20, PHONE.h / 2 - 20, -PHONE.t / 2 - .7); g.add(bump);
+  // front: black glass with the screen inside it
+  const glass = new THREE.Mesh(roundedRect(PHONE.w - 1.2, PHONE.h - 1.2, 10), new THREE.MeshPhysicalMaterial({color: 0x050608, roughness: .1, clearcoat: 1}));
+  glass.position.z = PHONE.t / 2 + .01; g.add(glass);
+  const tex = await new THREE.TextureLoader().loadAsync(`build/${screenFile}.png`);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const sw = PHONE.w - 5.4, sh = sw * 2556 / 1179;
+  const scr = new THREE.Mesh(roundedRect(sw, sh, 8.2), new THREE.MeshBasicMaterial({map: tex, toneMapped: false}));
+  scr.position.z = PHONE.t / 2 + .03; g.add(scr);
+  // a faint reflective layer so the screen reads as glass
+  const sheen = new THREE.Mesh(roundedRect(sw, sh, 8.2), new THREE.MeshPhysicalMaterial({color: 0x000000, transparent: true, opacity: .04, roughness: .04, clearcoat: 1, metalness: .2}));
+  sheen.position.z = PHONE.t / 2 + .05; g.add(sheen);
+  // side buttons
+  const btn = (x, y, h) => { const b = new THREE.Mesh(new RoundedBoxGeometry(1.2, h, 3.2, 2, .5), frame); b.position.set(x, y, 0); g.add(b); };
+  btn(-PHONE.w / 2 - .4, 44, 7); btn(-PHONE.w / 2 - .4, 30, 12); btn(-PHONE.w / 2 - .4, 15, 12); btn(PHONE.w / 2 + .4, 28, 18);
   return g;
 }
 

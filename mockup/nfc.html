@@ -1,0 +1,80 @@
+<!doctype html><html><head><meta charset="utf-8">
+<!-- iPhone tapping the TCOLD's NFC point. ?clean=1 renders the scene alone on a transparent page
+     (the cut-out); otherwise it is a slide with the title and the three steps.
+     The phone screen is build/phone_nfc.png (phone_nfc.html), the device shows the BLE pairing screen
+     and its three front LEDs purple, as the firmware blinks them on a tap. -->
+<style>
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-SemiBold.ttf);font-weight:600}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Bold.ttf);font-weight:700}
+:root{--navy:#0b3550;--teal:#0e8391;--muted:#5f707c;--line:#dfe7ec}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1920px;height:1080px;overflow:hidden;font-family:Plex,sans-serif;color:#14293a}
+body{background:radial-gradient(1200px 860px at 62% 50%,#ffffff 0%,#f2f8fa 50%,#e1eef2 100%)}
+body.clean{background:transparent}
+#gl,#fx{position:absolute;left:0;top:0;width:1920px;height:1080px}
+body:not(.clean) #gl{filter:none}
+body.clean #gl{filter:drop-shadow(0 40px 40px rgba(11,53,80,.25)) drop-shadow(0 10px 12px rgba(11,53,80,.18))}
+.title{position:absolute;left:96px;top:96px;width:620px}
+.kicker{font-size:16px;font-weight:600;letter-spacing:.24em;color:var(--teal);text-transform:uppercase}
+h1{font-size:56px;line-height:1.15;font-weight:700;color:var(--navy);margin-top:12px}
+.lead{margin-top:18px;font-size:22px;line-height:1.55;color:#33495a}
+.steps{position:absolute;left:96px;top:560px;width:560px;display:flex;flex-direction:column;gap:22px}
+.s{display:flex;gap:18px;align-items:flex-start}
+.s i{flex:0 0 44px;height:44px;border-radius:50%;background:var(--navy);color:#fff;font-style:normal;font-weight:700;font-size:18px;display:flex;align-items:center;justify-content:center}
+.s b{display:block;font-size:20px;color:var(--navy);font-weight:600}
+.s small{display:block;font-size:16px;color:var(--muted);line-height:1.45}
+.dot{display:inline-block;width:11px;height:11px;border-radius:50%;background:#9b5cff;box-shadow:0 0 0 3px rgba(155,92,255,.22);margin:0 2px;vertical-align:0}
+body.clean .title, body.clean .steps{display:none}
+</style>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
+</head><body>
+<canvas id="gl"></canvas><svg id="fx"></svg>
+<div class="title">
+  <div class="kicker">TCOLD · NFC</div>
+  <h1>แตะมือถือ<br>เชื่อมต่อทันที</h1>
+  <p class="lead">ไม่ต้องค้นหาหรือจับคู่ Bluetooth เอง แตะ iPhone ที่โลโก้บนเครื่อง แอปเปิดหน้าของเครื่องนั้นให้เลย</p>
+</div>
+<div class="steps">
+  <div class="s"><i>1</i><div><b>แตะด้านหลังมือถือที่โลโก้</b><small>จุด NFC อยู่ใต้โลโก้ TCOLD บนหน้าเครื่อง</small></div></div>
+  <div class="s"><i>2</i><div><b>ไฟหน้ากะพริบม่วง <span class="dot"></span><span class="dot"></span><span class="dot"></span></b><small>เครื่องเปิด Bluetooth 60 วินาที จอขึ้นรหัสเครื่องให้ตรวจ</small></div></div>
+  <div class="s"><i>3</i><div><b>แอปเชื่อมต่อเอง</b><small>ดูข้อมูล เริ่ม/หยุดทริป หรือตั้งค่าได้ทันที</small></div></div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import * as K from './scene.js';
+const clean = !!K.Q.get('clean'); if (clean) document.body.classList.add('clean');
+await K.fonts();
+const W = 1920, H = 1080;
+const R = K.renderer(document.getElementById('gl'), W, H); R.setClearColor(0, 0);
+const S = new THREE.Scene(); K.studio(R, S, {key: [-120, 260, 260]});
+const cam = new THREE.PerspectiveCamera(24, W / H, 10, 3000);
+const CP = K.qjson('cam', [-150, 60, 520, clean ? 35 : -35, -5, 0]);
+cam.position.set(CP[0], CP[1], CP[2]); cam.lookAt(CP[3], CP[4], CP[5]);
+
+// device: pairing screen, three front LEDs purple (NFC tap), turned a little toward the phone
+const PURPLE = 0x9b5cff;
+const dev = await K.device(S, {screen: 'screen_B3', lit: [PURPLE, PURPLE, PURPLE]});
+const DR = K.qjson('dr', [-0.1, 0.45, 0]); dev.rotation.set(...DR); dev.position.set(0, 0, 0);
+dev.updateMatrixWorld(true);
+
+// phone: its NFC coil (top of the back) held in front of the device's NFC board, body leaning down-right
+const ph = await K.iphone(S, 'phone_nfc');
+const TOUCH = K.qjson('touch', [16, 34, 6.2]), GAP = +(K.Q.get('gap') || 46), ROLL = +(K.Q.get('roll') || 0.95), TILT = +(K.Q.get('tilt') || 0.35);
+const target = dev.localToWorld(new THREE.Vector3(TOUCH[0], TOUCH[1], TOUCH[2] + GAP));
+const q = dev.quaternion.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(TILT, -0.12, ROLL)));
+ph.quaternion.copy(q);
+ph.position.copy(target).sub(new THREE.Vector3(...K.PHONE.nfc).applyQuaternion(q));
+R.render(S, cam);
+
+// NFC waves between the two coils
+const pj = K.projector(cam, W, H);
+const a = pj(dev.localToWorld(new THREE.Vector3(TOUCH[0], TOUCH[1], 6.2)));
+const b = pj(ph.localToWorld(new THREE.Vector3(...K.PHONE.nfc)));
+const cx = (a[0] + b[0]) / 2 - 70, cy = (a[1] + b[1]) / 2 - 40;
+document.getElementById('fx').innerHTML = [34, 58, 82].map((r, i) =>
+  `<path d="M${cx - r * .8},${cy - r * .6} A${r},${r} 0 0 0 ${cx - r * .8},${cy + r * .6}" fill="none" stroke="#1aa5b5" stroke-width="${6 - i}" stroke-linecap="round" stroke-opacity="${.95 - i * .25}"/>`).join('');
+await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+window.done = 1;
+</script></body></html>

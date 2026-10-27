@@ -1,0 +1,73 @@
+<!doctype html><html><head><meta charset="utf-8">
+<!-- The app's "connect by NFC" sheet at the moment of the tap, drawn after the demo app's screen
+     (its simulator controls left out). Rendered at 393x852 x3 = 1179x2556, the iPhone 15 screen,
+     and used as the phone's screen texture in objects.html?o=nfc_tap. -->
+<style>
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Regular.ttf);font-weight:400}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Medium.ttf);font-weight:500}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-SemiBold.ttf);font-weight:600}
+@font-face{font-family:Plex;src:url(../mcold-spec/fonts/IBMPlexSansThai-Bold.ttf);font-weight:700}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:393px;height:852px;overflow:hidden;font-family:Plex,sans-serif;color:#16324a;background:#eef4f7}
+.island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:124px;height:36px;border-radius:20px;background:#000;z-index:5}
+.sb{height:54px;display:flex;justify-content:space-between;align-items:center;padding:8px 30px 0 40px;font-size:16px;font-weight:600}
+.sb svg{height:13px}
+.hdr{display:flex;align-items:center;gap:14px;padding:10px 18px 14px}
+.hdr .back{display:flex;align-items:center;gap:4px;color:#24536f;font-size:16px}
+.hdr .t{font-size:19px;font-weight:700}
+.hdr .on{margin-left:auto;border:1px solid #c9d8de;border-radius:99px;padding:4px 12px;font-size:13px;display:flex;gap:6px;align-items:center;background:#fff}
+.hdr .on i{width:8px;height:8px;border-radius:50%;background:#1d8a5a}
+.ctx{margin:0 16px;background:#fff;border-radius:16px;padding:12px 14px;display:flex;align-items:center;gap:10px;font-size:13.5px}
+.ctx .av{width:30px;height:30px;border-radius:50%;background:#e6eef1;display:flex;align-items:center;justify-content:center;font-weight:600}
+.ctx b{font-weight:600}
+.btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 16px 0}
+.btns div{height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:600}
+.b1{background:#24536f;color:#fff}.b2{background:#fff;border:1px solid #c9d8de}
+.tabs{margin:12px 16px 0;background:#fff;border-radius:14px;padding:5px;display:grid;grid-template-columns:repeat(3,1fr);font-size:13.5px;text-align:center}
+.tabs div{padding:8px 0;border-radius:10px}.tabs .a{background:#eef4f7;font-weight:600}
+.row{margin:12px 16px 0;background:#fff;border-radius:16px;height:70px}
+.dim{position:absolute;inset:0;background:rgba(18,40,58,.32)}
+.sheet{position:absolute;left:0;right:0;bottom:0;height:540px;background:#fff;border-radius:30px 30px 0 0;padding:12px 22px 0}
+.grab{width:40px;height:5px;border-radius:3px;background:#d6e1e6;margin:0 auto 16px}
+.sheet h2{font-size:22px;font-weight:700}
+.sheet .sn{font-size:14px;color:#5f707c;margin-top:2px}
+.ill{height:200px;display:flex;align-items:center;justify-content:center;margin-top:8px;position:relative}
+.ill .box{width:150px;height:96px;border-radius:16px;background:#e3f0f5;border:2px solid #b9d2dc;position:absolute;top:84px}
+.ill .tag{position:absolute;top:118px;width:36px;height:30px;border-radius:7px;background:#fff;display:flex;align-items:center;justify-content:center;color:#24536f}
+.ill .ph{position:absolute;top:18px;width:62px;height:112px;border-radius:12px;background:#2c5f85;border:3px solid #16324a}
+.ill .wave{position:absolute;top:124px;border:3px solid #1aa5b5;border-color:#1aa5b5 transparent transparent transparent;border-radius:50%}
+.msg{text-align:center;font-size:14.5px;line-height:1.55;color:#33495a;margin-top:6px}
+.msg b{font-weight:700;color:#16324a}
+.busy{margin-top:20px;height:56px;border-radius:16px;background:#e6f5f6;color:#0e8391;display:flex;align-items:center;justify-content:center;gap:12px;font-size:16px;font-weight:600}
+.spin{width:22px;height:22px;border-radius:50%;border:3px solid #b5e3e7;border-top-color:#0e8391;transform:rotate(40deg)}
+.cancel{margin-top:14px;height:56px;border-radius:16px;border:1px solid #c9d8de;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:600}
+.home{position:absolute;bottom:9px;left:50%;transform:translateX(-50%);width:140px;height:5px;border-radius:3px;background:#16324a}
+</style></head><body>
+<div class="island"></div>
+<div class="sb"><span>15:22</span><span style="display:flex;gap:7px;align-items:center">
+  <svg viewBox="0 0 18 12"><rect x="0" y="8" width="3" height="4" rx="1" fill="#16324a"/><rect x="5" y="5" width="3" height="7" rx="1" fill="#16324a"/><rect x="10" y="2" width="3" height="10" rx="1" fill="#16324a"/><rect x="15" y="0" width="3" height="12" rx="1" fill="#16324a"/></svg>
+  <svg viewBox="0 0 26 12"><rect x=".5" y=".5" width="22" height="11" rx="3" fill="none" stroke="#16324a" opacity=".5"/><rect x="2" y="2" width="15" height="8" rx="2" fill="#16324a"/></svg></span></div>
+<div class="hdr"><span class="back">‹ กลับ</span><span class="t">TCOLD</span><span class="on"><i></i>ออนไลน์</span></div>
+<div class="ctx"><span class="av">ส</span><span><b>หอผู้ป่วยอายุรกรรม 3</b> · คลังยา</span></div>
+<div class="btns"><div class="b1">แตะ NFC เชื่อมต่อ</div><div class="b2">เริ่มหลายเครื่อง</div></div>
+<div class="tabs"><div class="a">ทั้งหมด 7</div><div>กำลังบันทึก 7</div><div>รอส่ง 1</div></div>
+<div class="row"></div><div class="row"></div>
+<div class="dim"></div>
+<div class="sheet">
+  <div class="grab"></div>
+  <h2>เชื่อมต่อ TCOLD-0117</h2>
+  <div class="sn">หมายเลขเครื่อง mCDV1-L0169-1069-001</div>
+  <div class="ill">
+    <div class="box"></div>
+    <div class="wave" style="width:70px;height:70px;top:100px"></div>
+    <div class="wave" style="width:104px;height:104px;top:84px;opacity:.55"></div>
+    <div class="ph"></div>
+    <div class="tag"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20a3 3 0 0 1 -3 -3v-11l5 5"/><path d="M13 4a3 3 0 0 1 3 3v11l-5 -5"/><path d="M4 7a3 3 0 0 1 3 -3h10a3 3 0 0 1 3 3v10a3 3 0 0 1 -3 3h-10a3 3 0 0 1 -3 -3l0 -10"/></svg></div>
+  </div>
+  <p class="msg">นำด้านหลังของมือถือแตะที่สัญลักษณ์ <b>NFC</b> บนกล่อง<br>ค้างไว้จนกว่าจะเชื่อมต่อเสร็จ</p>
+  <div class="busy"><span class="spin"></span>กำลังเชื่อมต่อ…</div>
+  <div class="cancel">ยกเลิก</div>
+</div>
+<div class="home"></div>
+<script>document.fonts.ready.then(() => window.done = 1)</script>
+</body></html>

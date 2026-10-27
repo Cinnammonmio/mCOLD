@@ -50,6 +50,9 @@ SPEC = {"spec_sheet": "o=sheet", "spec_dimensions": "o=dims", "spec_dock_dimensi
 SPEC.update({f"spec_card_{g}": f"o=card&g={g}" for g in ["temp", "body", "sense", "link", "data", "power", "dock"]})
 SPEC.update({f"spec_kpi_{i + 1}_{n}": f"o=kpi&k={i}" for i, n in enumerate(["resolution", "interval", "storage", "runtime", "size", "display", "dock_slots", "dock_cable", "dock_adapter"])})
 
+# pages other than objects.html that render a transparent cut-out with ?clean=1
+EXTRA = {"nfc_tap_iphone": "nfc.html?clean=1"}
+
 def trim(src, dst, pad=24):
     im = Image.open(src).convert("RGBA")
     a = im.getchannel("A").point(lambda v: 255 if v > 3 else 0)
@@ -84,13 +87,15 @@ if __name__ == "__main__":
     only = sys.argv[1] if len(sys.argv) > 1 else ""
     SCENES = {n: q for n, q in SCENES.items() if only in n}
     SPEC = {n: q for n, q in SPEC.items() if only in n}
+    EXTRA = {n: q for n, q in EXTRA.items() if only in n}
     jobs = [[f"objects.html?{q}", str(TMP / f"{n}.png"), 1920, 1080, 2, 1] for n, q in SCENES.items()]
+    jobs += [[q, str(TMP / f"{n}.png"), 1920, 1080, 2, 1] for n, q in EXTRA.items()]
     # the sheet carries the dimension drawing and runs taller than a 1080 page
     jobs += [[f"spec.html?{q}&t={t}", str(TMP / f"{n}_{t}.png"), 1920, 1340 if n == "spec_sheet" else 1080, 2, 1]
              for n, q in SPEC.items() for t in ("light", "dark")]
     jobs += [j for j in logos() if only in Path(j[1]).stem.lower() or not only]
     subprocess.run(["node", str(HERE / "render.js"), json.dumps(jobs)], check=True)
-    for n in SCENES:
+    for n in [*SCENES, *EXTRA]:
         trim(TMP / f"{n}.png", OUT / f"{n}.png")
         print(n, Image.open(OUT / f"{n}.png").size)
     (OUT / "spec").mkdir(exist_ok=True)

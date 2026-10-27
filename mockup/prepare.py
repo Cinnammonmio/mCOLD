@@ -41,6 +41,8 @@ SCREENS = {
     'A3': lambda: epd.monitor('epd_A3', temp='8.4', red=True, minmax=('2.8', '8.4'), **ID, **epd.LIVE),
     'A4': lambda: epd.monitor('epd_A4', temp='11.6', alarm=True, minmax=('2.8', '11.6'), trip=True, shock=True,
                               wifi=True, cloud=False, gnss=True, battery=61, storage=7, **ID),
+    'B3': lambda: epd.takeover('epd_B3', title='TCOLD-0117', sub='Confirm this ID in the app to pair.',
+                               data='PAIRING WINDOW 60 S', **ID, **epd.LIVE),
     'C1': lambda: epd.detail('epd_C1', title='TRIP 0142', state='CLOSED', rows=(
         ('Duration', '3d 06h 12m'), ('Temperature', '2.8 / 6.1 ~C'), ('Alarms', '1 high|2 shock')),
         wifi=True, cloud=True, gnss=True, battery=74, storage=9, **ID),

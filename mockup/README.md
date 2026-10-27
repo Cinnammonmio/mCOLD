@@ -49,6 +49,13 @@ Unbounded Bold เหมือน COLD, STATION เป็น Unbounded Regular �
 PNG กว้าง 2400 px อยู่ใน `out/objects/` บอร์ดโลโก้วาดด้วย `brand_dock.html`
 ด้านหน้า Dock ในภาพ 3D ใช้โลโก้แนวนอนพื้นเข้ม
 
+## แตะ NFC ด้วย iPhone (`out/TCOLD_nfc_tap.png`, หน้า `nfc.html`)
+
+iPhone (ขนาด iPhone 15: 71.6 × 147.6 × 7.8 มม. โมเดลอยู่ใน `scene.js` `iphone()`) ถือด้านหลังไว้หน้าบอร์ด NFC
+ใต้โลโก้ เครื่องแสดงหน้า B3 BLE SESSION และไฟหน้า 3 ดวงสีม่วง (แตะ NFC สำเร็จ) หน้าจอมือถือคือ
+`phone_nfc.html` จัดตามหน้าเชื่อมต่อ NFC ของแอปเดโม โดยตัดส่วนโหมดจำลองออกและแสดง "กำลังเชื่อมต่อ…"
+ภาพพื้นใส: `out/objects/nfc_tap_iphone.png`, หน้าจอมือถืออย่างเดียว: `out/objects/phone_screen_nfc.png`
+
 ## TCOLD Dock (`out/TCOLD_dock.png`, หน้า `dock.html`)
 
 แท่นชาร์จ 6 ช่องจาก `../Dock Assy.rar` (Dock Assy.STEP) พร้อม TCOLD 6 เครื่องเสียบอยู่

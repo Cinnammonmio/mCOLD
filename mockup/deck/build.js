@@ -265,6 +265,21 @@ async function writeTheme(file, {name, colors, bodyFontFace: font}) {
     s.addNotes('ขั้นตอนตั้งแต่คลังต้นทางถึงกลับคลัง ผู้ใช้ทำแค่ 2 จุด คือแตะตอนเริ่มและตอนจบ');
   }
   {
+    const s = content('02 · FUNCTION', 'แตะ NFC เชื่อมต่อทันที');
+    pic(s, 'nfc_tap_iphone', 5.6, 1.35, 7.2, 5.45);
+    const st = [['แตะด้านหลังมือถือที่โลโก้', 'จุด NFC อยู่ใต้โลโก้ TCOLD บนหน้าเครื่อง'],
+                ['ไฟหน้ากะพริบม่วง', 'เครื่องเปิด Bluetooth 60 วินาที จอขึ้นรหัสเครื่องให้ตรวจ'],
+                ['แอปเชื่อมต่อเอง', 'ไม่ต้องค้นหาหรือจับคู่ ดูข้อมูล เริ่ม/หยุดทริป หรือตั้งค่าได้ทันที']];
+    st.forEach(([h, d], i) => {
+      const y = 1.9 + i * 1.45;
+      s.addShape(pres.shapes.OVAL, {x: M, y, w: 0.5, h: 0.5, fill: {color: C.text2}, line: {type: 'none'}});
+      txt(s, String(i + 1), {x: M, y, w: 0.5, h: 0.5, align: 'center', valign: 'middle', bold: true, color: C.background1, fontSize: 16});
+      txt(s, [{text: h, options: {bold: true, color: C.text2, fontSize: 18, breakLine: true}}, {text: d, options: {color: C.accent6, fontSize: 14}}],
+        {x: M + 0.75, y: y - 0.04, w: 4.4, h: 1.1});
+    });
+    s.addNotes('ภาพจำลองจังหวะที่แตะ iPhone: หน้าจอแอปเป็นหน้าเชื่อมต่อ NFC ของแอปจริงที่จัดใหม่ (ไม่มีปุ่มโหมดจำลอง) เครื่องแสดงหน้า BLE SESSION และไฟหน้า 3 ดวงกะพริบม่วง');
+  }
+  {
     const s = content('02 · FUNCTION', 'เริ่มทริปด้วยการแตะ');
     pic(s, 'state_A1_ready', M, 1.6, 3.4, 3.1);
     s.addShape(pres.shapes.RIGHT_ARROW, {x: 4.15, y: 3.05, w: 0.6, h: 0.5, fill: {color: C.accent2}, line: {type: 'none'}});
