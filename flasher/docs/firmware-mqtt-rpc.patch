@@ -1,0 +1,543 @@
+diff --git a/firmware/src/CMakeLists.txt b/firmware/src/CMakeLists.txt
+index da23789..fecb5bd 100644
+--- a/firmware/src/CMakeLists.txt
++++ b/firmware/src/CMakeLists.txt
+@@ -5,7 +5,7 @@ idf_component_register(SRCS "main.cpp" "health.cpp" "rails.cpp" "bus.cpp"
+                             "flashlog.cpp" "flashlog_test.cpp"
+                             "door.cpp" "trip.cpp" "indicate.cpp"
+                             "canvas.cpp" "epd.cpp" "screens.cpp" "display.cpp"
+-                            "rpc.cpp" "ble.cpp" "auth.cpp" "net.cpp" "uplink.cpp" "pm.cpp" "soc.cpp" "ota.cpp" "logrow.cpp" "settings.cpp" "usbdrive.cpp" "rxlog.cpp"
++                            "rpc.cpp" "ble.cpp" "auth.cpp" "net.cpp" "uplink.cpp" "pm.cpp" "soc.cpp" "ota.cpp" "logrow.cpp" "settings.cpp" "usbdrive.cpp" "rxlog.cpp" "factory.cpp"
+                        INCLUDE_DIRS "."
+                        REQUIRES driver esp_driver_i2c esp_driver_spi
+                                 esp_driver_gpio esp_driver_usb_serial_jtag
+@@ -13,4 +13,4 @@ idf_component_register(SRCS "main.cpp" "health.cpp" "rails.cpp" "bus.cpp"
+                                 esp_app_format esp_timer nvs_flash json mbedtls bt
+                                 esp_wifi esp_netif esp_event mqtt
+                                 esp_partition esp_system esp_hw_support esp_pm
+-                                app_update esp_http_client esp_https_ota esp_tinyusb)
++                                app_update esp_http_client esp_https_ota esp_tinyusb espcoredump)
+diff --git a/firmware/src/factory.cpp b/firmware/src/factory.cpp
+new file mode 100644
+index 0000000..0dc0e1a
+--- /dev/null
++++ b/firmware/src/factory.cpp
+@@ -0,0 +1,192 @@
++#include "factory.h"
++
++#include <esp_app_desc.h>
++#include <esp_core_dump.h>
++#include <esp_heap_caps.h>
++#include <esp_system.h>
++#include <freertos/FreeRTOS.h>
++#include <freertos/task.h>
++#include <nvs.h>
++#include <stdio.h>
++#include <string.h>
++
++#include "board.h"
++#include "buzzer.h"
++#include "bus.h"
++#include "flashlog_test.h"
++#include "gnss.h"
++#include "leds.h"
++#include "net.h"
++#include "temp.h"
++#include "timekeep.h"
++
++namespace {
++
++// What `i2c` at the console expects on a built board (main.cpp).
++const uint8_t I2C_EXPECTED[] = {0x18, 0x36, 0x40, 0x42, 0x53, 0x57, 0x68, 0x6B};
++
++bool g_known = false, g_on = false;
++
++bool wants(const cJSON *items, const char *name) {
++  if (!cJSON_IsArray(items)) return true;          // none named: all of them
++  const cJSON *it;
++  cJSON_ArrayForEach(it, items) {
++    if (cJSON_IsString(it) && !strcmp(it->valuestring, name)) return true;
++  }
++  return false;
++}
++
++bool test_i2c(cJSON *o) {
++  uint8_t found[32];
++  int sda = 0, scl = 0;
++  const int n = i2c_scan(found, 32, &sda, &scl);
++  cJSON_AddBoolToObject(o, "sda", sda);
++  cJSON_AddBoolToObject(o, "scl", scl);
++  if (n < 0) {
++    cJSON_AddStringToObject(o, "err", "bus busy");
++    return false;
++  }
++  int got = 0;
++  cJSON *miss = cJSON_AddArrayToObject(o, "missing");
++  for (uint8_t a : I2C_EXPECTED) {
++    bool here = false;
++    for (int i = 0; i < n; i++) here = here || found[i] == a;
++    if (here) {
++      got++;
++    } else {
++      char h[5];
++      snprintf(h, sizeof(h), "0x%02X", a);
++      cJSON_AddItemToArray(miss, cJSON_CreateString(h));
++    }
++  }
++  cJSON_AddNumberToObject(o, "found", got);
++  cJSON_AddNumberToObject(o, "expected", (int)sizeof(I2C_EXPECTED));
++  return got == (int)sizeof(I2C_EXPECTED);
++}
++
++bool test_temp(cJSON *o) {
++  float c = 0;
++  const TempStatus s = temp_sample(&c);
++  cJSON_AddStringToObject(o, "state", temp_status_name(s));
++  cJSON_AddStringToObject(o, "sensor", temp_sensor_name(temp_sensor()));
++  if (s != TempStatus::Ok) return false;
++  cJSON_AddNumberToObject(o, "c", c);
++  return c > -40 && c < 85;
++}
++
++// Sentences with a good checksum over the window, as `gnss` at the console
++// counts them: bytes alone do not count (a wrong baud gives bytes too).
++// The GNSS task owns the UART: it is asked to hold a session open, and
++// only its counters are read here.
++bool test_gnss(cJSON *o, int seconds) {
++  gnss_hold_for((uint32_t)(seconds + 15) * 1000);
++  for (int i = 0; i < 80 && !gnss_is_on(); i++) vTaskDelay(pdMS_TO_TICKS(100));
++  if (!gnss_is_on()) {
++    cJSON_AddStringToObject(o, "err", "the module did not power up (rail, or its health backing off)");
++    return false;
++  }
++  GnssStats a, b;
++  gnss_stats(&a);
++  vTaskDelay(pdMS_TO_TICKS((uint32_t)seconds * 1000));
++  gnss_stats(&b);
++  const uint32_t good = b.sentences - a.sentences, bad = b.bad_checksum - a.bad_checksum;
++  cJSON_AddNumberToObject(o, "good", good);
++  cJSON_AddNumberToObject(o, "bad", bad);
++  cJSON_AddNumberToObject(o, "bytes", b.bytes - a.bytes);
++  return good >= 3;
++}
++
++bool test_log(cJSON *o) {
++  const int f = flashlog_selftest();
++  cJSON_AddNumberToObject(o, "failures", f);
++  return f == 0;
++}
++
++}  // namespace
++
++bool factory_mode(void) {
++  if (!g_known) {
++    nvs_handle_t h;
++    uint8_t v = 0;
++    if (nvs_open("factory", NVS_READONLY, &h) == ESP_OK) {
++      nvs_get_u8(h, "on", &v);
++      nvs_close(h);
++    }
++    g_on = v != 0;
++    g_known = true;
++  }
++  return g_on;
++}
++
++void factory_set(bool on) {
++  nvs_handle_t h;
++  if (nvs_open("factory", NVS_READWRITE, &h) == ESP_OK) {
++    nvs_set_u8(h, "on", on ? 1 : 0);
++    nvs_commit(h);
++    nvs_close(h);
++  }
++  g_on = on;
++  g_known = true;
++  printf("[factory] mode %s\n", on ? "on" : "off");
++}
++
++void factory_test(cJSON *out, const cJSON *req) {
++  const cJSON *items = cJSON_GetObjectItemCaseSensitive(req, "items");
++  const cJSON *js = cJSON_GetObjectItemCaseSensitive(req, "gnss_s");
++  int gs = cJSON_IsNumber(js) ? (int)js->valuedouble : 15;
++  if (gs < 3) gs = 3;
++  if (gs > 60) gs = 60;
++  bool all = true;
++  struct { const char *name; } names[] = {{"i2c"}, {"temp"}, {"gnss"}, {"logtest"}};
++  for (auto &n : names) {
++    if (!wants(items, n.name)) continue;
++    cJSON *o = cJSON_AddObjectToObject(out, n.name);
++    bool ok = false;
++    if (!strcmp(n.name, "i2c")) ok = test_i2c(o);
++    else if (!strcmp(n.name, "temp")) ok = test_temp(o);
++    else if (!strcmp(n.name, "gnss")) ok = test_gnss(o, gs);
++    else ok = test_log(o);
++    cJSON_AddBoolToObject(o, "ok", ok);
++    all = all && ok;
++  }
++  cJSON_ReplaceItemInObject(out, "ok", cJSON_CreateBool(all));
++}
++
++void factory_identify(int seconds) {
++  if (seconds < 1) seconds = 1;
++  if (seconds > 30) seconds = 30;
++  for (int s = 0; s < seconds; s++) {
++    for (int i = 0; i < LED_COUNT; i++) leds_pulse(i, 255, 255, 255, 500);
++    // lights and buzzer take turns (indicate.h: the buzzer's peak current)
++    vTaskDelay(pdMS_TO_TICKS(600));
++    if (s % 2 == 0) buzzer_beep(120);
++    vTaskDelay(pdMS_TO_TICKS(400));
++  }
++}
++
++void factory_debug(cJSON *out) {
++  static const char *const RESET[] = {"UNKNOWN", "POWERON", "EXT", "SW", "PANIC", "INT_WDT",
++                                      "TASK_WDT", "WDT", "DEEPSLEEP", "BROWNOUT", "SDIO",
++                                      "USB", "JTAG", "EFUSE", "PWR_GLITCH", "CPU_LOCKUP"};
++  const int rr = (int)esp_reset_reason();
++  cJSON_AddStringToObject(out, "reset", rr >= 0 && rr < (int)(sizeof(RESET) / sizeof(*RESET)) ? RESET[rr] : "?");
++  TimeStamp t;
++  time_now(&t);
++  cJSON_AddNumberToObject(out, "boot", t.boot);
++  cJSON_AddNumberToObject(out, "uptime_s", mono_ms() / 1000);
++  cJSON_AddBoolToObject(out, "coredump", esp_core_dump_image_check() == ESP_OK);
++  cJSON_AddNumberToObject(out, "heap", esp_get_free_heap_size());
++  cJSON_AddNumberToObject(out, "min_heap", esp_get_minimum_free_heap_size());
++  cJSON_AddNumberToObject(out, "psram", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
++  NetStatus ns;
++  net_status(&ns);
++  cJSON_AddStringToObject(out, "ip", ns.connected ? ns.ip : "");
++  cJSON_AddStringToObject(out, "ssid", ns.connected ? ns.ssid : "");
++  cJSON_AddNumberToObject(out, "wifi_fail_reason", ns.fail_reason);
++  const esp_app_desc_t *d = esp_app_get_description();
++  cJSON_AddStringToObject(out, "fw", d->version);
++  char elf[17];
++  esp_app_get_elf_sha256(elf, sizeof(elf));
++  cJSON_AddStringToObject(out, "elf", elf);
++  cJSON_AddBoolToObject(out, "factory_mode", factory_mode());
++}
+diff --git a/firmware/src/factory.h b/firmware/src/factory.h
+new file mode 100644
+index 0000000..b0f210a
+--- /dev/null
++++ b/firmware/src/factory.h
+@@ -0,0 +1,32 @@
++// Factory mode: the line's rack finishes a box over Wi-Fi -> MQTT
++// (flasher/docs/firmware-mqtt-rpc.md).
++//
++// The station sets it at the dock (`factory on` at the console, with the
++// cable) and the box clears it itself at FACTORY_DONE, the rack's
++// hand-over. While it is on, commands that change or test something are
++// taken over MQTT (mcold/v1/<sn>/rpc) from the shared broker login, and
++// the status goes out every 30 s. Off -- every shipped box -- the MQTT
++// channel answers only commands that read.
++#pragma once
++
++#include <cJSON.h>
++#include <stdbool.h>
++#include <stdint.h>
++
++bool factory_mode(void);
++void factory_set(bool on);
++
++// FACTORY_TEST {items:[i2c,temp,gnss,logtest], gnss_s}: the console's
++// bench checks, each {ok, ...}; ok at the top when all of them are.
++// Runs for as long as its items take (logtest ~2 min, gnss gnss_s).
++void factory_test(cJSON *out, const cJSON *req);
++
++// IDENTIFY {s}: every light blinks white and the buzzer beeps, for s
++// seconds (1..30), so a person can tell which box on the rack this is.
++void factory_identify(int seconds);
++
++// GET_DEBUG: what a repair bench would ask the box first.
++void factory_debug(cJSON *out);
++
++// main.cpp: keep the GNSS module on (its task pumps the UART) for ms.
++void gnss_hold_for(uint32_t ms);
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index 4cf0fe9..334b622 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -69,6 +69,7 @@
+ #include "temp.h"
+ #include "timekeep.h"
+ #include "rxlog.h"
++#include "factory.h"
+ 
+ namespace {
+ 
+@@ -1630,6 +1631,7 @@ void print_help(void) {
+   printf("  sleep clear     start the wake record again\n");
+   printf("  sleep test S    deep-sleep S seconds now, timer wake only (even on USB)\n");
+   printf("  sn [set S]      the device serial number (factory: set, then reboot)\n");
++  printf("  factory [on|off] the rack's commands over MQTT (factory line only)\n");
+   printf("  flash           restart into download mode, for flashing over USB\n");
+   printf("  soc             counted state of charge, capacity, anchor\n");
+   printf("  soc set P       bench: set the count to P %%\n");
+@@ -1702,6 +1704,13 @@ void run_command(char *line) {
+     sn_usb_label(sn, label, sizeof(label));
+     printf("  %s   (USB drive %s%s)\n", sn, label,
+            sn_pattern_ok(sn) ? "" : "; not the factory pattern");
++  } else if (!strcmp(line, "factory")) {
++    printf("  factory mode %s\n", factory_mode() ? "on" : "off");
++  } else if (!strcmp(line, "factory on") || !strcmp(line, "factory off")) {
++    // The line's rack (flasher/docs/firmware-mqtt-rpc.md): on at the dock,
++    // off by the box itself at the hand-over (FACTORY_DONE).
++    factory_set(line[9] == 'n');
++    printf("  factory mode %s\n", factory_mode() ? "on" : "off");
+   } else if (!strncmp(line, "sn set ", 7)) {
+     // Factory: the name on the label. Everything that carries the SN
+     // read it at boot, so it takes effect at the next one.
+@@ -2118,6 +2127,8 @@ void task_supervisor(void *) {
+ 
+ }  // namespace
+ 
++void gnss_hold_for(uint32_t ms) { g_gnss_hold_until = now_ms() + ms; }
++
+ extern "C" void app_main(void) {
+   // The port is the USB-Serial-JTAG's until usbdrive takes it (usbdrive.h).
+   usbdrive_phy_to_usj();
+diff --git a/firmware/src/rpc.cpp b/firmware/src/rpc.cpp
+index 098695f..1c8f2f4 100644
+--- a/firmware/src/rpc.cpp
++++ b/firmware/src/rpc.cpp
+@@ -32,6 +32,7 @@
+ #include "net.h"
+ #include "trip.h"
+ #include "uplink.h"
++#include "factory.h"
+ 
+ namespace {
+ 
+@@ -841,6 +842,40 @@ cJSON *c_later(uint32_t id, const cJSON *, RpcSession *) {
+   return fail(id, "NOT_SUPPORTED", "arrives with the USB drive (P6)");
+ }
+ 
++// ---- the factory line's rack (flasher/docs/firmware-mqtt-rpc.md) ----------
++// Testing and identifying are for the console, or for MQTT while the box
++// is in factory mode; never for a phone, nor for a shipped box.
++bool factory_ok(const RpcSession *s) { return (s && s->console) || factory_mode(); }
++
++cJSON *c_factory_test(uint32_t id, const cJSON *req, RpcSession *s) {
++  if (!factory_ok(s)) return fail(id, "NOT_FACTORY", "factory mode is off");
++  cJSON *o = ok(id);
++  factory_test(o, req);
++  return o;
++}
++
++cJSON *c_identify(uint32_t id, const cJSON *req, RpcSession *s) {
++  if (!factory_ok(s)) return fail(id, "NOT_FACTORY", "factory mode is off");
++  double sec = 10;
++  get_num(req, "s", &sec);
++  factory_identify((int)sec);
++  cJSON *o = ok(id);
++  cJSON_AddNumberToObject(o, "s", (int)sec);
++  return o;
++}
++
++cJSON *c_debug(uint32_t id, const cJSON *, RpcSession *) {
++  cJSON *o = ok(id);
++  factory_debug(o);
++  return o;
++}
++
++cJSON *c_factory_done(uint32_t id, const cJSON *, RpcSession *s) {
++  if (!factory_ok(s)) return fail(id, "NOT_FACTORY", "factory mode is off");
++  factory_set(false);
++  return ok(id);
++}
++
+ struct Cmd {
+   const char *name;
+   bool changes;     // needs an authorized link; idempotent by id
+@@ -874,6 +909,10 @@ const Cmd CMDS[] = {
+     {"EDIT_WIFI", true, c_edit_wifi},
+     {"DEL_WIFI", true, c_del_wifi},
+     {"GET_USB_SNAPSHOT_STATUS", false, c_later},
++    {"FACTORY_TEST", true, c_factory_test},
++    {"IDENTIFY", true, c_identify},
++    {"GET_DEBUG", false, c_debug},
++    {"FACTORY_DONE", true, c_factory_done},
+ };
+ 
+ char *print(cJSON *o) {
+diff --git a/firmware/src/settings.cpp b/firmware/src/settings.cpp
+index 4fbf5f3..03b982f 100644
+--- a/firmware/src/settings.cpp
++++ b/firmware/src/settings.cpp
+@@ -242,6 +242,12 @@ void settings_snapshot(cJSON *out, bool authorized) {
+     nvs_close(h);
+   }
+   cJSON_AddNumberToObject(out, "server_rev", rev);
++  uint32_t frev = 0;      // the factory line's documents (uplink.cpp)
++  if (nvs_open("cfgdoc", NVS_READONLY, &h) == ESP_OK) {
++    nvs_get_u32(h, "frev", &frev);
++    nvs_close(h);
++  }
++  cJSON_AddNumberToObject(out, "factory_rev", frev);
+   if (authorized) settings_network(cJSON_AddObjectToObject(out, "network"));
+ }
+ 
+diff --git a/firmware/src/uplink.cpp b/firmware/src/uplink.cpp
+index c503219..1c51d2e 100644
+--- a/firmware/src/uplink.cpp
++++ b/firmware/src/uplink.cpp
+@@ -4,6 +4,7 @@
+ #include <esp_attr.h>
+ #include <esp_timer.h>
+ #include <freertos/FreeRTOS.h>
++#include <freertos/queue.h>
+ #include <freertos/semphr.h>
+ #include <freertos/task.h>
+ #include <mqtt_client.h>
+@@ -20,6 +21,7 @@
+ #include "pm.h"
+ #include "settings.h"
+ #include "config.h"
++#include "factory.h"
+ #include "timekeep.h"
+ #include "rpc.h"
+ #include "trip.h"
+@@ -38,7 +40,14 @@ char g_pass[72] = "";
+ #define TOPIC_SUB "mcold/v1/"
+ #define TOPIC_PUB "mcold/"
+ char t_rec[64], t_ack[64], t_status[64], t_online[64], t_fw[64], t_ota[64], t_cfg[64],
+-    t_cfg_state[72], t_settings[72];
++    t_cfg_state[72], t_settings[72], t_rpc[64], t_rpc_reply[72];
++
++// Commands over MQTT (flasher/docs/firmware-mqtt-rpc.md): mcold/v1/<sn>/rpc
++// in, mcold/<sn>/rpc/reply out, the same JSON as BLE and the console. Run
++// one at a time by a task of their own -- FACTORY_TEST takes minutes --
++// and, outside factory mode, only the commands that read.
++QueueHandle_t g_rpc_q = nullptr;
++const int RPC_MAX = 1024;
+ 
+ // The box's settings as they stand, for the server (decided 2026-10-12):
+ // mcold/<sn>/settings, retained, sent once per connection and again
+@@ -178,10 +187,22 @@ uint32_t cfg_rev(void) {
+   return r;
+ }
+ 
+-void cfg_set_rev(uint32_t r) {
++uint32_t cfg_frev(void) {
++  nvs_handle_t h;
++  uint32_t r = 0;
++  if (nvs_open("cfgdoc", NVS_READONLY, &h) == ESP_OK) {
++    nvs_get_u32(h, "frev", &r);
++    nvs_close(h);
++  }
++  return r;
++}
++
++// "rev" for the server's documents, "frev" for the factory line's: the
++// line's revisions never decide whether the customer's server is heard.
++void cfg_set_rev(uint32_t r, const char *key = "rev") {
+   nvs_handle_t h;
+   if (nvs_open("cfgdoc", NVS_READWRITE, &h) != ESP_OK) return;
+-  nvs_set_u32(h, "rev", r);
++  nvs_set_u32(h, key, r);
+   nvs_commit(h);
+   nvs_close(h);
+ }
+@@ -237,6 +258,7 @@ void on_mqtt(void *, esp_event_base_t, int32_t id, void *data) {
+       esp_mqtt_client_subscribe(g_client, t_ack, 1);
+       esp_mqtt_client_subscribe(g_client, t_fw, 1);
+       esp_mqtt_client_subscribe(g_client, t_cfg, 1);
++      esp_mqtt_client_subscribe(g_client, t_rpc, 1);
+       esp_mqtt_client_publish(g_client, t_online, "1", 1, 1, 1);
+       printf("[uplink] connected to %s:%u\n", g_host, g_port);
+       ota_on_connected();       // what a new image proves itself by
+@@ -269,6 +291,15 @@ void on_mqtt(void *, esp_event_base_t, int32_t id, void *data) {
+           free(old);
+           if (g_task) xTaskNotifyGive(g_task);
+         }
++      } else if (e->topic_len == (int)strlen(t_rpc) && !strncmp(e->topic, t_rpc, e->topic_len) &&
++                 e->data_len == e->total_data_len && e->data_len > 0 && e->data_len < RPC_MAX &&
++                 g_rpc_q) {
++        char *d = (char *)malloc(e->data_len + 1);
++        if (d) {
++          memcpy(d, e->data, e->data_len);
++          d[e->data_len] = 0;
++          if (xQueueSend(g_rpc_q, &d, 0) != pdTRUE) free(d);   // busy: the station asks again
++        }
+       } else if (e->topic_len == (int)strlen(t_fw) && !strncmp(e->topic, t_fw, e->topic_len) &&
+                  e->data_len == e->total_data_len && e->data_len < 160) {
+         // Just a file name (or a URL); everything else is the OTA module's.
+@@ -453,6 +484,8 @@ void apply_cfg_doc(void) {
+   cJSON *doc = cJSON_Parse(d);
+   free(d);
+   const cJSON *jr = doc ? cJSON_GetObjectItemCaseSensitive(doc, "rev") : nullptr;
++  // {"factory":true,...}: the line's rack, counted apart (frev).
++  const bool fac = doc && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(doc, "factory"));
+   cJSON *rep = cJSON_CreateObject();
+   if (!cJSON_IsNumber(jr) || jr->valuedouble < 1) {
+     if (doc) {   // an empty retained message clears the topic: no news
+@@ -461,15 +494,16 @@ void apply_cfg_doc(void) {
+       cJSON_AddStringToObject(rep, "why", "needs rev, a whole number from 1, higher each time");
+       cfg_report(rep);
+     }
+-  } else if ((uint32_t)jr->valuedouble <= cfg_rev()) {
++  } else if ((uint32_t)jr->valuedouble <= (fac ? cfg_frev() : cfg_rev())) {
+     // Seen before: nothing to do, nothing to say.
+   } else {
+     const uint32_t rev = (uint32_t)jr->valuedouble;
+     cJSON_AddNumberToObject(rep, "rev", rev);
++    if (fac) cJSON_AddTrueToObject(rep, "factory");
+     const bool all = settings_apply(doc, rep);
+     cJSON_AddStringToObject(rep, "state", all ? "ok" : "partial");
+-    cfg_set_rev(rev);
+-    printf("[config] rev %lu from the server\n", (unsigned long)rev);
++    cfg_set_rev(rev, fac ? "frev" : "rev");
++    printf("[config] rev %lu from the %s\n", (unsigned long)rev, fac ? "factory line" : "server");
+     cfg_report(rep);
+   }
+   cJSON_Delete(rep);
+@@ -734,7 +768,8 @@ void task(void *) {
+     // Status on change, and every five minutes regardless.
+     TripStatus s;
+     trip_status(&s);
+-    if (g_status_now || !status_at || now_ms() - status_at > 300000 ||
++    const uint32_t every = factory_mode() ? 30000 : 300000;   // the rack wants to see it soon
++    if (g_status_now || !status_at || now_ms() - status_at > every ||
+         s.active != prev.active || s.alarms_active != prev.alarms_active ||
+         s.samples != prev.samples) {
+       g_status_now = false;
+@@ -760,6 +795,21 @@ void task(void *) {
+   }
+ }
+ 
++void rpc_task(void *) {
++  for (;;) {
++    char *req = nullptr;
++    if (xQueueReceive(g_rpc_q, &req, portMAX_DELAY) != pdTRUE || !req) continue;
++    // Authorized only in factory mode: one broker login is shared by every
++    // box, so outside the line the channel reads and never writes.
++    RpcSession sess = {};
++    sess.authorized = factory_mode();
++    char *resp = rpc_handle(req, strlen(req), &sess);
++    free(req);
++    if (g_client && g_mqtt) esp_mqtt_client_publish(g_client, t_rpc_reply, resp, 0, 1, 0);
++    free(resp);
++  }
++}
++
+ }  // namespace
+ 
+ void uplink_start(const char *sn) {
+@@ -773,6 +823,8 @@ void uplink_start(const char *sn) {
+   snprintf(t_cfg, sizeof(t_cfg), TOPIC_SUB "%s/config", g_sn);
+   snprintf(t_cfg_state, sizeof(t_cfg_state), TOPIC_PUB "%s/config/state", g_sn);
+   snprintf(t_settings, sizeof(t_settings), TOPIC_PUB "%s/settings", g_sn);
++  snprintf(t_rpc, sizeof(t_rpc), TOPIC_SUB "%s/rpc", g_sn);
++  snprintf(t_rpc_reply, sizeof(t_rpc_reply), TOPIC_PUB "%s/rpc/reply", g_sn);
+   {
+     // A report not yet sent before the reset goes out at the next connection.
+     nvs_handle_t h;
+@@ -786,6 +838,8 @@ void uplink_start(const char *sn) {
+   load();
+   if (!pm_warm() || g_plan.magic != PLAN_MAGIC) g_plan = {PLAN_MAGIC, 0, 0, false, 0, 0, 0, LINK_OFFLINE};
+   xTaskCreatePinnedToCore(task, "uplink", 6144, nullptr, 2, &g_task, 0);
++  g_rpc_q = xQueueCreate(4, sizeof(char *));
++  xTaskCreatePinnedToCore(rpc_task, "mqtt_rpc", 6144, nullptr, 2, nullptr, 0);
+ }
+ 
+ bool uplink_set_server(const char *host, uint16_t port, const char *user,

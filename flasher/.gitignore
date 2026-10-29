@@ -1,0 +1,9 @@
+# The station's own state: images it was given, what it did to each box,
+# and the site's logins. None of it belongs in the repository.
+library/
+records/
+backups/
+build/
+site.ini
+*.egg-info/
+.pytest_cache/

@@ -1,0 +1,56 @@
+# eTEMP -- a profile to fill in. The station refuses to run it until
+# `incomplete` is empty (--allow-incomplete for bench work).
+#
+# Nothing about eTEMP's hardware is in this repository; mCOLD only follows
+# eTEMP V2's conventions (Wi-Fi per network with DHCP or a fixed address,
+# tempAdj, OTA by file name). Every value below marked TODO is a guess
+# shaped like mCOLD's, there so the file has the right form.
+
+product: etemp
+name: eTEMP V2
+incomplete:
+  - "chip: which ESP32 (esp32, esp32s3, esp32c3 ...) and its flash size"
+  - "usb: native USB, or a USB-UART bridge (CP2102/CH340: VID/PID, auto-reset circuit?)"
+  - "firmware: where its source lives and how it is built (PlatformIO env, Arduino IDE, IDF)"
+  - "console: does the firmware have a text console, and which commands set SN / Wi-Fi / server"
+  - "sn: the label's pattern"
+  - "partitions: its layout, and where its settings are kept (NVS namespace and keys)"
+
+chip: esp32                       # TODO
+flash: {size: 4MB, mode: dio, freq: 40m}   # TODO
+
+usb:
+  vid: 0x10C4                     # TODO: CP2102 is 10C4:EA60, CH340 is 1A86:7523
+  usj_pid: null
+  rom_pids: [0xEA60]              # TODO: through a bridge, ROM and firmware share one port
+  app_pids: []
+  bridge: true                    # TODO: a box is then followed by its port, not its MAC
+
+console:
+  baud: 115200
+  eol: "\r\n"
+
+sn:
+  pattern: '.+'                   # TODO
+
+firmware:
+  production:
+    project: ../eTEMP             # TODO: not in this repository
+    env: etemp
+    console: usj                  # through a bridge the console is the same port as the ROM
+    images:                       # TODO: an Arduino ESP32 build's usual layout
+      - {offset: 0x1000,  file: bootloader.bin}
+      - {offset: 0x8000,  file: partitions.bin}
+      - {offset: 0x10000, file: firmware.bin}
+
+sequence: [production]
+
+stages:
+  production:
+    - name: ลง firmware
+      type: flash
+      firmware: production
+      erase: true
+    - name: เวอร์ชันตรงกับไฟล์ที่อนุมัติ
+      type: version
+      firmware: production

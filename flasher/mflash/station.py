@@ -1,0 +1,845 @@
+"""The six-slot station behind the window: what each slot holds, what it is
+doing, and what it is waiting for the person to answer.
+
+A slot is a physical place -- a dock bay, a cable on the bench -- and is
+known by the USB location of that place, which stays the same while the
+box in it changes port and PID with every restart. The runner itself
+still follows the box by MAC and SN; the location only says which slot
+to show it in.
+
+Each running slot has its own thread. A question from a slot is shown in
+that slot and waits for an answer there, so six boxes can each ask at
+once without taking turns.
+"""
+from __future__ import annotations
+
+import csv
+import datetime as dt
+import io
+import json
+import os
+import threading
+import time
+from collections import deque
+from dataclasses import dataclass, field
+
+from . import firmware as fwlib
+from . import profile as proflib
+from .db import Db
+from .ports import Port, UsbIds, norm_mac
+from .runner import Box, Hardware, Runner, StepFailed
+from . import site as sitelib
+from .site import Factory, Site, Wifi
+from .ui import Ui
+
+STAGE_LABELS = {"test": "ทดสอบโมดูล", "production": "ลง firmware จริง", "setup": "ตั้งค่า",
+                "verify": "ตรวจก่อนส่ง", "update": "Flash ใหม่", "quick": "USB เร็ว",
+                "rack": "ชั้นวาง (MQTT)"}
+
+
+def stage_label(s: str) -> str:
+    return STAGE_LABELS.get(s, s)
+
+
+def location_key(p: Port) -> str:
+    """The physical place: the USB location without the interface number,
+    which differs between the ROM's port and the firmware's."""
+    return p.location.split(":", 1)[0] if p.location else p.device
+
+
+@dataclass
+class Question:
+    id: int
+    kind: str                     # "yn" or "text"
+    text: str
+    default: str = ""
+    repeat: bool = False          # the person may ask for the check to run again
+    answer: object = None
+    done: threading.Event = field(default_factory=threading.Event)
+
+
+class Slot:
+    def __init__(self, index: int):
+        self.index = index
+        self.location = ""        # learned or saved
+        self.port: Port | None = None
+        self.state = "empty"      # empty ready running ask pass fail stopped
+        self.box: Box | None = None
+        self.stages: list[str] = []
+        self.results: dict[str, str] = {}
+        self.stage = ""
+        self.step_idx = 0
+        self.step_total = 0
+        self.step_name = ""
+        self.fail: dict | None = None
+        self.question: Question | None = None
+        self.log: deque[str] = deque(maxlen=400)
+        self.stop = threading.Event()
+        self.thread: threading.Thread | None = None
+        self.started = 0.0
+        self.finished = 0.0
+        self.left = False         # the finished box has been taken out
+        self.auto_tried = False   # auto-start had its go at the box in the slot
+        self.auto_error = ""      # why it could not start it
+        self.unit: int | None = None   # the unit number this slot gives its box
+        self.unit_auto = True          # suggested by the station, not typed
+        self.existing_sn = ""          # the box came with an SN already (a rework)
+
+    def forget_unit(self) -> None:
+        self.unit, self.unit_auto, self.existing_sn = None, True, ""
+
+    @property
+    def busy(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
+
+    def reset(self) -> None:
+        self.box, self.stages, self.results = None, [], {}
+        self.stage, self.step_idx, self.step_total, self.step_name = "", 0, 0, ""
+        self.fail, self.question = None, None
+        self.started = self.finished = 0.0
+        self.left = False
+        self.log.clear()
+        self.stop.clear()
+
+
+class SlotUi(Ui):
+    """The runner's voice, routed to the slot it is about (the box label is the slot index)."""
+
+    def __init__(self, station: "Station"):
+        self.st = station
+        self._qid = 0
+        self._lock = threading.Lock()
+
+    def _slot(self, who: str) -> Slot:
+        return self.st.slots[int(who)]
+
+    def info(self, who: str, msg: str) -> None:
+        s = self._slot(who)
+        for line in msg.splitlines() or [""]:
+            s.log.append(time.strftime("%H:%M:%S ") + line)
+
+    def _ask(self, who: str, kind: str, text: str, default: str = "", repeat: bool = False):
+        s = self._slot(who)
+        with self._lock:
+            self._qid += 1
+            q = Question(self._qid, kind, text, default, repeat=repeat)
+        s.question, s.state = q, "ask"
+        self.st.questions_asked += 1
+        while not q.done.wait(0.2):
+            if s.stop.is_set():
+                s.question, s.state = None, "running"
+                raise StepFailed("stopped by the operator")
+        s.question, s.state = None, "running"
+        return q.answer
+
+    def yes_no(self, who: str, question: str, repeat: bool = False) -> bool | None:
+        a = self._ask(who, "yn", question, repeat=repeat)
+        if repeat and a == "again":
+            self.info(who, f"  ? {question} -> ทำซ้ำ")
+            return None
+        a = bool(a)
+        self.info(who, f"  ? {question} -> {'ใช่' if a else 'ไม่'}")
+        return a
+
+    def text(self, who: str, question: str, default: str = "") -> str:
+        a = str(self._ask(who, "text", question, default) or "")
+        self.info(who, f"  ? {question} -> {a}")
+        return a
+
+    def stage_started(self, who: str, stage: str, steps: int) -> None:
+        s = self._slot(who)
+        s.stage, s.step_total, s.step_idx, s.step_name = stage, steps, 0, ""
+        s.results[stage] = "running"
+
+    def step_started(self, who: str, idx: int, name: str) -> None:
+        s = self._slot(who)
+        s.step_idx, s.step_name = idx, name
+
+    def step_done(self, who: str, idx: int, name: str, result: str, detail: str, help: str) -> None:
+        s = self._slot(who)
+        s.step_idx = idx + 1
+        if result == "FAIL":
+            s.fail = {"stage": s.stage, "step": name, "detail": detail, "help": help}
+
+    def stage_done(self, who: str, stage: str, result: str) -> None:
+        self._slot(who).results[stage] = result
+
+
+class Station:
+    def __init__(self, product: str, db: Db, site: Site, hw: Hardware | None = None,
+                 n_slots: int = 6, layout_path: str | None = None, demo: bool = False):
+        self.db, self.site = db, site
+        self.hw = hw or Hardware()
+        self.demo = demo
+        self.slots = [Slot(i) for i in range(n_slots)]
+        self.ui = SlotUi(self)
+        self.lock = threading.RLock()
+        self.fw_choice: dict[str, str] = {}     # firmware kind -> library id; none = newest approved
+        self.layout_path = layout_path or os.path.join(proflib.FLASHER, "records", "slots.json")
+        self.stage_choice = "all"
+        self.lot = ""
+        self.counts = {"pass": 0, "fail": 0}
+        self.questions_asked = 0
+        self.profile: proflib.Profile | None = None
+        self.profile_error = ""
+        self._fw_cache: tuple[float, str, list] = (0.0, "", [])
+        self.on_clear = None      # demo: a fresh simulated board in the slot
+        self.auto_start = False   # a box put in a ready slot starts by itself
+        self.auto_operator = ""
+        self.set_product(product)
+        self._load_layout()
+
+    # ---- configuration --------------------------------------------------
+
+    def set_product(self, product: str) -> None:
+        with self.lock:
+            if any(s.busy for s in self.slots):
+                raise RuntimeError("มีช่องที่กำลังทำงานอยู่ เปลี่ยนสินค้าไม่ได้")
+            try:
+                self.profile = proflib.load(product)
+                self.profile_error = ""
+            except proflib.ProfileError as e:
+                self.profile, self.profile_error = None, str(e)
+            self.ids = UsbIds(self.profile.usb) if self.profile else None
+            if self.profile and self.stage_choice != "all" and self.stage_choice not in self.profile.stages:
+                self.stage_choice = "all"
+
+    def set_stage(self, stage: str) -> None:
+        """A mode (`all`, `resetup`, ...) or stages by name, with commas."""
+        self.stages_of(stage)
+        self.stage_choice = stage
+
+    def stages_of(self, choice: str) -> list[str]:
+        if not self.profile:
+            raise RuntimeError(self.profile_error)
+        mode = self.profile.mode(choice)
+        if mode is not None:
+            return mode
+        for s in choice.split(","):
+            self.profile.stage(s)
+        return choice.split(",")
+
+    def stages(self) -> list[str]:
+        if not self.profile:
+            return []
+        return self.stages_of(self.stage_choice)
+
+    def firmware_status(self, stages: list[str] | None = None) -> list[dict]:
+        if stages is not None:
+            return self._firmware_status(stages)
+        key = f"{self.profile.product if self.profile else ''}/{self.stage_choice}/{sorted(self.fw_choice.items())}"
+        t, k, cached = self._fw_cache
+        if k == key and time.monotonic() - t < 3:
+            return cached
+        out = self._firmware_status()
+        self._fw_cache = (time.monotonic(), key, out)
+        return out
+
+    def _firmware_status(self, stages: list[str] | None = None) -> list[dict]:
+        out = []
+        if not self.profile:
+            return out
+        needed = []
+        for s in (self.stages() if stages is None else stages):
+            for st in self.profile.stage(s):
+                k = st.get("firmware")
+                if k and st["type"] in ("flash", "version") and k not in needed:
+                    needed.append(k)
+        for k in needed:
+            which = self.fw_choice.get(k, "approved")
+            try:
+                m = fwlib.resolve(self.profile.product, k, which)
+                if not m.get("approved"):
+                    raise fwlib.FirmwareError(f"{k} {m['id']} ยังไม่ได้อนุมัติ")
+                out.append({"kind": k, "ok": True, "id": m["id"], "version": m["version"],
+                            "by": m["approved"]["by"], "which": which})
+            except fwlib.FirmwareError as e:
+                out.append({"kind": k, "ok": False, "msg": str(e), "which": which})
+        return out
+
+    def firmware_options(self) -> dict[str, list[dict]]:
+        """kind -> the approved builds in the library, newest first: what the dropdown offers."""
+        t, cached = getattr(self, "_fwo_cache", (0.0, None))
+        if cached is not None and time.monotonic() - t < 3:
+            return cached
+        out = self._firmware_options()
+        self._fwo_cache = (time.monotonic(), out)
+        return out
+
+    def _firmware_options(self) -> dict[str, list[dict]]:
+        out = {}
+        if not self.profile:
+            return out
+        for k in self.profile.firmware:
+            rows = [m for m in fwlib.list_firmware(self.profile.product, k) if m.get("approved")]
+            out[k] = [{"id": m["id"], "version": m["version"], "by": m["approved"]["by"],
+                       "built": m.get("built", ""), "signed": m.get("signed", False)}
+                      for m in reversed(rows)]
+        return out
+
+    def set_firmware(self, kind: str, which: str) -> None:
+        if not self.profile or kind not in self.profile.firmware:
+            raise RuntimeError(f"ไม่มี firmware ชนิด {kind}")
+        if which != "approved":
+            m = fwlib.resolve(self.profile.product, kind, which)
+            if not m.get("approved"):
+                raise RuntimeError(f"{kind} {m['id']} ยังไม่ได้อนุมัติ เลือกไม่ได้")
+            which = m["id"]
+        with self.lock:
+            if any(s.busy for s in self.slots):
+                raise RuntimeError("มีช่องที่กำลังทำงานอยู่ เปลี่ยน firmware ไม่ได้")
+            if which == "approved":
+                self.fw_choice.pop(kind, None)
+            else:
+                self.fw_choice[kind] = which
+            self._fw_cache = (0.0, "", [])
+        self._write_settings(firmware=self.fw_choice)
+
+    # ---- the site's settings (site.ini) ---------------------------------------
+
+    def settings(self) -> dict:
+        """What the settings page edits. Passwords never leave this machine: only
+        whether one is set."""
+        st = self.site
+        keys = self.profile.config_keys if self.profile else {}
+        return {
+            "station": st.station, "path": st.path,
+            "wifi": [{"ssid": w.ssid, "has_password": bool(w.password), "dhcp": w.dhcp, "ip": w.ip,
+                      "gateway": w.gateway, "subnet": w.subnet, "dns": w.dns} for w in st.wifi],
+            "mqtt": {"host": st.mqtt.get("host", ""), "port": st.mqtt.get("port", 1883),
+                     "username": st.mqtt.get("username", ""),
+                     "has_password": bool(st.mqtt.get("password"))},
+            "ota_base": st.ota_base,
+            "config": dict(st.config),
+            "config_keys": keys,
+            "factory": {"ssid": st.factory.ssid, "has_password": bool(st.factory.password),
+                        "ip_base": st.factory.ip_base, "gateway": st.factory.gateway,
+                        "subnet": st.factory.subnet, "dns": st.factory.dns,
+                        "first": st.factory.ip_for(1) if st.factory.ip_base else "",
+                        "capacity": self._capacity(st.factory)},
+            "station_mqtt": {"username": st.station_mqtt.get("username", ""),
+                             "has_password": bool(st.station_mqtt.get("password"))},
+        }
+
+    @staticmethod
+    def _capacity(f: Factory) -> int:
+        try:
+            return f.capacity()
+        except ValueError:
+            return 0
+
+    def save_settings(self, d: dict) -> str:
+        """The settings page's form back into site.ini. A password left out (None)
+        keeps the one already saved for that network or broker."""
+        old = self.site
+        old_pw = {w.ssid: w.password for w in old.wifi}
+        wifi = []
+        for w in d.get("wifi", []):
+            ssid = str(w.get("ssid", "")).strip()
+            if not ssid:
+                continue
+            pw = w.get("password")
+            if pw is None:
+                pw = old_pw.get(str(w.get("old_ssid") or ssid), "")
+            dhcp = bool(w.get("dhcp", True))
+            wifi.append(Wifi(ssid=ssid, password=str(pw), dhcp=dhcp,
+                             ip="" if dhcp else str(w.get("ip", "")).strip(),
+                             gateway="" if dhcp else str(w.get("gateway", "")).strip(),
+                             subnet="" if dhcp else str(w.get("subnet", "")).strip(),
+                             dns="" if dhcp else str(w.get("dns", "")).strip()))
+        m = d.get("mqtt") or {}
+        mqtt = {}
+        if str(m.get("host", "")).strip():
+            pw = m.get("password")
+            mqtt = {"host": str(m["host"]).strip(), "port": int(m.get("port") or 1883),
+                    "username": str(m.get("username", "")).strip(),
+                    "password": old.mqtt.get("password", "") if pw is None else str(pw)}
+        config = {}
+        keys = self.profile.config_keys if self.profile else {}
+        bad = []
+        for k, v in (d.get("config") or {}).items():
+            if v is None or str(v).strip() == "":
+                continue
+            try:
+                n = int(str(v).strip(), 0)
+            except ValueError:
+                bad.append(f"ค่าตั้ง {k}: '{v}' ไม่ใช่ตัวเลข")
+                continue
+            r = keys.get(k)
+            if r and not r["min"] <= n <= r["max"]:
+                bad.append(f"ค่าตั้ง {k}: {n} อยู่นอกช่วง {r['min']}–{r['max']}")
+            config[k] = n
+        f = d.get("factory") or {}
+        fpw = f.get("password")
+        factory = Factory(ssid=str(f.get("ssid", "")).strip(),
+                          password=old.factory.password if fpw is None else str(fpw),
+                          **{k: str(f.get(k, "")).strip() for k in ("ip_base", "gateway", "subnet", "dns")})
+        sm = d.get("station_mqtt") or {}
+        spw = sm.get("password")
+        station_mqtt = {"username": str(sm.get("username", "")).strip(),
+                        "password": old.station_mqtt.get("password", "") if spw is None else str(spw)}
+        # no login of its own: the boxes' login, password and all
+        station_mqtt = {k: v for k, v in station_mqtt.items() if v} if station_mqtt["username"] else {}
+        new = Site(station=str(d.get("station", "")).strip(), wifi=wifi, mqtt=mqtt,
+                   ota_base=str(d.get("ota_base", "")).strip(), config=config, factory=factory,
+                   station_mqtt=station_mqtt, path=old.path)
+        bad = sitelib.validate(new, self.profile.unit_max if self.profile else 999) + bad
+        if bad:
+            raise RuntimeError("\n".join(bad))
+        path = sitelib.save(new)
+        self.site = new           # runs started from now on use it; running ones keep theirs
+        return path
+
+    def _read_settings(self) -> dict:
+        try:
+            with open(self.layout_path, encoding="utf-8") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            return {}
+
+    def _write_settings(self, **kw) -> None:
+        d = self._read_settings()
+        d.update(kw)
+        os.makedirs(os.path.dirname(os.path.abspath(self.layout_path)), exist_ok=True)
+        with open(self.layout_path, "w", encoding="utf-8") as f:
+            json.dump(d, f, indent=2, ensure_ascii=False)
+
+    def _load_layout(self) -> None:
+        d = self._read_settings()
+        for s, loc in zip(self.slots, d.get("slots", [])):
+            s.location = loc or ""
+        lot = d.get("lot", "")
+        if lot and self.profile and self.profile.lot_ok(lot):
+            self.lot = lot
+        self.fw_choice = {k: v for k, v in (d.get("firmware") or {}).items() if isinstance(v, str)}
+        self.auto_start = bool(d.get("auto_start", False))
+
+    def set_auto_start(self, on: bool, operator: str = "") -> None:
+        self.auto_start = bool(on)
+        self.auto_operator = operator
+        self._write_settings(auto_start=self.auto_start)
+
+    def save_layout(self) -> str:
+        self._write_settings(slots=[s.location for s in self.slots])
+        return self.layout_path
+
+    # ---- the lot and the unit numbers --------------------------------------
+
+    def set_lot(self, lot: str) -> None:
+        lot = lot.strip()
+        if not self.profile:
+            raise RuntimeError(self.profile_error)
+        if lot and not self.profile.lot_ok(lot):
+            raise RuntimeError(f"เลขล็อต '{lot}' ไม่ตรงรูปแบบ (เช่น {self.profile.sn.get('lot_example', '')})")
+        with self.lock:
+            if lot != self.lot:
+                self.lot = lot
+                for s in self.slots:
+                    if not s.busy and s.state not in ("pass", "fail", "stopped"):
+                        s.unit, s.unit_auto = None, True
+                self._suggest_units()
+        self._write_settings(lot=self.lot)
+
+    def _used_units(self, but: Slot | None = None) -> dict[int, str]:
+        """unit -> who has it: an SN in the record, or another slot."""
+        used: dict[int, str] = {}
+        if not self.lot or not self.profile:
+            return used
+        prefix = self.profile.make_sn(self.lot, 0)[:-int(self.profile.sn.get("unit_digits", 3))]
+        for r in self.db.q("SELECT sn, mac FROM device WHERE product=? AND sn LIKE ?",
+                           (self.profile.product, prefix + "%")):
+            u = self.profile.unit_of(r["sn"], self.lot)
+            if u is not None:
+                used[u] = f"{r['sn']} (เครื่อง {r['mac']})"
+        for o in self.slots:
+            if o is not but and o.unit is not None:
+                used.setdefault(o.unit, f"ช่อง {o.index + 1}")
+            if o is not but and o.box and o.box.sn:
+                u = self.profile.unit_of(o.box.sn, self.lot)
+                if u is not None:
+                    used.setdefault(u, f"ช่อง {o.index + 1}")
+        return used
+
+    def _suggest_units(self) -> None:
+        """Every ready slot without a unit gets the smallest one nobody has."""
+        if not self.lot or not self.profile:
+            return
+        for s in self.slots:
+            if s.state == "ready" and s.unit is None and not s.existing_sn:
+                used = self._used_units(but=s)
+                n = next((u for u in range(1, self.profile.unit_max + 1) if u not in used), None)
+                s.unit, s.unit_auto = n, True
+
+    def set_unit(self, i: int, unit: int) -> None:
+        if not self.profile:
+            raise RuntimeError(self.profile_error)
+        with self.lock:
+            s = self.slots[i]
+            if s.busy:
+                raise RuntimeError(f"ช่อง {i + 1} กำลังทำงานอยู่")
+            if not self.lot:
+                raise RuntimeError("กรอกเลขล็อตก่อน")
+            if not 1 <= unit <= self.profile.unit_max:
+                raise RuntimeError(f"เลขเครื่องต้องอยู่ระหว่าง 1–{self.profile.unit_max}")
+            who = self._used_units(but=s).get(unit)
+            if who:
+                raise RuntimeError(f"เลข {unit:0{int(self.profile.sn.get('unit_digits', 3))}d} ใช้แล้ว: {who}")
+            s.unit, s.unit_auto = unit, False
+
+    def step_unit(self, i: int, delta: int) -> None:
+        """The next unit number nobody has, up (+1) or down (-1) from the slot's."""
+        if not self.profile or not self.lot:
+            raise RuntimeError("กรอกเลขล็อตก่อน")
+        with self.lock:
+            s = self.slots[i]
+            used = self._used_units(but=s)
+            u = (s.unit or 0) + delta
+            while 1 <= u <= self.profile.unit_max and u in used:
+                u += delta
+            if not 1 <= u <= self.profile.unit_max:
+                raise RuntimeError("ไม่มีเลขว่างทางนั้นแล้ว")
+            self.set_unit(i, u)
+
+    def unit_conflict(self, s: Slot) -> str:
+        """Who already has this slot's number, if anyone (the record may have changed
+        since the number was given: another slot finished, a summary row was deleted)."""
+        if s.unit is None or s.existing_sn or s.busy or s.state not in ("ready",):
+            return ""
+        return self._used_units(but=s).get(s.unit, "")
+
+    def delete_record(self, mac: str, by: str = "") -> dict:
+        """The SN summary's delete: the box's record goes, its number is free again."""
+        with self.lock:
+            for s in self.slots:
+                if s.busy and s.box and s.box.mac == mac:
+                    raise RuntimeError(f"กล่องนี้กำลังทำงานอยู่ในช่อง {s.index + 1} ลบไม่ได้")
+            r = self.db.delete_device(mac, by=by, reason="SN summary")
+            if not r:
+                raise RuntimeError("ไม่มีบันทึกของกล่องนี้แล้ว")
+            for s in self.slots:          # a finished slot still showing it: its SN is gone
+                if not s.busy and s.box and s.box.mac == mac and s.state in ("pass", "fail", "stopped"):
+                    s.existing_sn = ""
+            return r
+
+    def planned_sn(self, s: Slot) -> str:
+        if s.existing_sn:
+            return s.existing_sn
+        if self.lot and s.unit is not None and self.profile:
+            return self.profile.make_sn(self.lot, s.unit)
+        return ""
+
+    def summary(self, lot: str | None = None) -> dict:
+        """The lot so far: every SN, its box, its result, and the unit numbers not yet used."""
+        if not self.profile:
+            raise RuntimeError(self.profile_error)
+        lot = self.lot if lot is None else lot.strip()
+        p = self.profile
+        prefix = p.make_sn(lot, 0)[:-int(p.sn.get("unit_digits", 3))] if lot else ""
+        today = dt.datetime.now().astimezone().replace(hour=0, minute=0, second=0,
+                                                       microsecond=0).isoformat(timespec="seconds")
+        rows = self.db.summary(p.product, p.routes, prefix=prefix, since=today)
+        for r in rows:
+            r["unit"] = p.unit_of(r["sn"], lot) if lot else None
+            r["stage_labels"] = {k: stage_label(k) for k in r["stages"]}
+            if r["fail"]:
+                r["fail"]["stage_label"] = stage_label(r["fail"]["stage"])
+        units = sorted(r["unit"] for r in rows if r["unit"] is not None)
+        missing = [u for u in range(1, units[-1]) if u not in set(units)] if units else []
+        counts = {k: sum(1 for r in rows if r["result"] == k) for k in ("PASS", "FAIL", "INCOMPLETE")}
+        return {"lot": lot, "product": p.product, "rows": rows, "counts": counts, "missing": missing,
+                "sequence": [{"name": x, "label": stage_label(x)} for x in p.stage_names()],
+                "made": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
+
+    def summary_csv(self, lot: str | None = None) -> str:
+        sm = self.summary(lot)
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["sn", "unit", "result", "mac", "firmware", *[s["name"] for s in sm["sequence"]],
+                    "failed_stage", "failed_step", "failed_detail", "finished", "operator", "station",
+                    "unapproved_firmware"])
+        for r in sm["rows"]:
+            f = r["fail"] or {}
+            w.writerow([r["sn"], r["unit"] if r["unit"] is not None else "", r["result"], r["mac"],
+                        r["firmware"], *[r["stages"].get(s["name"], "") for s in sm["sequence"]],
+                        f.get("stage", ""), f.get("step", ""), f.get("detail", ""), r["finished"],
+                        r["operator"], r["station"], "yes" if r["unapproved"] else ""])
+        return buf.getvalue()
+
+    def forget_layout(self) -> None:
+        with self.lock:
+            for s in self.slots:
+                if not s.busy:
+                    s.location = ""
+        try:
+            os.remove(self.layout_path)
+        except OSError:
+            pass
+
+    # ---- the bus ----------------------------------------------------------
+
+    def refresh(self) -> None:
+        """Which slot each box on the bus is in; a new place goes to the first free slot."""
+        if not self.ids:
+            return
+        ports = [p for p in self.hw.scan() if self.ids.ours(p)]
+        by_loc: dict[str, Port] = {}
+        for p in ports:
+            by_loc.setdefault(location_key(p), p)
+        with self.lock:
+            known = {s.location for s in self.slots if s.location}
+            for loc in sorted(by_loc):
+                if loc not in known:
+                    free = [s for s in self.slots if not s.location]
+                    if free:
+                        free[0].location = loc
+                        known.add(loc)
+            for s in self.slots:
+                p = by_loc.get(s.location) if s.location else None
+                s.port = p
+                if s.busy:
+                    continue
+                if s.state in ("pass", "fail", "stopped"):
+                    if not p:
+                        s.left = True
+                    elif s.left:             # a new box where the finished one was
+                        s.reset()
+                        s.forget_unit()
+                        s.auto_tried, s.auto_error = False, ""
+                        s.state = "ready"
+                    continue
+                s.state = "ready" if p else "empty"
+                if not p:
+                    s.forget_unit()
+                    s.auto_tried, s.auto_error = False, ""
+                elif self.profile and self.ids.is_app(p) and self.profile.sn_ok(p.serial):
+                    s.existing_sn, s.unit = p.serial, None      # it has its SN already
+                else:
+                    s.existing_sn = ""
+            self._suggest_units()
+            if self.auto_start:
+                self._auto_start()
+
+    def _auto_start(self) -> None:
+        """Each box put in a ready slot starts once by itself; one it could not start
+        says why in its slot and waits for the person."""
+        for s in self.slots:
+            if s.state != "ready" or not s.port or s.busy or s.auto_tried:
+                continue
+            if not s.existing_sn and (not self.lot or s.unit is None):
+                continue                 # no number to give it yet: the slot says so
+            s.auto_tried = True
+            try:
+                self.start(s.index, self.auto_operator or "auto")
+                s.log.append(time.strftime("%H:%M:%S ") + "เริ่มเองเมื่อเสียบ")
+            except RuntimeError as e:
+                s.auto_error = str(e)
+
+    def watch(self, every: float = 1.0) -> None:
+        """Keep the slots up to date with the bus, from a thread of its own."""
+        def loop():
+            while True:
+                try:
+                    self.refresh()
+                except Exception as e:   # a bus scan that fails once must not stop the watch
+                    print(f"port scan: {e!r}")
+                time.sleep(every)
+        threading.Thread(target=loop, daemon=True).start()
+
+    def port_kind(self, p: Port | None) -> str:
+        if not p or not self.ids:
+            return ""
+        if self.ids.is_app(p):
+            return "firmware"
+        if self.ids.is_usj(p):
+            return "usj"
+        if self.ids.is_rom(p):
+            return "rom"
+        return ""
+
+    # ---- running ------------------------------------------------------------
+
+    def start(self, i: int, operator: str = "", mode: str = "") -> None:
+        with self.lock:
+            stages = self.stages_of(mode) if mode else self.stages()
+            s = self.slots[i]
+            if not self.profile:
+                raise RuntimeError(self.profile_error)
+            if s.busy:
+                raise RuntimeError(f"ช่อง {i + 1} กำลังทำงานอยู่")
+            if s.location and self.ids:
+                # the box may have changed port since the last scan (it restarts at the end of a run)
+                now = [p for p in self.hw.scan() if self.ids.ours(p) and location_key(p) == s.location]
+                s.port = now[0] if now else None
+            if not s.port:
+                raise RuntimeError(f"ช่อง {i + 1} ไม่มีบอร์ด")
+            if self.profile.incomplete:
+                raise RuntimeError(f"profile {self.profile.product} ยังไม่ครบ")
+            bad = [f for f in self.firmware_status(stages) if not f["ok"]]
+            if bad:
+                raise RuntimeError(bad[0]["msg"])
+            prev = s.box
+            if prev and prev.sn and s.state in ("pass", "fail", "stopped"):
+                # the same box again (new settings, new firmware): its SN, not its slot's number
+                s.existing_sn, s.unit = prev.sn, None
+            if s.unit is not None and not s.existing_sn:
+                who = self._used_units(but=s).get(s.unit)
+                if who:
+                    raise RuntimeError(f"ช่อง {i + 1}: เลข {s.unit} ใช้แล้ว ({who}) เลือกเลขใหม่")
+            s.reset()
+            s.stages = stages
+            s.results = {st: "" for st in s.stages}
+            s.state = "running"
+            s.started = time.time()
+            s.box = Box(label=str(i), port=s.port)
+            s.thread = threading.Thread(target=self._work, args=(s, operator), daemon=True)
+            s.thread.start()
+
+    def start_all(self, operator: str = "") -> int:
+        n = 0
+        for s in self.slots:
+            if s.port and not s.busy and s.state == "ready":
+                self.start(s.index, operator)
+                n += 1
+        return n
+
+    def _work(self, s: Slot, operator: str) -> None:
+        r = Runner(self.profile, self.db, self.ui, self.site, hw=self.hw,
+                   firmware_choice=dict(self.fw_choice),
+                   operator=operator or "station", station=self.site.station or "gui",
+                   should_stop=s.stop.is_set, sn=self.planned_sn(s), keep_existing_sn=True)
+        ok = False
+        try:
+            ok = r.run(s.box, s.stages)
+        except Exception as e:      # a crash in one slot must not take the others down
+            s.log.append(time.strftime("%H:%M:%S ") + f"stopped: {e!r}")
+            s.fail = {"stage": s.stage, "step": s.step_name, "detail": repr(e), "help": ""}
+        s.finished = time.time()
+        if s.stop.is_set() and not ok:
+            s.state = "stopped"
+        else:
+            s.state = "pass" if ok else "fail"
+            self.counts["pass" if ok else "fail"] += 1
+
+    def stop(self, i: int) -> None:
+        self.slots[i].stop.set()
+
+    def clear(self, i: int) -> None:
+        with self.lock:
+            s = self.slots[i]
+            if s.busy:
+                raise RuntimeError(f"ช่อง {i + 1} กำลังทำงานอยู่")
+            s.reset()
+            s.forget_unit()
+            s.auto_tried, s.auto_error = False, ""
+            if self.on_clear:
+                self.on_clear(i)
+            s.state = "ready" if s.port else "empty"
+
+    def answer(self, i: int, qid: int, value) -> None:
+        q = self.slots[i].question
+        if not q or q.id != qid:
+            raise RuntimeError("คำถามนี้ตอบไปแล้ว")
+        q.answer = value
+        q.done.set()
+
+    # ---- what the window shows -------------------------------------------
+
+    def state(self, log_slots: set[int] | None = None) -> dict:
+        slots = []
+        for s in self.slots:
+            box = s.box
+            port = (box.port if box and box.port and s.busy else s.port)
+            fw = ""
+            if box and box.flashed:
+                # what the box runs now, not everything it ran on the way
+                m = box.flashed.get(box.running) or list(box.flashed.values())[-1]
+                fw = m["version"] + (" (ทดสอบ)" if m.get("kind") == "test" else "")
+            q = s.question
+            slots.append({
+                "index": s.index, "location": s.location, "state": s.state,
+                "port": port.device if port else "", "port_kind": self.port_kind(port),
+                "port_serial": port.serial if port else "",
+                # what is known about the box, kept on show for as long as it is in the slot:
+                # before a run the MAC comes from the chip's USB serial, the SN is the one
+                # it will get (or already has)
+                "mac": (box.mac if box and box.mac else
+                        (norm_mac(port.serial) if port and self.ids.is_usj(port) and port.serial else "")),
+                "sn": (box.sn if box and box.sn else self.planned_sn(s)),
+                "sn_planned": not (box and box.sn) and not s.existing_sn and bool(self.planned_sn(s)),
+                "unit": s.unit, "unit_auto": s.unit_auto, "existing_sn": s.existing_sn,
+                "unit_conflict": self.unit_conflict(s),
+                "auto_error": s.auto_error if s.state == "ready" else "",
+                "ip": self._slot_ip(s),
+                "firmware": fw,
+                # before a run, the stages it would go through, so the slot shows the plan
+                "stages": [{"name": st, "label": stage_label(st), "result": s.results.get(st, "")}
+                           for st in (s.stages or (self.stages() if s.state == "ready" else []))],
+                "stage": s.stage, "stage_label": stage_label(s.stage),
+                "step_idx": s.step_idx, "step_total": s.step_total, "step_name": s.step_name,
+                "fail": s.fail, "stopping": s.stop.is_set() and s.busy,
+                "question": {"id": q.id, "kind": q.kind, "text": q.text, "default": q.default,
+                             "repeat": q.repeat}
+                if q else None,
+                "elapsed": int((s.finished or time.time()) - s.started) if s.started else 0,
+                "progress": self._progress(s),
+                "log": list(s.log)[-150:] if log_slots is None or s.index in log_slots else None,
+            })
+        p = self.profile
+        return {
+            "product": p.product if p else "", "product_name": p.name if p else "",
+            "profile_error": self.profile_error,
+            "incomplete": p.incomplete if p else [],
+            "products": proflib.list_profiles(),
+            "stage": self.stage_choice,
+            "lot": self.lot,
+            "lot_example": p.sn.get("lot_example", "") if p else "",
+            "sn_example": p.sn.get("example", "") if p else "",
+            "unit_digits": int(p.sn.get("unit_digits", 3)) if p else 3,
+            "unit_max": p.unit_max if p else 999,
+            "stage_options": ([{"value": m["name"], "label": m["label"], "group": "mode"}
+                               for m in (p.modes or [{"name": "all", "label": "ทุกขั้น"}])]
+                              + [{"value": x, "label": "เฉพาะ " + stage_label(x), "group": "stage"}
+                                 for x in p.stages]) if p else [],
+            "redo": [m for m in (p.modes if p else []) if m["name"] in ("resetup", "reflash_setup")],
+            "firmware": self.firmware_status(),
+            "firmware_options": self.firmware_options(),
+            "busy": any(s.busy for s in self.slots),
+            "counts": self.counts, "station": self.site.station, "demo": self.demo,
+            "auto_start": self.auto_start,
+            "now": dt.datetime.now().strftime("%H:%M:%S"),
+            "slots": slots,
+        }
+
+    def _slot_ip(self, s: Slot) -> str:
+        """The line's address the box gets (or got) from the IP pool, when its run gives one."""
+        f = self.site.factory
+        stages = s.stages or (self.stages() if s.state == "ready" else [])
+        if not f.ip_base or not self.profile or not any(
+                st.get("factory") for x in stages for st in self.profile.stages.get(x) or []):
+            return ""
+        sn = s.box.sn if s.box and s.box.sn else self.planned_sn(s)
+        u = self.profile.unit_from_sn(sn) if sn else None
+        try:
+            return f.ip_for(u) if u and u <= f.capacity() else ""
+        except ValueError:
+            return ""
+
+    def _progress(self, s: Slot) -> float:
+        """Steps done over steps in the whole run, 0..1, for the slot's ring."""
+        if not self.profile or not s.stages:
+            return 0.0
+        if s.state == "pass":
+            return 1.0
+        total = done = 0
+        for st in s.stages:
+            n = len(self.profile.stages.get(st) or [])
+            total += n
+            r = s.results.get(st, "")
+            if r == "PASS":
+                done += n
+            elif st == s.stage and r in ("running", "FAIL"):
+                done += min(s.step_idx, n)
+        return round(done / total, 3) if total else 0.0
+
+    def history(self, limit: int = 40) -> list[dict]:
+        return [dict(r) for r in self.db.history("", limit)]
