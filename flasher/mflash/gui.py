@@ -34,7 +34,7 @@ FONT_FILES = {"IBMPlexSansThai-Regular.ttf", "IBMPlexSansThai-Medium.ttf",
               "IBMPlexSansThai-SemiBold.ttf", "IBMPlexSansThai-Bold.ttf"}
 
 
-def make_handler(station: Station):
+def make_handler(station: Station, rack=None, rack_error: str = ""):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):   # the console is for the station, not for polls
             pass
@@ -59,6 +59,11 @@ def make_handler(station: Station):
                 q = parse_qs(u.query)
                 logs = {int(x) for x in q.get("log", [""])[0].split(",") if x.isdigit()}
                 self._json(station.state(log_slots=logs))
+            elif u.path == "/api/rack":
+                if not rack:
+                    return self._json({"enabled": False, "error": rack_error})
+                q = parse_qs(u.query)
+                self._json({"enabled": True, **rack.state(log_sn=q.get("log", [""])[0])})
             elif u.path == "/api/history":
                 self._json(station.history())
             elif u.path == "/api/settings":
@@ -105,6 +110,25 @@ def make_handler(station: Station):
                     return self._json({"deleted": station.delete_record(str(a["mac"]), str(a.get("by", "")))})
                 elif path == "/api/firmware":
                     station.set_firmware(str(a["kind"]), str(a.get("which") or "approved"))
+                elif path == "/api/auto_start":
+                    station.set_auto_start(bool(a.get("on")), str(a.get("operator", "")))
+                elif path.startswith("/api/rack/"):
+                    if not rack:
+                        return self._json({"error": rack_error or "ไม่มีชั้นวาง"}, 409)
+                    what = path[len("/api/rack/"):]
+                    if what == "answer":
+                        rack.answer(int(a["qid"]), a.get("value"))
+                    elif what == "start":
+                        rack.start(str(a["sn"]), str(a.get("operator", "")))
+                    elif what == "start_all":
+                        return self._json({"started": rack.start_all(str(a.get("operator", "")))})
+                    elif what == "stop":
+                        rack.stop(str(a["sn"]))
+                    elif what == "auto":
+                        rack.auto = bool(a.get("on"))
+                        rack.operator = str(a.get("operator", ""))
+                    else:
+                        return self._json({"error": "unknown"}, 404)
                 elif path == "/api/start_all":
                     return self._json({"started": station.start_all(a.get("operator", ""))})
                 elif path == "/api/stop":
@@ -154,14 +178,20 @@ def open_window(url: str) -> None:
 def serve(product: str = "mcold", host: str = "127.0.0.1", port: int = 8765, demo: bool = False,
           browser: bool = True, db_path: str | None = None, site_path: str | None = None,
           speed: float = 0.4) -> None:
+    from .mqttlink import Fleet, LinkError, connect
+    from .remote import Rack
+    rack, rack_error = None, ""
     if demo:
-        from .sim import SimHardware, demo_setup
-        from .site import Site, Wifi
+        from .sim import SimBroker, SimHardware, demo_setup
+        from .site import Factory, Site, Wifi
         root = tempfile.mkdtemp(prefix="mflash-demo-")
-        bus = demo_setup(root, speed=speed)
-        site = Site(station="demo", wifi=[Wifi("Factory-AP", "demo-password")],
+        broker = SimBroker(speed=speed, in_range={"mCOLD-Line"})
+        bus = demo_setup(root, speed=speed, broker=broker)
+        site = Site(station="demo", wifi=[Wifi("Customer-WiFi", "demo-password")],
                     mqtt={"host": "broker.example", "port": 1883, "username": "demo",
                           "password": "demo-secret"},
+                    factory=Factory("mCOLD-Line", "line-password", "10.20.0.100", "10.20.0.1",
+                                    "255.255.255.0"),
                     path=os.path.join(root, "site.ini"))     # the demo never touches the real one
         station = Station(product, Db(os.path.join(root, "demo.db")), site, hw=SimHardware(bus),
                           layout_path=os.path.join(root, "slots.json"), demo=True)
@@ -169,10 +199,22 @@ def serve(product: str = "mcold", host: str = "127.0.0.1", port: int = 8765, dem
             s.location = f"1-1.{i + 1}"
         station.on_clear = bus.replace
         station.set_lot("mCDV1-L0169-1069")
+        station.set_stage("usb_quick")      # the line as it runs now: short on USB, the rest on the rack
+        rack = Rack(station, Fleet(broker.connect("mflash-demo")), time_scale=max(speed, 0.05),
+                    debug_dir=os.path.join(root, "debug"))
     else:
         station = Station(product, Db(db_path), sitelib.load(site_path))
+        if station.site.rack_broker().get("host"):
+            try:
+                rack = Rack(station, Fleet(connect(station.site)))
+            except LinkError as e:
+                rack_error = str(e)
+        else:
+            rack_error = "ยังไม่ได้ตั้ง MQTT broker ในหน้าตั้งค่า"
     station.watch()
-    httpd = ThreadingHTTPServer((host, port), make_handler(station))
+    if rack:
+        rack.watch()
+    httpd = ThreadingHTTPServer((host, port), make_handler(station, rack, rack_error))
     url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '') else host}:{httpd.server_port}/"
     print(f"mflash station{' (DEMO: simulated boxes)' if demo else ''}: {url}")
     if host not in ("127.0.0.1", "localhost"):

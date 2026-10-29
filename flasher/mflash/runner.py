@@ -489,7 +489,9 @@ class Runner:
         lines: list[tuple[str, str]] = []           # (command, pattern its reply must match)
         need = set(st.get("require", []) or [])
         out_all = ""
-        if st.get("wifi", True):
+        if st.get("factory"):
+            lines += self._factory_lines(box, need, run_id)
+        if st.get("wifi", True) and st.get("customer_wifi", True):
             if not s.wifi and "wifi" in need:
                 raise StepFailed(f"no [wifi.N] networks in {s.path}")
             if st.get("replace_wifi") and s.wifi:
@@ -532,6 +534,31 @@ class Runner:
             if not re.search(pat, out, re.M):
                 raise StepFailed(f"'{self._masked(cmd)}' refused", out_all)
         return StepResult(PASS, f"{len(lines)} settings", out_all)
+
+    def _factory_lines(self, box: Box, need: set, run_id: int) -> list[tuple[str, str]]:
+        """The line's Wi-Fi, with the address of the box's unit number: the rack finds
+        a box by its label, and the address says which box is answering."""
+        f = self.site.factory
+        if not f.ssid:
+            if "factory" in need:
+                raise StepFailed(f"ยังไม่ได้ตั้ง Wi-Fi โรงงาน ([factory] ใน {self.site.path})")
+            return []
+        out = [(f"wifi add {f.ssid} {f.password}".rstrip(), r"stored \(")]
+        if f.ip_base:
+            unit = self.p.unit_from_sn(box.sn)
+            if unit is None:
+                raise StepFailed(f"ไม่รู้เลขเครื่องของ SN '{box.sn}' จึงให้ IP ไม่ได้")
+            if not 1 <= unit <= f.capacity():
+                raise StepFailed(f"เลขเครื่อง {unit} เกิน IP pool ({f.ip_for(1)} + {f.capacity()} เครื่อง)")
+            ip = f.ip_for(unit)
+            for r in self.db.q("SELECT v.mac, d.sn FROM value v LEFT JOIN device d ON d.mac=v.mac "
+                               "WHERE v.key='factory_ip' AND v.val=? AND v.mac<>?", (ip, box.mac)):
+                raise StepFailed(f"IP {ip} ยังเป็นของกล่อง {r['sn'] or r['mac']} ที่ยังไม่ส่งมอบ Wi-Fi "
+                                 "(ลบบันทึกในสรุป SN หรือส่งมอบกล่องนั้นก่อน)")
+            out.append((f"wifi ip {f.ssid} {ip} {f.gateway} {f.subnet} {f.dns}".rstrip(),
+                        r"fixed address"))
+            self.db.set_value(box.mac, "factory_ip", ip, run_id)
+        return out
 
     def step_calibrate(self, box: Box, st: dict, run_id: int) -> StepResult:
         """One-point offset against a reference thermometer.

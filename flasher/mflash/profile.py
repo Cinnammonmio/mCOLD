@@ -22,6 +22,12 @@ STEP_TYPES = {
     "nmea", "version", "calibrate", "note", "chip",
 }
 
+# what the rack (remote.py) runs over Wi-Fi -> MQTT, on boxes off the dock
+RACK_STEP_TYPES = {
+    "online", "status", "rpc", "identify_confirm", "debug_pull", "config_doc", "ota",
+    "wifi_handover",
+}
+
 
 class ProfileError(Exception):
     pass
@@ -52,6 +58,10 @@ class Profile:
     stages: dict[str, list[dict]]
     sequence: list[str]
     modes: list[dict] = field(default_factory=list)
+    rack: list[dict] = field(default_factory=list)    # the rack's steps, by MQTT
+    # the ways a new box goes through the line; a box that has passed all the
+    # stages of one of them is done (the SN summary's PASS)
+    routes: list[list[str]] = field(default_factory=list)
     config_keys: dict = field(default_factory=dict)
     chip_expect: dict = field(default_factory=dict)
     incomplete: list[str] = field(default_factory=list)
@@ -83,6 +93,21 @@ class Profile:
     @property
     def unit_max(self) -> int:
         return 10 ** int(self.sn.get("unit_digits", 3)) - 1
+
+    def unit_from_sn(self, sn: str) -> int | None:
+        """The unit number at the end of an SN, whatever its lot."""
+        digits = int(self.sn.get("unit_digits", 3))
+        tail = sn.rsplit(self.sn.get("unit_sep", "-"), 1)[-1] if sn else ""
+        return int(tail) if tail.isdigit() and len(tail) == digits else None
+
+    def stage_names(self) -> list[str]:
+        """Every stage a box can have a result for, in the order of the line."""
+        out = []
+        for r in [self.sequence, *self.routes]:
+            for s in r:
+                if s not in out:
+                    out.append(s)
+        return out
 
     def make_sn(self, lot: str, unit: int) -> str:
         return f"{lot}{self.sn.get('unit_sep', '-')}{unit:0{int(self.sn.get('unit_digits', 3))}d}"
@@ -124,7 +149,11 @@ def load(product: str) -> Profile:
             modes=[{"name": m["name"], "label": m.get("label", m["name"]), "stages": list(m["stages"])}
                    for m in (d.get("modes") or [])],
             chip_expect=d.get("chip_expect", {}), incomplete=d.get("incomplete", []) or [],
+            rack=list(d.get("rack") or []),
+            routes=[list(r) for r in (d.get("routes") or [])],
             path=path)
+        if not p.routes:
+            p.routes = [list(p.sequence)]
     except (KeyError, TypeError, ValueError) as e:
         raise ProfileError(f"{path}: {e!r}") from e
     problems = validate(p)
@@ -142,6 +171,17 @@ def validate(p: Profile) -> list[str]:
         for s in m["stages"]:
             if s not in p.stages:
                 out.append(f"mode {m['name']} names stage '{s}', which is not defined")
+    for r in p.routes:
+        for s in r:
+            if s not in p.stages and not (s == "rack" and p.rack):
+                out.append(f"route {r} names stage '{s}', which is not defined")
+    for i, st in enumerate(p.rack):
+        if st.get("type") not in RACK_STEP_TYPES:
+            out.append(f"rack step {i + 1}: unknown type {st.get('type')!r}")
+        elif "name" not in st:
+            out.append(f"rack step {i + 1}: no name")
+        elif st["type"] == "ota" and st.get("firmware", "production") not in p.firmware:
+            out.append(f"rack step {i + 1}: firmware {st.get('firmware')!r} not in firmware:")
     for sname, steps in p.stages.items():
         for i, st in enumerate(steps or []):
             where = f"stage {sname} step {i + 1}"

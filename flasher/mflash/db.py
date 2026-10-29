@@ -111,6 +111,12 @@ class Db:
         v = val if isinstance(val, str) else json.dumps(val)
         self._x("INSERT OR REPLACE INTO value VALUES (?,?,?,?,?)", (mac, key, v, run_id, _now()))
 
+    def values(self, mac: str) -> dict[str, str]:
+        return {r["key"]: r["val"] for r in self.q("SELECT key, val FROM value WHERE mac=?", (mac,))}
+
+    def del_value(self, mac: str, key: str) -> None:
+        self._x("DELETE FROM value WHERE mac=? AND key=?", (mac, key))
+
     def history(self, mac_or_sn: str = "", limit: int = 50) -> list[sqlite3.Row]:
         if mac_or_sn:
             return self.q("SELECT * FROM run WHERE mac=? OR sn=? ORDER BY id DESC LIMIT ?",
@@ -120,10 +126,17 @@ class Db:
     def steps(self, run_id: int) -> list[sqlite3.Row]:
         return self.q("SELECT * FROM step WHERE run_id=? ORDER BY idx", (run_id,))
 
-    def summary(self, product: str, sequence: list[str], prefix: str = "",
+    def summary(self, product: str, routes: list[list[str]], prefix: str = "",
                 since: str = "") -> list[dict]:
         """One row per box whose SN starts with `prefix` (or per box seen since
-        `since` that has no SN yet): what the line needs to know about it."""
+        `since` that has no SN yet): what the line needs to know about it.
+        A box is PASS when it has passed every stage of one of the `routes`
+        (the dock's, or USB-quick + rack)."""
+        if routes and isinstance(routes[0], str):
+            routes = [routes]
+        sequence = []
+        for r in routes:
+            sequence += [s for s in r if s not in sequence]
         if prefix:
             devs = self.q("SELECT * FROM device WHERE product=? AND sn LIKE ? ORDER BY sn",
                           (product, prefix.replace("%", "") + "%"))
@@ -153,10 +166,10 @@ class Db:
                             "detail": bad[0]["detail"] if bad else ""}
             vals = {v["key"]: v["val"] for v in self.q("SELECT * FROM value WHERE mac=?", (d["mac"],))}
             fw = vals.get("firmware_production", "")
-            if fail:
+            if any(r and all(stages.get(s) == "PASS" for s in r) for r in routes):
+                result, fail = "PASS", None     # a box failed on one route may pass another
+            elif fail:
                 result = "FAIL"
-            elif stages and all(v == "PASS" for v in stages.values()):
-                result = "PASS"
             else:
                 result = "INCOMPLETE"
             out.append({
@@ -167,6 +180,7 @@ class Db:
                 "station": last["station"] if last else "",
                 "unapproved": bool(last["unapproved"]) if last else False,
                 "first_seen": d["first_seen"],
+                "ip": vals.get("factory_ip", ""),
             })
         return out
 

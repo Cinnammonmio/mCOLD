@@ -29,11 +29,12 @@ from .db import Db
 from .ports import Port, UsbIds, norm_mac
 from .runner import Box, Hardware, Runner, StepFailed
 from . import site as sitelib
-from .site import Site, Wifi
+from .site import Factory, Site, Wifi
 from .ui import Ui
 
 STAGE_LABELS = {"test": "ทดสอบโมดูล", "production": "ลง firmware จริง", "setup": "ตั้งค่า",
-                "verify": "ตรวจก่อนส่ง", "update": "Flash ใหม่"}
+                "verify": "ตรวจก่อนส่ง", "update": "Flash ใหม่", "quick": "USB เร็ว",
+                "rack": "ชั้นวาง (MQTT)"}
 
 
 def stage_label(s: str) -> str:
@@ -78,6 +79,8 @@ class Slot:
         self.started = 0.0
         self.finished = 0.0
         self.left = False         # the finished box has been taken out
+        self.auto_tried = False   # auto-start had its go at the box in the slot
+        self.auto_error = ""      # why it could not start it
         self.unit: int | None = None   # the unit number this slot gives its box
         self.unit_auto = True          # suggested by the station, not typed
         self.existing_sn = ""          # the box came with an SN already (a rework)
@@ -181,6 +184,8 @@ class Station:
         self.profile_error = ""
         self._fw_cache: tuple[float, str, list] = (0.0, "", [])
         self.on_clear = None      # demo: a fresh simulated board in the slot
+        self.auto_start = False   # a box put in a ready slot starts by itself
+        self.auto_operator = ""
         self.set_product(product)
         self._load_layout()
 
@@ -307,7 +312,21 @@ class Station:
             "ota_base": st.ota_base,
             "config": dict(st.config),
             "config_keys": keys,
+            "factory": {"ssid": st.factory.ssid, "has_password": bool(st.factory.password),
+                        "ip_base": st.factory.ip_base, "gateway": st.factory.gateway,
+                        "subnet": st.factory.subnet, "dns": st.factory.dns,
+                        "first": st.factory.ip_for(1) if st.factory.ip_base else "",
+                        "capacity": self._capacity(st.factory)},
+            "station_mqtt": {"username": st.station_mqtt.get("username", ""),
+                             "has_password": bool(st.station_mqtt.get("password"))},
         }
+
+    @staticmethod
+    def _capacity(f: Factory) -> int:
+        try:
+            return f.capacity()
+        except ValueError:
+            return 0
 
     def save_settings(self, d: dict) -> str:
         """The settings page's form back into site.ini. A password left out (None)
@@ -350,9 +369,21 @@ class Station:
             if r and not r["min"] <= n <= r["max"]:
                 bad.append(f"ค่าตั้ง {k}: {n} อยู่นอกช่วง {r['min']}–{r['max']}")
             config[k] = n
+        f = d.get("factory") or {}
+        fpw = f.get("password")
+        factory = Factory(ssid=str(f.get("ssid", "")).strip(),
+                          password=old.factory.password if fpw is None else str(fpw),
+                          **{k: str(f.get(k, "")).strip() for k in ("ip_base", "gateway", "subnet", "dns")})
+        sm = d.get("station_mqtt") or {}
+        spw = sm.get("password")
+        station_mqtt = {"username": str(sm.get("username", "")).strip(),
+                        "password": old.station_mqtt.get("password", "") if spw is None else str(spw)}
+        # no login of its own: the boxes' login, password and all
+        station_mqtt = {k: v for k, v in station_mqtt.items() if v} if station_mqtt["username"] else {}
         new = Site(station=str(d.get("station", "")).strip(), wifi=wifi, mqtt=mqtt,
-                   ota_base=str(d.get("ota_base", "")).strip(), config=config, path=old.path)
-        bad = sitelib.validate(new) + bad
+                   ota_base=str(d.get("ota_base", "")).strip(), config=config, factory=factory,
+                   station_mqtt=station_mqtt, path=old.path)
+        bad = sitelib.validate(new, self.profile.unit_max if self.profile else 999) + bad
         if bad:
             raise RuntimeError("\n".join(bad))
         path = sitelib.save(new)
@@ -381,6 +412,12 @@ class Station:
         if lot and self.profile and self.profile.lot_ok(lot):
             self.lot = lot
         self.fw_choice = {k: v for k, v in (d.get("firmware") or {}).items() if isinstance(v, str)}
+        self.auto_start = bool(d.get("auto_start", False))
+
+    def set_auto_start(self, on: bool, operator: str = "") -> None:
+        self.auto_start = bool(on)
+        self.auto_operator = operator
+        self._write_settings(auto_start=self.auto_start)
 
     def save_layout(self) -> str:
         self._write_settings(slots=[s.location for s in self.slots])
@@ -500,7 +537,7 @@ class Station:
         prefix = p.make_sn(lot, 0)[:-int(p.sn.get("unit_digits", 3))] if lot else ""
         today = dt.datetime.now().astimezone().replace(hour=0, minute=0, second=0,
                                                        microsecond=0).isoformat(timespec="seconds")
-        rows = self.db.summary(p.product, list(p.sequence), prefix=prefix, since=today)
+        rows = self.db.summary(p.product, p.routes, prefix=prefix, since=today)
         for r in rows:
             r["unit"] = p.unit_of(r["sn"], lot) if lot else None
             r["stage_labels"] = {k: stage_label(k) for k in r["stages"]}
@@ -510,7 +547,7 @@ class Station:
         missing = [u for u in range(1, units[-1]) if u not in set(units)] if units else []
         counts = {k: sum(1 for r in rows if r["result"] == k) for k in ("PASS", "FAIL", "INCOMPLETE")}
         return {"lot": lot, "product": p.product, "rows": rows, "counts": counts, "missing": missing,
-                "sequence": [{"name": x, "label": stage_label(x)} for x in p.sequence],
+                "sequence": [{"name": x, "label": stage_label(x)} for x in p.stage_names()],
                 "made": dt.datetime.now().astimezone().isoformat(timespec="seconds")}
 
     def summary_csv(self, lot: str | None = None) -> str:
@@ -567,16 +604,35 @@ class Station:
                     elif s.left:             # a new box where the finished one was
                         s.reset()
                         s.forget_unit()
+                        s.auto_tried, s.auto_error = False, ""
                         s.state = "ready"
                     continue
                 s.state = "ready" if p else "empty"
                 if not p:
                     s.forget_unit()
+                    s.auto_tried, s.auto_error = False, ""
                 elif self.profile and self.ids.is_app(p) and self.profile.sn_ok(p.serial):
                     s.existing_sn, s.unit = p.serial, None      # it has its SN already
                 else:
                     s.existing_sn = ""
             self._suggest_units()
+            if self.auto_start:
+                self._auto_start()
+
+    def _auto_start(self) -> None:
+        """Each box put in a ready slot starts once by itself; one it could not start
+        says why in its slot and waits for the person."""
+        for s in self.slots:
+            if s.state != "ready" or not s.port or s.busy or s.auto_tried:
+                continue
+            if not s.existing_sn and (not self.lot or s.unit is None):
+                continue                 # no number to give it yet: the slot says so
+            s.auto_tried = True
+            try:
+                self.start(s.index, self.auto_operator or "auto")
+                s.log.append(time.strftime("%H:%M:%S ") + "เริ่มเองเมื่อเสียบ")
+            except RuntimeError as e:
+                s.auto_error = str(e)
 
     def watch(self, every: float = 1.0) -> None:
         """Keep the slots up to date with the bus, from a thread of its own."""
@@ -674,6 +730,7 @@ class Station:
                 raise RuntimeError(f"ช่อง {i + 1} กำลังทำงานอยู่")
             s.reset()
             s.forget_unit()
+            s.auto_tried, s.auto_error = False, ""
             if self.on_clear:
                 self.on_clear(i)
             s.state = "ready" if s.port else "empty"
@@ -711,6 +768,8 @@ class Station:
                 "sn_planned": not (box and box.sn) and not s.existing_sn and bool(self.planned_sn(s)),
                 "unit": s.unit, "unit_auto": s.unit_auto, "existing_sn": s.existing_sn,
                 "unit_conflict": self.unit_conflict(s),
+                "auto_error": s.auto_error if s.state == "ready" else "",
+                "ip": self._slot_ip(s),
                 "firmware": fw,
                 # before a run, the stages it would go through, so the slot shows the plan
                 "stages": [{"name": st, "label": stage_label(st), "result": s.results.get(st, "")}
@@ -746,9 +805,24 @@ class Station:
             "firmware_options": self.firmware_options(),
             "busy": any(s.busy for s in self.slots),
             "counts": self.counts, "station": self.site.station, "demo": self.demo,
+            "auto_start": self.auto_start,
             "now": dt.datetime.now().strftime("%H:%M:%S"),
             "slots": slots,
         }
+
+    def _slot_ip(self, s: Slot) -> str:
+        """The line's address the box gets (or got) from the IP pool, when its run gives one."""
+        f = self.site.factory
+        stages = s.stages or (self.stages() if s.state == "ready" else [])
+        if not f.ip_base or not self.profile or not any(
+                st.get("factory") for x in stages for st in self.profile.stages.get(x) or []):
+            return ""
+        sn = s.box.sn if s.box and s.box.sn else self.planned_sn(s)
+        u = self.profile.unit_from_sn(sn) if sn else None
+        try:
+            return f.ip_for(u) if u and u <= f.capacity() else ""
+        except ValueError:
+            return ""
 
     def _progress(self, s: Slot) -> float:
         """Steps done over steps in the whole run, 0..1, for the slot's ring."""

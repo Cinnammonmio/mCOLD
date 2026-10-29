@@ -25,13 +25,18 @@ verify      health ครบ, logtest 14 ข้อ, ไฟ, เสียง, ต
 ขั้นทดสอบไม่มีการวัดด้วยมัลติมิเตอร์ ไม่ทดสอบ charger และไม่ถอด/เสียบโพรบ เพราะกล่องประกอบเสร็จแล้ว
 คนตอบแค่ 2 ข้อ: ไฟ LED และเสียง buzzer
 
+**ผลิตทีละมาก (เช่น 100 เครื่อง):** โหมด **USB เร็ว → ชั้นวาง MQTT** ให้กล่องอยู่ที่ Dock แค่ราว 1.5 นาที
+(firmware, SN, Wi-Fi โรงงาน + IP คงที่ตามเลขเครื่อง, broker) แล้วทดสอบ ดึง debug ส่งค่าตั้ง และส่งมอบ Wi-Fi
+ผ่าน Wi-Fi → MQTT บนชั้นวางพร้อมกันหลายสิบกล่อง ดู [docs/rack.md](docs/rack.md)
+(ต้องใช้ firmware ที่มีคำสั่งผ่าน MQTT: [docs/firmware-mqtt-rpc.md](docs/firmware-mqtt-rpc.md))
+
 ## ติดตั้ง
 
 Python 3.10 ขึ้นไป
 
 ```bash
 cd flasher
-pip install -r requirements.txt       # esptool, pyserial, PyYAML
+pip install -r requirements.txt       # esptool, pyserial, PyYAML, paho-mqtt (ชั้นวาง)
 python -m mflash --help
 ```
 
@@ -240,13 +245,27 @@ firmware อยู่ที่ไหนและ build อย่างไร, �
 | `provision` | Wi-Fi, broker, OTA base, config จาก `site.ini` |
 | `calibrate` | สอบเทียบ 1 จุดกับเทอร์โมมิเตอร์อ้างอิง (**ปิดไว้** จนกว่าจะลองกับบอร์ดจริง) |
 | `reboot`, `note` | |
+| `provision` + `factory: true` | Wi-Fi โรงงาน + IP คงที่ = IP ฐาน + เลขเครื่อง (`customer_wifi: false` = Wi-Fi ลูกค้าไปใส่ตอนส่งมอบ) |
+
+ขั้นของ**ชั้นวาง** (`rack:` ใน profile, รันผ่าน MQTT โดย `mflash/remote.py`):
+
+| type | ทำอะไร |
+|---|---|
+| `online` | กล่องขึ้น broker, `ip: true` IP ต้องตรงกับเลขเครื่อง, `firmware` เวอร์ชันต้องตรงกับที่ flash |
+| `status` | ค่าใน status (`expect` เช่น `temp.ok: true`, `range` เช่น `temp.c: [-40, 85]`) |
+| `rpc` | ส่งคำสั่ง `cmd` + `args` แล้วตรวจคำตอบด้วย `expect` / `range` |
+| `identify_confirm` | สั่งกล่องกะพริบ + บี๊บ แล้วถามคน (มีทำซ้ำ) |
+| `debug_pull` | `GET_DEBUG` + ทุกอย่างที่กล่องค้างไว้บน broker → `records/debug/<SN>/` |
+| `config_doc` | ส่งค่าตั้งของ site เป็นเอกสารตั้งค่า รอ `config/state` |
+| `ota` | ส่งชื่อไฟล์ firmware รอ `ota/state` = ok |
+| `wifi_handover` | `FACTORY_DONE`, ใส่ Wi-Fi ลูกค้า แล้วลบ Wi-Fi โรงงาน: ข้อสุดท้ายเสมอ |
 
 ทุกขั้นมี `optional` (ไม่ผ่านก็ไปต่อ), `enabled: false`, `retries` / `retry_wait`
 และ `help` (ข้อความบอกสาเหตุที่น่าจะเป็นเมื่อไม่ผ่าน)
 
 ## สถานะ
 
-**ยังไม่ได้รันกับบอร์ดจริง** ที่ทดสอบแล้ว (`python -m pytest`, 38 ข้อ):
+**ยังไม่ได้รันกับบอร์ดจริง** ที่ทดสอบแล้ว (`python -m pytest`, 53 ข้อ):
 
 - ทุกขั้นตั้งแต่ test จนถึง verify กับบอร์ดจำลอง (`tests/fakes.py`) ที่ทำตัวตามที่วัดจากบอร์ดจริง:
   เปลี่ยนพอร์ต/PID/serial ตาม firmware ที่รัน, `flash` เข้า ROM, `sn set` มีผลหลัง reboot
@@ -260,6 +279,13 @@ firmware อยู่ที่ไหนและ build อย่างไร, �
   SN ที่พิมพ์ซ้ำถูกถามใหม่, ลบจากสรุป SN แล้วเลขว่าง,
   HTTP API ทุกคำสั่ง · เปิดหน้าจริงใน Chromium (Playwright) กดเริ่มทุกช่อง ตอบทุกข้อจนจบ
   แล้ววัดที่ 6 ขนาดจอว่าไม่มีอะไรล้นกรอบช่อง และ SN/MAC/FW ไม่ถูกซ่อนในสถานะใดเลย
+- USB เร็ว → ชั้นวาง กับ broker จำลอง (`tests/test_rack.py`): ไม่มีคำถามที่ Dock, IP ตามเลขเครื่อง,
+  IP ที่กล่องอื่นยังถือถูกปฏิเสธ, เริ่มเองเมื่อเสียบ, กล่องขึ้นชั้นวางแล้วเริ่มเอง, GNSS เสียไม่ผ่าน,
+  ตอบ "ไม่" / "ทำซ้ำ", กล่องหลุดกลางทาง, firmware ที่ไม่มีคำสั่ง MQTT ถูกหยุดที่ Dock,
+  ส่งมอบแล้วกล่องออกจาก Wi-Fi โรงงาน และ server ของลูกค้าเริ่ม rev 1 ได้, **100 กล่องพร้อมกัน**
+  · `PahoLink` กับ broker MQTT จริง (amqtt) ส่ง/รับ retained และ rpc ได้
+- firmware ([docs/firmware-mqtt-rpc.patch](docs/firmware-mqtt-rpc.patch)) **ยังไม่ได้ build**: เขียนบน
+  `firmware/p7-power` และ `git apply` ได้ ต้อง build และลองกับบอร์ดตาม [docs/firmware-mqtt-rpc.md](docs/firmware-mqtt-rpc.md) §6
 
 ต้องลองกับบอร์ดจริงก่อนใช้ในสายผลิต: รูปแบบผลของ `esptool flash_id` กับชิปจริง, จังหวะเวลาของ
 `logtest`/`ledtest`/`sync`, ข้อความของ bringup `power` ตอนชาร์จ, การรันพร้อมกัน 6 เครื่องผ่าน Dock,
@@ -280,10 +306,12 @@ mflash/
   db.py         บันทึก SQLite
   site.py       site.ini
   ui.py         คุยกับคนที่สถานี (terminal)
-  station.py    หน้าต่าง 6 ช่อง: ช่อง ↔ ตำแหน่ง USB, thread ต่อช่อง, คำถาม/คำตอบ, หยุด
+  station.py    หน้าต่าง 6 ช่อง: ช่อง ↔ ตำแหน่ง USB, thread ต่อช่อง, คำถาม/คำตอบ, หยุด, เริ่มเองเมื่อเสียบ
+  mqttlink.py   ต่อ broker (paho-mqtt), สิ่งที่แต่ละกล่องส่งมา ตาม SN, ส่ง rpc / เอกสารตั้งค่า / firmware
+  remote.py     ชั้นวาง: ขั้น rack: ผ่าน MQTT, thread ต่อกล่อง, คิวคำถาม
   gui.py        เว็บเซิร์ฟเวอร์ของหน้าต่าง (standard library) · gui.html หน้าต่างเอง
-  sim.py        บอร์ดจำลองสำหรับ test และ --demo
+  sim.py        บอร์ดจำลองสำหรับ test และ --demo, broker จำลองและ Wi-Fi/MQTT ของกล่อง
 profiles/       mcold.yaml, etemp.yaml
-docs/           ภาพหน้าต่าง
+docs/           ภาพหน้าต่าง, rack.md (ชั้นวาง), firmware-mqtt-rpc.md + .patch
 tests/          บอร์ดจำลองและ test
 ```

@@ -220,6 +220,9 @@ a.btn { text-decoration: none; }
   grid-auto-rows: auto; align-content: start; align-items: start; flex: none;
 }
 @media (max-width: 1240px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1500px) { .brand-text { display: none; } }
+@media (max-width: 1400px) { .top { gap: 10px 10px; } #stage { max-width: 210px; } .ctl.lot input { width: 140px; }
+  .ctl input#operator { width: 64px; } .seg button { padding: 0 10px; } }
 @media (max-width: 1640px) { .clock { display: none; } .ctl label[for=operator], .ctl label[for=product] { display: none; } }
 @media (max-width: 760px) {
   .grid { grid-template-columns: 1fr; padding: 0 16px 16px; }
@@ -460,6 +463,85 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
 }
 .toast.ok { border-color: color-mix(in srgb, var(--pass) 50%, transparent); }
 
+/* ---- view switch, auto-start ---- */
+.runbox { display: flex; flex-direction: column; gap: 6px; justify-content: center; flex: 0 0 auto; }
+.runbox .btn, .runbox .switch { height: 38px; width: 100%; justify-content: center; }
+.seg { display: inline-flex; padding: 3px; gap: 3px; border-radius: 12px; background: var(--surface);
+  border: 1px solid var(--line); }
+.seg button { height: 34px; padding: 0 14px; border: 0; border-radius: 9px; background: transparent; cursor: pointer;
+  color: var(--muted); font-weight: 600; font-size: 14px; display: inline-flex; align-items: center; gap: 8px; }
+.seg button.on { background: var(--surface-2); color: var(--ink); box-shadow: 0 0 0 1px var(--line-2) inset; }
+.seg button b { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; font-size: 11.5px;
+  display: inline-grid; place-items: center; background: var(--surface-2); color: var(--ink-2); }
+.seg button b.hot { background: var(--ask); color: #1a1205; }
+.seg button b:empty { display: none; }
+.switch { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--line); cursor: pointer; font-size: 13px; color: var(--ink-2);
+  white-space: nowrap; user-select: none; }
+.switch input { appearance: none; width: 34px; height: 20px; border-radius: 999px; background: var(--line-2);
+  position: relative; cursor: pointer; margin: 0; transition: background .2s; flex: none; }
+.switch input::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--ink); transition: transform .2s; }
+.switch input:checked { background: var(--pass); }
+.switch input:checked::after { transform: translateX(14px); background: #fff; }
+.switch:has(input:checked) { border-color: color-mix(in srgb, var(--pass) 45%, transparent); color: var(--ink); }
+.idrow.ip .ipv { color: var(--accent) !important; }
+
+/* ---- the rack: boxes off the dock, over Wi-Fi -> MQTT ---- */
+.rack { display: flex; flex-direction: column; gap: 14px; padding: 0 28px 24px; }
+.rbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; }
+.rbar .kpi { flex: 1 1 100px; min-width: 96px; cursor: pointer; }
+.rbar .kpi.sel { border-color: var(--c); box-shadow: 0 0 0 1px var(--c) inset; }
+.kpi.k-off { --c: var(--faint); }
+.rlink { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); padding: 0 14px;
+  border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.rlink i { width: 9px; height: 9px; border-radius: 50%; background: var(--fail); }
+.rlink.up i { background: var(--pass); box-shadow: 0 0 0 4px color-mix(in srgb, var(--pass) 20%, transparent); }
+.rtools { display: flex; gap: 10px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+.rq { border-radius: var(--radius); padding: 16px 20px; display: flex; gap: 20px; align-items: center; flex-wrap: wrap;
+  background: color-mix(in srgb, var(--ask) 10%, var(--surface-solid)); border: 1.5px solid color-mix(in srgb, var(--ask) 60%, transparent);
+  box-shadow: 0 24px 60px -28px color-mix(in srgb, var(--ask) 60%, transparent); }
+.rq.idle { background: var(--surface); border: 1px dashed var(--line-2); box-shadow: none; color: var(--muted);
+  font-size: 14px; padding: 12px 20px; }
+.rq .who { display: flex; flex-direction: column; align-items: center; min-width: 110px; }
+.rq .who small { font-size: 12px; color: var(--muted); }
+.rq .who b { font-size: 54px; font-weight: 300; line-height: 1; letter-spacing: -2px; font-variant-numeric: tabular-nums; color: var(--ask); }
+.rq .what { flex: 1 1 320px; min-width: 0; }
+.rq .what p { margin: 0 0 4px; font-size: 19px; font-weight: 600; line-height: 1.4; }
+.rq .what .meta { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+.rq .btns { display: flex; gap: 10px; }
+.rq .btns button { height: 52px; min-width: 120px; padding: 0 18px; border-radius: 14px; font-size: 16px; font-weight: 700;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent; }
+.rq .btns button kbd { font: 600 11px var(--mono); padding: 1px 6px; border-radius: 6px; background: rgba(0,0,0,.18); }
+.rq .yes { background: var(--pass); color: #04150d; }
+.rq .no { background: transparent; color: var(--fail); border-color: color-mix(in srgb, var(--fail) 60%, transparent) !important; }
+.rq .again { background: transparent; color: var(--ink-2); border-color: var(--line-2) !important; min-width: 0 !important; }
+.rq .next { flex-basis: 100%; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--muted); }
+.rq .next span { font-family: var(--mono); padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--ask) 16%, transparent); color: var(--ink-2); }
+.rgrid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(178px, 1fr)); }
+.tile { --c: var(--faint); position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 10px;
+  border-radius: 14px; background: var(--surface); border: 1px solid var(--line); cursor: pointer; overflow: hidden; min-width: 0; }
+.tile:hover { border-color: var(--line-2); }
+.tile[data-state=ready] { --c: var(--accent); } .tile[data-state=running] { --c: var(--run); }
+.tile[data-state=ask] { --c: var(--ask); border-color: color-mix(in srgb, var(--ask) 70%, transparent); }
+.tile[data-state=pass] { --c: var(--pass); border-color: color-mix(in srgb, var(--pass) 40%, transparent); }
+.tile[data-state=fail], .tile[data-state=stopped] { --c: var(--fail); border-color: color-mix(in srgb, var(--fail) 50%, transparent); }
+.tile[data-state=offline] { opacity: .7; border-style: dashed; }
+.tile .th { display: flex; align-items: center; gap: 8px; }
+.tile .u { font-size: 26px; font-weight: 300; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+.tile .badge { height: 24px; font-size: 12px; padding: 0 9px; margin-left: auto; }
+.tile[data-state=running] .badge::before, .tile[data-state=ask] .badge::before { animation: blink 1.2s ease-in-out infinite; }
+.tile .sn, .tile .ip { font-family: var(--mono); font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .ip { color: var(--ink-2); }
+.tile .bar { height: 4px; border-radius: 99px; background: var(--line-2); overflow: hidden; }
+.tile .bar i { display: block; height: 100%; background: var(--c); transition: width .4s; }
+.tile .st { font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 18px; }
+.tile[data-state=fail] .st { color: var(--fail); white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.tile .tb { position: absolute; right: 8px; bottom: 8px; display: none; gap: 4px; }
+.tile:hover .tb { display: flex; }
+.rempty { text-align: center; color: var(--muted); padding: 50px 20px; border: 1.5px dashed var(--line-2); border-radius: var(--radius); }
+@media (max-width: 760px) { .rack { padding: 0 16px 16px; } .rq .btns button { min-width: 90px; } }
+
 /* ---- short screens (a laptop, Windows display scaling): last, so it wins ---- */
 @media (max-height: 860px) {
   .top { padding-top: 10px; padding-bottom: 8px; }
@@ -482,6 +564,8 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
   .ask .btns button, .ask input { height: 32px; font-size: 13.5px; }
   .unitpick input, .unitpick .btn { height: 34px; }
   .btn { height: 34px; }
+  .runbox { flex-direction: row; }
+  .runbox .btn, .runbox .switch { height: 34px; width: auto; }
 }
 </style>
 </head>
@@ -490,6 +574,10 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
   <div class="brand">
     <div class="mark" data-icon="snow"></div>
     <div class="brand-text"><b>mCOLD Station</b><span id="subtitle">สถานีผลิต</span></div>
+  </div>
+  <div class="seg" id="view" role="tablist">
+    <button data-v="dock" class="on" role="tab"><span data-icon="plug"></span>Dock<b id="v-dock-n"></b></button>
+    <button data-v="rack" role="tab"><span data-icon="wifi"></span>ชั้นวาง<b id="v-rack-n"></b></button>
   </div>
   <div class="controls">
     <div class="ctl lot" id="lotctl" title="SN ส่วนที่เหมือนกันทั้งล็อต แต่ละช่องเติมเลขเครื่องเอง">
@@ -512,9 +600,9 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
       <button id="forgetlayout"><span data-icon="reset"></span>ล้างตำแหน่งช่อง</button>
     </div>
   </div>
-  <button class="btn go" id="startall" title="เริ่มทุกช่องที่พร้อม"><span data-icon="play"></span>เริ่มทุกช่อง</button>
 </header>
 
+<div id="dockview">
 <section class="overview">
   <div class="kpi k-ready"><span>พร้อมเริ่ม</span><b id="k-ready">0</b></div>
   <div class="kpi k-run"><span>กำลังทำ</span><b id="k-run">0</b></div>
@@ -522,6 +610,10 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
   <div class="kpi k-pass"><span>ผ่าน</span><b id="k-pass">0</b></div>
   <div class="kpi k-fail"><span>ไม่ผ่าน</span><b id="k-fail">0</b></div>
   <div class="fwbox"><span>Firmware ที่จะลง (เลือกได้เฉพาะที่อนุมัติแล้ว)</span><div class="fwrow" id="fw"></div></div>
+  <div class="runbox">
+    <button class="btn go" id="startall" title="เริ่มทุกช่องที่พร้อม"><span data-icon="play"></span>เริ่มทุกช่อง</button>
+    <label class="switch" id="autoctl" title="เสียบกล่องในช่องที่พร้อมแล้วเริ่มทันที ไม่ต้องกด"><input type="checkbox" id="auto">เริ่มเองเมื่อเสียบ</label>
+  </div>
 </section>
 
 <div class="guide" id="guide">
@@ -532,11 +624,32 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
     <span class="dot" style="background:var(--fail)"></span><b>แดง</b> = ไม่ผ่าน ดูสาเหตุในช่อง</span>
 </div>
 
-<div class="banner demo" id="demo" hidden><span data-icon="info"></span>โหมดสาธิต: กล่องจำลอง 5 ตัวใน 6 ช่อง · ช่อง 6 คือกล่องที่ GNSS ไม่ส่งข้อมูล จะไม่ผ่านขั้นทดสอบ · ไม่มีอะไรถูก flash จริง · กด "ล้าง" เพื่อใส่กล่องใหม่</div>
+<div class="banner demo" id="demo" hidden><span data-icon="info"></span>โหมดสาธิต: กล่องจำลอง 5 ตัวใน 6 ช่อง · ช่อง 6 คือกล่องที่ GNSS ไม่ส่งข้อมูล จะไม่ผ่านขั้นทดสอบ · ไม่มีอะไรถูก flash จริง · กด "ล้าง" = ถอดกล่องไปวางชั้นวาง แล้วใส่กล่องใหม่</div>
 <div class="banner warn" id="lotwarn" hidden><span data-icon="info"></span>ยังไม่ได้กรอกล็อต SN: กรอกที่ช่อง "ล็อต SN" ด้านบนก่อน ไม่งั้นโปรแกรมจะถามทั้งหมายเลขในแต่ละช่อง</div>
 <div class="banner err" id="err" hidden></div>
 
 <main class="grid" id="grid"></main>
+</div>
+
+<div id="rackview" class="rack" hidden>
+  <div class="banner err" id="rackerr" hidden style="margin:0"></div>
+  <div class="rbar">
+    <div class="rlink" id="rlink"><i></i><span>broker</span></div>
+    <div class="kpi k-off" data-f="offline"><span>ยังไม่ online</span><b id="rk-offline">0</b></div>
+    <div class="kpi k-run" data-f="running"><span>กำลังทำ</span><b id="rk-running">0</b></div>
+    <div class="kpi k-ask" data-f="ask" id="rk-ask-box"><span>รอคน</span><b id="rk-ask">0</b></div>
+    <div class="kpi k-pass" data-f="pass"><span>ส่งมอบแล้ว</span><b id="rk-pass">0</b></div>
+    <div class="kpi k-fail" data-f="fail"><span>ไม่ผ่าน</span><b id="rk-fail">0</b></div>
+    <div class="rtools">
+      <label class="switch" title="กล่องที่ online แล้วเริ่มเองทันที"><input type="checkbox" id="rauto">เริ่มเองเมื่อ online</label>
+      <button class="btn go" id="rstartall"><span data-icon="play"></span>เริ่ม / ทำซ้ำที่ไม่ผ่าน</button>
+    </div>
+  </div>
+  <div class="rq idle" id="rq">ไม่มีคำถามรอ · เมื่อกล่องต้องให้คนดู (ไฟ / เสียง) คำถามจะขึ้นที่นี่ทีละกล่อง</div>
+  <div class="rgrid" id="rgrid"></div>
+  <div class="rempty" id="rempty" hidden>ยังไม่มีกล่องของล็อตนี้บนชั้นวาง · ใช้โหมด <b>USB เร็ว → ชั้นวาง MQTT</b> ที่ Dock
+    แล้ววางกล่องที่ผ่านบนที่ชาร์จ USB ในระยะ Wi-Fi โรงงาน</div>
+</div>
 
 <dialog id="sumdlg">
   <header>
@@ -565,6 +678,19 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
     <h3>Wi-Fi ที่ใส่ให้ทุกกล่อง <span id="f-wcount"></span><button class="btn sm" id="f-addwifi"><span data-icon="plus"></span>เพิ่มเครือข่าย</button></h3>
     <div id="f-wifi"></div>
 
+    <h3>Wi-Fi โรงงาน + IP คงที่ (โหมด USB เร็ว → ชั้นวาง)</h3>
+    <div class="frow">
+      <label class="fld" style="flex:1 1 180px"><span>ชื่อเครือข่ายโรงงาน (SSID, ไม่มีช่องว่าง)</span><input id="f-fssid" class="mono" maxlength="32"></label>
+      <label class="fld" style="flex:1 1 180px"><span>รหัสผ่าน</span><input id="f-fpass" type="password" autocomplete="new-password"></label>
+    </div>
+    <div class="frow" style="margin-top:8px">
+      <label class="fld" style="width:160px"><span>IP ฐาน (เครื่อง n = ฐาน + n)</span><input id="f-fbase" class="mono" placeholder="10.20.0.100"></label>
+      <label class="fld" style="width:150px"><span>Gateway</span><input id="f-fgw" class="mono"></label>
+      <label class="fld" style="width:150px"><span>Subnet</span><input id="f-fsub" class="mono" placeholder="255.255.255.0"></label>
+      <label class="fld" style="width:150px"><span>DNS (ไม่ใส่ก็ได้)</span><input id="f-fdns" class="mono"></label>
+    </div>
+    <div class="formnote" id="f-fnote" style="margin-top:6px"></div>
+
     <h3>Broker (MQTT)</h3>
     <div class="frow">
       <label class="fld" style="flex:2 1 220px"><span>Host</span><input id="f-mhost" class="mono" placeholder="ว่าง = ใช้ค่าที่ติดมากับ firmware"></label>
@@ -572,6 +698,11 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
       <label class="fld" style="flex:1 1 150px"><span>ชื่อผู้ใช้</span><input id="f-muser" class="mono" autocomplete="off"></label>
       <label class="fld" style="flex:1 1 180px"><span>รหัสผ่าน</span><input id="f-mpass" type="password" autocomplete="new-password"></label>
       <label class="chk"><input type="checkbox" id="f-mnopass">ไม่ใช้รหัสผ่าน</label>
+    </div>
+
+    <div class="frow" style="margin-top:8px">
+      <label class="fld" style="flex:1 1 180px"><span>Login ของสถานี (ชั้นวาง) · ว่าง = ใช้ login เดียวกับกล่อง</span><input id="f-suser" class="mono" autocomplete="off"></label>
+      <label class="fld" style="flex:1 1 180px"><span>รหัสผ่าน</span><input id="f-spass" type="password" autocomplete="new-password"></label>
     </div>
 
     <h3>OTA</h3>
@@ -584,7 +715,8 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
     <div class="formnote">
       ค่าใหม่ใช้กับงานที่เริ่ม<b>หลังบันทึก</b> · กล่องที่ทำเสร็จไปแล้ว: กด <b>ตั้งค่าใหม่</b> ในช่อง (หรือเลือกโหมด
       "เปลี่ยนตั้งค่า") เครือข่ายที่ลบออกจากรายการนี้จะถูกลบออกจากกล่องด้วย · รหัสผ่านไม่แสดงบนหน้าจอ
-      เว้นว่าง = ใช้รหัสเดิม · บันทึกใน <span class="mono" id="f-path"></span>
+      เว้นว่าง = ใช้รหัสเดิม · broker หรือ login ของสถานีที่เปลี่ยน ใช้กับชั้นวางหลัง<b>เปิดโปรแกรมใหม่</b>
+      · บันทึกใน <span class="mono" id="f-path"></span>
     </div>
   </div>
 </dialog>
@@ -630,6 +762,7 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
     <div class="ids">
       <div class="idrow"><span class="k">SN</span><span class="sn">—</span></div>
       <div class="idrow two"><span class="k">MAC</span><span class="mac">—</span><span class="k">FW</span><span class="fwv">—</span></div>
+      <div class="idrow ip" hidden><span class="k">IP</span><span class="ipv">—</span></div>
     </div>
     <ol class="stages"></ol>
     <div class="act">
@@ -653,7 +786,7 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
       <div class="ask a-ask"></div>
       <div class="a-pass">
         <div class="big" data-icon="check"></div>
-        <div class="grow"><div class="t1">ผ่านทุกขั้น</div><div class="t2">ถอดกล่องออก แล้วเสียบตัวถัดไป</div>
+        <div class="grow"><div class="t1">ผ่านทุกขั้น</div><div class="t2 p-next">ถอดกล่องออก แล้วเสียบตัวถัดไป</div>
           <div class="redo"><button class="btn b-clear"><span data-icon="reset"></span>ล้าง</button></div></div>
       </div>
       <div class="a-fail failwhy">
@@ -695,6 +828,7 @@ const ICONS = {
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   flash: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
+  wifi: '<path d="M2 8.8a15 15 0 0 1 20 0M5 12.6a10 10 0 0 1 14 0M8.5 16.2a5 5 0 0 1 7 0M12 20h.01"/>',
 };
 function icon(name) { return '<svg class="i" viewBox="0 0 24 24" aria-hidden="true">' + (ICONS[name] || "") + "</svg>"; }
 function paintIcons(root) {
@@ -779,7 +913,7 @@ function makeCard(i) {
   const q = (s) => el.querySelector(s);
   const c = { el, i, qid: 0, stagesKey: "", mode: "",
     num: q(".num"), title: q(".title b"), port: q(".port"), badge: q(".badge"), elapsed: q(".elapsed"),
-    sn: q(".sn"), mac: q(".mac"), fwv: q(".fwv"), stages: q(".stages"),
+    sn: q(".sn"), mac: q(".mac"), fwv: q(".fwv"), stages: q(".stages"), iprow: q(".idrow.ip"), ipv: q(".ipv"),
     aReady: q(".a-ready"), aRun: q(".a-run"), aAsk: q(".a-ask"), aPass: q(".a-pass"), aFail: q(".a-fail"),
     unit: q(".unit"), up: q(".u-up"), dn: q(".u-dn"), rnote: q(".r-note"), unitpick: q(".unitpick"),
     ringval: q(".ring .val"), ringmid: q(".ring .mid"), rstage: q(".r-stage"), rstep: q(".r-step"),
@@ -862,6 +996,7 @@ function renderSlot(c, s) {
     if (s.existing_sn) { const em = document.createElement("em"); em.textContent = "SN เดิม"; c.sn.appendChild(em); }
   }
   text(c.mac, s.mac || "—"); text(c.fwv, s.firmware || "—");
+  c.iprow.hidden = !s.ip; text(c.ipv, s.ip || "");
 
   /* stepper */
   const key = s.stages.map((x) => x.name).join(",");
@@ -892,8 +1027,9 @@ function renderSlot(c, s) {
     c.unitpick.hidden = !lotSet || !!s.existing_sn;
     if (document.activeElement !== c.unit) c.unit.value = pad(s.unit);
     const clash = s.unit_conflict ? "เลขนี้ใช้แล้ว: " + s.unit_conflict : "";
-    text(c.rnote, s.existing_sn ? "กล่องนี้มี SN แล้ว จะใช้ SN เดิม" : !lotSet ? "ยังไม่ได้กรอกล็อต SN ด้านบน" : clash);
-    c.rnote.classList.toggle("bad", !!clash);
+    const bad = clash || s.auto_error || "";
+    text(c.rnote, s.existing_sn ? "กล่องนี้มี SN แล้ว จะใช้ SN เดิม" : !lotSet ? "ยังไม่ได้กรอกล็อต SN ด้านบน" : bad);
+    c.rnote.classList.toggle("bad", !!bad);
     c.unitpick.classList.toggle("bad", !!clash);
     c.start.disabled = !s.port || !!clash || !!state.profile_error || state.firmware.some((x) => !x.ok);
   }
@@ -906,6 +1042,11 @@ function renderSlot(c, s) {
     text(c.rstep, (s.step_name || "") + n);
   }
   renderAsk(c, s);
+  if (mode === "pass") {
+    const toRack = s.stages.some((x) => x.name === "quick");
+    text(c.el.querySelector(".p-next"), toRack ? "วางบนชั้นวาง (ที่ชาร์จ USB) ที่เหลือทำผ่าน Wi-Fi · เสียบตัวถัดไปได้เลย"
+                                               : "ถอดกล่องออก แล้วเสียบตัวถัดไป");
+  }
   if (mode === "fail") {
     const f = s.fail || {};
     text(c.fstep, s.state === "stopped" ? "หยุดแล้ว" : "ไม่ผ่าน: " + (f.step || ""));
@@ -1022,6 +1163,10 @@ function render() {
   if (maxQ > lastQ) { lastQ = maxQ; beep(); }
   document.title = (asks ? `(${asks}) ` : "") + "mCOLD Station";
   document.getElementById("startall").disabled = !st.slots.some((s) => s.state === "ready" && s.port);
+  const au = document.getElementById("auto");
+  if (document.activeElement !== au) au.checked = !!st.auto_start;
+  text(document.getElementById("v-dock-n"), asks ? String(asks) : "");
+  document.getElementById("v-dock-n").classList.toggle("hot", asks > 0);
 }
 
 async function poll() {
@@ -1038,6 +1183,149 @@ async function poll() {
 document.getElementById("product").onchange = (e) => post("/api/config", { product: e.target.value });
 document.getElementById("stage").onchange = (e) => post("/api/config", { stage: e.target.value });
 document.getElementById("startall").onclick = () => { beep(); post("/api/start_all", { operator: op.value }); };
+document.getElementById("auto").onchange = (e) => post("/api/auto_start", { on: e.target.checked, operator: op.value });
+
+/* ---- view: the dock, or the rack ---- */
+let view = load("mflash.view") || "dock";
+function setView(v) {
+  view = v; store("mflash.view", v);
+  document.querySelectorAll("#view button").forEach((b) => b.classList.toggle("on", b.dataset.v === v));
+  document.getElementById("dockview").hidden = v !== "dock";
+  document.getElementById("rackview").hidden = v !== "rack";
+}
+document.querySelectorAll("#view button").forEach((b) => { b.onclick = () => { setView(b.dataset.v); pollRack(true); }; });
+setView(view);
+
+/* ---- the rack ---- */
+let rack = null, rackFilter = load("mflash.rackfilter") || "", rackQ = 0, logSn = "";
+const RBADGE = { offline: "ยังไม่ online", ready: "online", running: "กำลังทำ", ask: "รอคน",
+                 pass: "ส่งมอบแล้ว", fail: "ไม่ผ่าน", stopped: "หยุดแล้ว" };
+const rtiles = new Map();
+function rackTile(b) {
+  let t = rtiles.get(b.sn);
+  if (!t) {
+    const el = document.createElement("div"); el.className = "tile";
+    el.innerHTML = `<div class="th"><span class="u"></span><span class="badge"></span></div>
+      <div class="ip"></div><div class="sn"></div><div class="bar"><i></i></div><div class="st"></div>
+      <div class="tb"><button class="btn sm r-go" title="เริ่ม / ทำซ้ำ">${icon("play")}</button>
+        <button class="btn sm r-stop" title="หยุด">${icon("stop")}</button></div>`;
+    const q = (c) => el.querySelector(c);
+    t = { el, u: q(".u"), badge: q(".badge"), ip: q(".ip"), sn: q(".sn"), bar: q(".bar i"), st: q(".st"), go: q(".r-go"), stop: q(".r-stop") };
+    el.onclick = () => openRackLog(b.sn);
+    t.go.onclick = (e) => { e.stopPropagation(); beep(); post("/api/rack/start", { sn: b.sn, operator: op.value }); };
+    t.stop.onclick = (e) => { e.stopPropagation(); post("/api/rack/stop", { sn: b.sn }); };
+    rtiles.set(b.sn, t);
+  }
+  if (t.el.dataset.state !== b.state) t.el.dataset.state = b.state;
+  text(t.u, b.unit != null ? pad(b.unit) : "?");
+  text(t.badge, RBADGE[b.state] || b.state);
+  text(t.ip, b.ip || "—"); text(t.sn, b.sn);
+  t.bar.style.width = Math.round((b.progress || 0) * 100) + "%";
+  const f = b.fail || {};
+  text(t.st, b.state === "fail" ? (f.step || "") + (f.detail ? " · " + f.detail : "")
+            : b.state === "running" || b.state === "ask" ? b.step_name
+            : b.state === "pass" ? "ออกจาก Wi-Fi โรงงานแล้ว" : b.state === "offline" ? "รอขึ้น broker" : "พร้อม");
+  t.el.title = b.sn + (b.fail ? "\n" + (f.detail || "") + (f.help ? "\n" + f.help : "") : "");
+  t.go.hidden = b.state === "running" || b.state === "ask" || b.state === "offline";
+  t.stop.hidden = !(b.state === "running" || b.state === "ask");
+  return t;
+}
+function renderRack() {
+  const r = rack;
+  const err = document.getElementById("rackerr");
+  const msg = !r.enabled ? "ชั้นวางยังใช้ไม่ได้: " + (r.error || "") : (!r.connected ? "ต่อ broker ไม่ได้" + (r.link_error ? ": " + r.link_error : " (กำลังลองใหม่)") : "");
+  err.hidden = !msg; text(err, msg);
+  if (!r.enabled) { document.getElementById("rempty").hidden = false; return; }
+  document.getElementById("rlink").classList.toggle("up", r.connected);
+  text(document.querySelector("#rlink span"), r.connected ? "broker ต่อแล้ว" : "broker หลุด");
+  for (const k of ["offline", "running", "pass", "fail"]) text(document.getElementById("rk-" + k), String(r.counts[k] + (k === "running" ? r.counts.ready : 0) + (k === "fail" ? r.counts.stopped : 0)));
+  const nq = r.questions.length;
+  text(document.getElementById("rk-ask"), String(nq));
+  document.getElementById("rk-ask-box").classList.toggle("hot", nq > 0);
+  text(document.getElementById("v-rack-n"), nq ? String(nq) : (r.counts.running ? String(r.counts.running) : ""));
+  document.getElementById("v-rack-n").classList.toggle("hot", nq > 0);
+  const ra = document.getElementById("rauto"); if (document.activeElement !== ra) ra.checked = !!r.auto;
+  document.querySelectorAll(".rbar .kpi").forEach((k) => k.classList.toggle("sel", k.dataset.f === rackFilter));
+
+  /* the question at the head of the queue, large; the rest as chips */
+  const rq = document.getElementById("rq");
+  const q = r.questions[0];
+  if ((q ? q.id : 0) !== rackQ) {
+    rackQ = q ? q.id : 0; rq.innerHTML = "";
+    rq.classList.toggle("idle", !q);
+    if (!q) rq.textContent = "ไม่มีคำถามรอ · เมื่อกล่องต้องให้คนดู (ไฟ / เสียง) คำถามจะขึ้นที่นี่ทีละกล่อง";
+    else {
+      beep();
+      const box = r.boxes.find((b) => b.sn === q.sn) || {};
+      rq.innerHTML = `<div class="who"><small>กล่องเลข</small><b></b></div>
+        <div class="what"><p></p><div class="meta"></div></div>
+        <div class="btns"><button class="yes">${icon("check")}ใช่ / ผ่าน <kbd>Y</kbd></button>
+          <button class="no">${icon("x")}ไม่ผ่าน <kbd>N</kbd></button>
+          ${q.repeat ? `<button class="again" title="สั่งกล่องกะพริบ/บี๊บอีกครั้ง">${icon("reset")}ทำซ้ำ <kbd>R</kbd></button>` : ""}</div>
+        <div class="next"></div>`;
+      rq.querySelector(".who b").textContent = q.unit != null ? pad(q.unit) : "?";
+      rq.querySelector(".what p").textContent = q.text;
+      rq.querySelector(".meta").textContent = q.sn + (box.ip ? " · " + box.ip : "");
+      const send = (v) => post("/api/rack/answer", { qid: q.id, value: v }, true);
+      rq.querySelector(".yes").onclick = () => send(true);
+      rq.querySelector(".no").onclick = () => send(false);
+      if (q.repeat) rq.querySelector(".again").onclick = () => send("again");
+    }
+  }
+  if (q) {
+    const nx = rq.querySelector(".next"), more = r.questions.slice(1);
+    const key = more.map((x) => x.id).join(",");
+    if (nx.dataset.k !== key) {
+      nx.dataset.k = key; nx.innerHTML = "";
+      if (more.length) {
+        nx.appendChild(document.createTextNode(`รอต่อคิวอีก ${more.length} กล่อง:`));
+        for (const x of more.slice(0, 24)) { const sp = document.createElement("span"); sp.textContent = x.unit != null ? pad(x.unit) : x.sn; nx.appendChild(sp); }
+      }
+    }
+  }
+
+  /* the tiles, by unit number, filtered */
+  const grid = document.getElementById("rgrid");
+  const want = r.boxes.filter((b) => !rackFilter || b.state === rackFilter || (rackFilter === "running" && b.state === "ready")
+                                    || (rackFilter === "fail" && b.state === "stopped"));
+  const keep = new Set(want.map((b) => b.sn));
+  for (const [sn, t] of rtiles) if (!keep.has(sn)) { t.el.remove(); if (!r.boxes.some((b) => b.sn === sn)) rtiles.delete(sn); }
+  want.forEach((b, k) => { const t = rackTile(b); if (grid.children[k] !== t.el) grid.insertBefore(t.el, grid.children[k] || null); });
+  document.getElementById("rempty").hidden = r.boxes.length > 0;
+  if (logSn) {
+    const b = r.boxes.find((x) => x.sn === logSn);
+    if (b && b.log) {
+      const v = document.getElementById("logview"), t = b.log.join("\n") || "(ยังไม่มี)";
+      if (v.textContent !== t) { const atEnd = v.scrollTop + v.clientHeight >= v.scrollHeight - 8; v.textContent = t; if (atEnd) v.scrollTop = v.scrollHeight; }
+    }
+  }
+}
+let rackTimer = null;
+async function pollRack(now) {
+  clearTimeout(rackTimer);
+  try {
+    rack = await (await fetch("/api/rack?log=" + encodeURIComponent(logSn), { cache: "no-store" })).json();
+    renderRack();
+  } catch (e) {}
+  rackTimer = setTimeout(pollRack, view === "rack" ? 700 : 2000);
+}
+document.querySelectorAll(".rbar .kpi").forEach((k) => { k.onclick = () => { rackFilter = rackFilter === k.dataset.f ? "" : k.dataset.f; store("mflash.rackfilter", rackFilter); renderRack(); }; });
+document.getElementById("rauto").onchange = (e) => post("/api/rack/auto", { on: e.target.checked, operator: op.value });
+document.getElementById("rstartall").onclick = async () => { beep(); const j = await post("/api/rack/start_all", { operator: op.value }); if (j.started !== undefined) toast(`เริ่ม ${j.started} กล่อง`, true); };
+document.addEventListener("keydown", (e) => {
+  if (view !== "rack" || !rack || !rack.questions || !rack.questions.length || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (document.querySelector("dialog[open]") || ["INPUT", "SELECT", "TEXTAREA"].includes((document.activeElement || {}).tagName)) return;
+  const q = rack.questions[0], k = e.key.toLowerCase();
+  const v = k === "y" ? true : k === "n" ? false : (k === "r" && q.repeat) ? "again" : undefined;
+  if (v === undefined) return;
+  e.preventDefault(); post("/api/rack/answer", { qid: q.id, value: v }, true);
+});
+function openRackLog(sn) {
+  logSn = sn; logSlot = null; openLogs.clear();
+  document.getElementById("logtitle").textContent = "Log · ชั้นวาง · " + sn;
+  document.getElementById("logview").textContent = "…";
+  logdlg.showModal(); pollRack(true);
+}
 const menu = document.getElementById("menu");
 document.getElementById("menubtn").onclick = (e) => { e.stopPropagation(); menu.classList.toggle("open"); };
 document.addEventListener("click", () => menu.classList.remove("open"));
@@ -1055,7 +1343,7 @@ function openLog(i) {
   document.getElementById("logview").textContent = "…";
   logdlg.showModal();
 }
-logdlg.addEventListener("close", () => { logSlot = null; openLogs.clear(); });
+logdlg.addEventListener("close", () => { logSlot = null; logSn = ""; openLogs.clear(); });
 document.getElementById("logclose").onclick = () => logdlg.close();
 
 /* ---- SN summary ---- */
@@ -1181,6 +1469,16 @@ async function openSettings() {
   document.getElementById("f-mnopass").checked = !!d.mqtt.host && !d.mqtt.has_password;
   mp.disabled = document.getElementById("f-mnopass").checked;
   document.getElementById("f-ota").value = d.ota_base || "";
+  const f = d.factory || {};
+  document.getElementById("f-fssid").value = f.ssid || "";
+  const fp = document.getElementById("f-fpass"); fp.value = ""; fp.placeholder = f.has_password ? "•••• ตั้งไว้แล้ว (ว่าง = ใช้เดิม)" : "8–63 ตัว";
+  fp.dataset.has = f.has_password ? "1" : "";
+  for (const [id, k] of [["f-fbase", "ip_base"], ["f-fgw", "gateway"], ["f-fsub", "subnet"], ["f-fdns", "dns"]]) document.getElementById(id).value = f[k] || "";
+  text(document.getElementById("f-fnote"), f.ip_base ? `เครื่อง ${pad(1)} = ${f.first} · มีที่ให้ ${f.capacity} เครื่อง · กล่องจะถูกลบ Wi-Fi นี้ออกตอนส่งมอบ (ข้อสุดท้ายของชั้นวาง)`
+    : "ไม่ใส่ IP ฐาน = ใช้ DHCP · กล่องจะถูกลบ Wi-Fi นี้ออกตอนส่งมอบ (ข้อสุดท้ายของชั้นวาง)");
+  const sm = d.station_mqtt || {};
+  document.getElementById("f-suser").value = sm.username || "";
+  const sp = document.getElementById("f-spass"); sp.value = ""; sp.placeholder = sm.has_password ? "•••• ตั้งไว้แล้ว (ว่าง = ใช้เดิม)" : "";
   const tb = document.getElementById("f-cfg"); tb.innerHTML = "";
   const keys = Object.keys(cfgKeys);
   for (const k of Object.keys(d.config)) if (!keys.includes(k)) keys.push(k);
@@ -1217,7 +1515,12 @@ document.getElementById("setsave").onclick = async () => {
   const body = { station: document.getElementById("f-station").value.trim(), wifi,
     mqtt: { host: document.getElementById("f-mhost").value.trim(), port: parseInt(document.getElementById("f-mport").value, 10) || 1883,
             username: document.getElementById("f-muser").value.trim(), password: nop ? "" : (mp ? mp : null) },
-    ota_base: document.getElementById("f-ota").value.trim(), config };
+    ota_base: document.getElementById("f-ota").value.trim(), config,
+    factory: { ssid: document.getElementById("f-fssid").value.trim(),
+               password: document.getElementById("f-fpass").value || (document.getElementById("f-fpass").dataset.has ? null : ""),
+               ip_base: document.getElementById("f-fbase").value.trim(), gateway: document.getElementById("f-fgw").value.trim(),
+               subnet: document.getElementById("f-fsub").value.trim(), dns: document.getElementById("f-fdns").value.trim() },
+    station_mqtt: { username: document.getElementById("f-suser").value.trim(), password: document.getElementById("f-spass").value || null } };
   const j = await post("/api/settings", body, true);
   const err = document.getElementById("f-err");
   if (j.error) { err.textContent = j.error; err.hidden = false; err.scrollIntoView({ block: "nearest" }); return; }
@@ -1241,6 +1544,7 @@ document.getElementById("history").onclick = async () => {
   hist.showModal();
 };
 poll();
+pollRack();
 </script>
 </body>
 </html>

@@ -95,11 +95,20 @@ firmware:
 
 sequence: [test, production, setup, verify]
 
+# The ways a new box goes through the line. The dock does everything with
+# the box on USB; the quick route keeps it on USB only for what needs the
+# cable (firmware, SN, Wi-Fi, fixed address, broker) and does the rest on
+# the rack, over Wi-Fi -> MQTT, many boxes at once (docs/rack.md).
+routes:
+  - [test, production, setup, verify]
+  - [quick, rack]
+
 # What the station offers to run. A box already made comes back for new
 # settings or a new firmware without losing its SN, its settings or its
 # trip log: `update` writes the app alone, nothing is erased.
 modes:
   - {name: all,           label: "ทำใหม่ทั้งหมด (กล่องใหม่)",       stages: [test, production, setup, verify]}
+  - {name: usb_quick,     label: "USB เร็ว → ชั้นวาง MQTT",          stages: [quick]}
   - {name: resetup,       label: "เปลี่ยนตั้งค่า (ไม่ flash)",        stages: [setup, verify]}
   - {name: reflash,       label: "Flash ใหม่ เก็บ SN และค่าเดิม",   stages: [update, verify]}
   - {name: reflash_setup, label: "Flash ใหม่ + ตั้งค่าใหม่",         stages: [update, setup, verify]}
@@ -193,6 +202,50 @@ stages:
       forbid: ['not the factory pattern']
       help: "ไม่มี SN: กล่องนี้ยังไม่เคยผ่านขั้นตั้งค่า ใช้โหมด ทำใหม่ทั้งหมด หรือ Flash ใหม่ + ตั้งค่าใหม่"
 
+  # ---- the quick route: only what needs the cable, about 1.5 minutes ------
+  # No bringup, no questions: the box leaves the dock on the line's Wi-Fi
+  # with its own fixed address (the IP pool, by unit number) and the
+  # broker, and the rack takes it from there (`rack:` below).
+  quick:
+    - name: ชิปคือ ESP32-S3 flash 16 MB
+      type: chip
+      help: "esptool คุยไม่ได้: เช็กสาย USB, ห้ามใช้ USB isolator (ทำบอร์ด brownout)"
+    - name: ลง firmware จริง (ลบทั้งชิปก่อน)
+      type: flash
+      firmware: production
+      erase: true
+      boot_timeout: 60
+    - name: เวอร์ชันตรงกับไฟล์ที่เลือก
+      type: version
+      firmware: production
+    - name: SN (ล็อต + เลขเครื่องของช่อง)
+      type: input_sn
+      ask: "สแกน/พิมพ์ SN จากฉลาก"
+    - name: ตั้ง SN แล้วรีบูต
+      type: set_sn
+    - name: Wi-Fi โรงงาน + IP คงที่, broker, OTA, ค่าตั้ง
+      type: provision
+      factory: true          # the line's Wi-Fi, fixed address = IP pool + unit number
+      customer_wifi: false   # the customer's networks go on at the rack's hand-over
+      require: [factory, mqtt]
+    - name: เปิดโหมดโรงงาน (รับคำสั่งทดสอบผ่าน MQTT)
+      type: console
+      send: factory on
+      expect: ['factory mode on']
+      help: "unknown command = firmware นี้ยังไม่มีโหมดโรงงาน/rpc ผ่าน MQTT (docs/firmware-mqtt-rpc.md) ใช้โหมด ทำใหม่ทั้งหมด ไปก่อน"
+    - name: อุปกรณ์บนบอร์ดไม่มีตัวเสีย (เร็ว)
+      type: health
+      states:
+        pd: [ok, unknown]
+        buzzer: [ok, unknown]
+        sd: [ok, unknown, absent]
+        gnss: [ok, unknown]       # the rack's test listens to it properly
+      temperature: true
+      temp_range: [-40, 85]
+      retries: 2
+      retry_wait: 4
+      help: "failed = ไม่เคยทำงาน (ประกอบผิด) · degraded = เคยทำงานแล้วหลุด"
+
   # ---- 3. this box's settings ---------------------------------------------
   setup:
     - name: SN (ล็อต + เลขเครื่องของช่อง)
@@ -256,3 +309,45 @@ stages:
       retries: 6
       retry_wait: 10
       optional: true
+
+# ---- the rack: Wi-Fi -> MQTT, off the dock -------------------------------
+# A box that passed `quick` and is on USB power anywhere in reach of the
+# line's Wi-Fi. Run by mflash/remote.py, one thread per box; the questions
+# wait in one queue. `rpc` steps need firmware with the MQTT rpc channel
+# (docs/firmware-mqtt-rpc.md): a box without it fails them, it is not
+# passed untested.
+rack:
+  - name: กล่องต่อ broker (IP ตรงกับเลขเครื่อง)
+    type: online
+    timeout: 300
+    ip: true                 # net.ip must be the pool's address for its unit
+    firmware: production     # fw.ver must be the version flashed at the dock
+  - name: อุณหภูมิและไฟเลี้ยงจาก status
+    type: status
+    expect: {temp.ok: true, power.external: true}
+    range: {temp.c: [-40, 85]}
+  - name: ทดสอบโมดูล (I2C, อุณหภูมิ, GNSS, trip log)
+    type: rpc
+    cmd: FACTORY_TEST
+    args: {items: [i2c, temp, gnss, logtest], gnss_s: 15}
+    timeout: 240
+    expect: {ok: true, i2c.ok: true, temp.ok: true, gnss.ok: true, logtest.ok: true}
+    help: "i2c = ชิปไม่ตอบ · temp = โพรบ/MAX6675 · gnss = ราง SD/GNSS หรือ baud · logtest = flash"
+  - name: ไฟและเสียง (กล่องกะพริบ + beep)
+    type: identify_confirm
+    seconds: 10
+    ask: "กล่องเลข {unit} ({ip}) ไฟกะพริบครบทุกดวงและมีเสียง beep?"
+  - name: ดึงข้อมูล debug
+    type: debug_pull
+    expect: {coredump: false}
+  - name: ค่าตั้งของ site (ส่งซ้ำ เผื่อเปลี่ยนหลังเสียบ)
+    type: config_doc
+    timeout: 120
+  - name: OTA เป็น firmware ที่เลือก (ถ้ายังไม่ใช่)
+    type: ota
+    firmware: production
+    timeout: 600
+    enabled: false           # the dock already flashed the chosen one
+  - name: ส่งมอบ Wi-Fi (ใส่ของลูกค้า แล้วลบ Wi-Fi โรงงาน) -- ข้อสุดท้าย
+    type: wifi_handover
+    timeout: 120
