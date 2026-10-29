@@ -34,6 +34,7 @@ const Held HELD[] = {
     {PIN_SPI3_SCK, 0},   {PIN_SPI3_MOSI, 0}, {PIN_EPD_CS, 0},       // panel and
     {PIN_EPD_DC, 0},     {PIN_EPD_RST, 0},   {PIN_TC_CS, 0},        // probe unpowered
     {PIN_GNSS_TX, 0},                                               // GNSS unpowered
+    {PIN_CHG_CE_N, 0},                                              // charging allowed
 };
 
 const uint32_t ALL_DUTIES = (1u << (int)Duty::Count) - 1;

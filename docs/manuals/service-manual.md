@@ -130,7 +130,7 @@ range and whether it is the default.
 | `led_status_s` | 60–3600 | 900 | On battery, the alive blink this often |
 | `batt_trip_mv` | 3000–4100 | 3550 | Below it, on battery, no new trip (`BATTERY_LOW`) |
 | `batt_off_mv` | 3000–3700 | 3400 | Below it, on battery, the box switches itself off |
-| `batt_mah` | 300–6000 | 1500 | Rated cell capacity, until one is learned |
+| `batt_mah` | 300–6000 | 1200 | Rated cell capacity, until one is learned |
 | `sleep_ua` | 0–5000 | 250 | Current asleep, for counting charge through a sleep |
 | `soc_source` | 0–1 | 0 | Percent shown: 0 voltage (OCV table), 1 counted |
 | `tz_offset_min` | −720–840 | 420 | Display time zone (records are UTC) |

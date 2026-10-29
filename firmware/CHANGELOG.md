@@ -38,6 +38,13 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Charging on every board** (2026-10-29): the charger's CE# (GPIO44)
+  is now driven low from boot and held low through deep sleep. Left to
+  R22's 10k pull-down against the pad's own pull-up it sat near 0.6 V,
+  in neither logic level; box 006 read it as high and never charged,
+  with no fault. 0.7.0-dev.64.
+- `batt_mah` defaults to 1200 mAh (was 1500): the cell fitted now
+  (2026-10-29). 0.7.0-dev.64.
 - A footer icon that is off (no Wi-Fi, no server, no GNSS) is drawn red
   instead of struck through on panels with red (2026-10-24; a red strike
   was tried first), still struck on the mono panel. 0.7.0-dev.61.

@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include <driver/gpio.h>
+
 #include "board.h"
 #include "bus.h"
 #include "health.h"
@@ -74,6 +76,18 @@ void power_init(void) {
   // a charge current chosen from a guess is worse than leaving the part
   // at the defaults it was designed to be safe at.
   //
+  // CE# is held low here. R22 (10k to ground) was meant to do it alone,
+  // but GPIO44 is the UART0 RX pad and comes out of reset with its ~45k
+  // pull-up on: the two leave the pin near 0.6 V, between the charger's
+  // low (0.4 V) and high (1.3 V) thresholds. 006 read it as high and did
+  // not charge at all, no fault reported (2026-10-29); driven low, 300 mA
+  // at once. Held low through deep sleep too (pm.cpp).
+  gpio_config_t ce = {};
+  ce.pin_bit_mask = 1ULL << PIN_CHG_CE_N;
+  ce.mode = GPIO_MODE_OUTPUT;
+  gpio_config(&ce);
+  gpio_set_level((gpio_num_t)PIN_CHG_CE_N, 0);
+
   // The current monitor is: it comes out of power-down (power_sleep).
   // If it was left averaging through the sleep, that average is read
   // first, before the new configuration starts a new one.
