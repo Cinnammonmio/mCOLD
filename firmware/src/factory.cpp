@@ -203,6 +203,11 @@ void factory_debug(cJSON *out) {
   cJSON_AddNumberToObject(out, "heap", esp_get_free_heap_size());
   cJSON_AddNumberToObject(out, "min_heap", esp_get_minimum_free_heap_size());
   cJSON_AddNumberToObject(out, "psram", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+  // What Wi-Fi and the sockets live on: "heap" above is mostly PSRAM and
+  // says nothing about it ("wifi:mem fail" with 8 MB free, 2026-11-02).
+  cJSON_AddNumberToObject(out, "internal", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+  cJSON_AddNumberToObject(out, "min_internal", heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL));
+  cJSON_AddNumberToObject(out, "largest_internal", heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
   NetStatus ns;
   net_status(&ns);
   cJSON_AddStringToObject(out, "ip", ns.connected ? ns.ip : "");

@@ -62,6 +62,11 @@ CONFIG_BT_NIMBLE_LOG_LEVEL_WARNING=y
 CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
 CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+# Only mallocs under 4 KB come from internal RAM first (the default is
+# 16 KB): with 16, the MQTT buffers and every cJSON print took internal
+# RAM, and 6 KB was left of it -- 39 B at its lowest -- with Wi-Fi
+# failing to get buffers ("wifi:mem fail", 2026-11-02).
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
 CONFIG_ESP_WIFI_IRAM_OPT=n
 CONFIG_ESP_WIFI_RX_IRAM_OPT=n
 

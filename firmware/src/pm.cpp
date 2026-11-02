@@ -154,7 +154,7 @@ void apply_light_sleep(void) {
 
 const char *const DUTY_NAMES[] = {"sensors", "power", "trip",   "display",
                                   "nfc",     "uplink", "gnss", "indicate"};
-const char *const HOLD_NAMES[] = {"ble", "nfc field", "gnss", "uplink", "display", "indicate", "console", "ota"};
+const char *const HOLD_NAMES[] = {"ble", "nfc field", "gnss", "uplink", "display", "indicate", "console", "ota", "debug"};
 
 uint32_t awake_ms(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
 
@@ -340,7 +340,8 @@ void task(void *) {
     if (missing) continue;
 
     const uint32_t people = (1u << (int)Hold::Ble) | (1u << (int)Hold::NfcField) |
-                            (1u << (int)Hold::Console) | (1u << (int)Hold::Display);
+                            (1u << (int)Hold::Console) | (1u << (int)Hold::Display) |
+                            (1u << (int)Hold::Debug);
     const bool held = g_holds || (int32_t)(g_hold_until - t) > 0;
     if (held) {
       // Only something a person is doing outlasts the awake limit.

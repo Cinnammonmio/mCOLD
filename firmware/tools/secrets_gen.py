@@ -43,4 +43,11 @@ if os.path.exists(INI):
             "#define MQTT_DEFAULT_PASS " + c_str(m.get("password", "").strip()),
         ]
         print("Default broker from secrets.ini: " + host)
+    # The debug broker (debug.h): only its host; port and login are the
+    # production broker's unless a box has its own (NVS "dbg").
+    d = cp["debug"] if cp.has_section("debug") else {}
+    dhost = d.get("host", "").strip()
+    if dhost:
+        lines.append("#define DEBUG_DEFAULT_HOST " + c_str(dhost))
+        print("Default debug broker from secrets.ini: " + dhost)
 write_if_changed(OUT, "\n".join(lines) + "\n")

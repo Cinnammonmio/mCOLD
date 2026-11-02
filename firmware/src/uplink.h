@@ -41,6 +41,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 void uplink_start(const char *sn);
@@ -48,6 +49,16 @@ void uplink_start(const char *sn);
 bool uplink_set_server(const char *host, uint16_t port, const char *user,
                        const char *pass);
 bool uplink_configured(void);
+// Connected to the broker. Unlike uplink_status(), touches no flash.
+bool uplink_connected(void);
+
+// One rpc request into the queue broker 1's rpc topic uses (one at a time,
+// task mqtt_rpc). Takes `req` (malloc'd), freed even when refused (queue
+// full). debug: the answer goes to debug_reply(), not broker 1.
+bool uplink_rpc_submit(char *req, bool debug);
+
+// Broker 1's port and login, for the debug broker's defaults (debug.h).
+void uplink_login(uint16_t *port, char *user, size_t un, char *pass, size_t pn);
 
 
 // Records of `trip` the server has confirmed: seq < this are stored.

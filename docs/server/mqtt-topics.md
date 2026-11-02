@@ -1,9 +1,9 @@
 ---
 name: MQTT-Topics
 lang: th
-version: 1.4
+version: 1.5
 date: 2026-11-02
-firmware: 0.7.0-dev.65
+firmware: 0.7.0-dev.66
 ---
 
 # mCOLD — MQTT topics
@@ -46,6 +46,8 @@ firmware: 0.7.0-dev.65
 | `mcold/<sn>/settings` | **pub** | **sub** | 1 | ใช่ | ค่าตั้งทั้งหมดของกล่องตอนนี้ ส่งใหม่ทุกครั้งที่มีการแก้ (จากแอป, server หรือสาย USB) |
 | `mcold/v1/<sn>/rpc` | **sub** | **pub** (สถานีผลิต) | 1 | **ไม่** | คำสั่ง rpc หนึ่งคำสั่ง แบบเดียวกับ BLE (ตั้งแต่ 0.7.0-dev.65) |
 | `mcold/<sn>/rpc/reply` | **pub** | **sub** | 1 | ไม่ | คำตอบของคำสั่ง rpc ตาม `id` |
+| `mcold/v1/<sn>/debug/ctl` | **sub** | **pub** | 1 | **ไม่** | เปิด/ปิด debug stream (ตั้งแต่ 0.7.0-dev.66) |
+| `mcold/<sn>/debug/state` | **pub** | **sub** | 1 | ใช่ | สถานะ debug ของกล่อง |
 
 **Server subscribe:** `mcold/+/rec`, `mcold/+/status`, `mcold/+/online`, `mcold/+/ota/state`,
 `mcold/+/config/state`, `mcold/+/settings`
@@ -171,6 +173,25 @@ payload คือชื่อไฟล์อย่างเดียว เช�
  "min_heap":8174068,"psram":8201452,"ip":"192.168.0.9","ssid":"...","wifi_fail_reason":0,
  "fw":"0.7.0-dev.65","elf":"31d89cc0e","factory_mode":false}
 ```
+
+### Debug stream (0.7.0-dev.66)
+
+เปิด-ปิดผ่าน broker นี้ (broker 1) ส่วนข้อมูลไปที่ **broker debug** แยกต่างหาก (ตั้งในกล่อง ไม่มีทางตั้งผ่าน MQTT)
+
+| Topic | Broker | ทิศ | เนื้อหา |
+|---|---|---|---|
+| `mcold/v1/<sn>/debug/ctl` | 1 | server → กล่อง | `{"id":N,"on":true,"min":60,"channels":["power","sys","net","log"],"period_ms":100}` หรือ `{"id":N,"on":false}` · **ห้าม retain** (กล่องไม่สนข้อความ retain) |
+| `mcold/<sn>/debug/state` | 1 | กล่อง → server (retain) | `{"on":true,"until":<unix s>,"min_left":N,"channels":[...],"period_ms":100,"broker":"connected"}` · `broker`: `off`, `not set`, `connecting`, `connected`, `unreachable` |
+| `mcold/<sn>/debug/power` | debug | กล่อง → | `{"from":<utc ms>,"mono":ms,"period_ms":100,"mv":4096,"soc":84,"charge":"fast charge","pg":true,"fault":0,"rows":[{"ma":265.1},...10 แถว]}` |
+| `mcold/<sn>/debug/sys` | debug | กล่อง → | `rows:[{"heap","min_heap","internal","psram","up_s","factory"}]` |
+| `mcold/<sn>/debug/net` | debug | กล่อง → | `rows:[{"wifi":true,"rssi":-49,"broker1":true}]` |
+| `mcold/<sn>/debug/log` | debug | กล่อง → | `{"lines":["[uplink] connected ...", ...]}` ข้อความ console |
+| `mcold/v1/<sn>/debug/cmd` | debug | → กล่อง | `DEBUG_SET {channels, period_ms}` หรือคำสั่ง rpc ใดก็ได้ |
+| `mcold/<sn>/debug/reply` | debug | กล่อง → | คำตอบตาม `id` |
+
+- ข้อมูลทุก channel QoS 0 วินาทีละ 1 ข้อความ (power เก็บทุก `period_ms` 100..1000 ms รวมเป็นชุด)
+- ปิดเองเมื่อครบเวลา: ค่าเริ่มต้น 60 นาทีตอนเสียบ USB (สูงสุด 240), 15 นาทีตอนใช้แบต
+- `from` เป็น `null` ถ้ากล่องยังไม่รู้เวลา (ใช้ `mono` เรียงลำดับแทน)
 
 ### `mcold/<sn>/online`
 

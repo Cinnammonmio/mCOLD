@@ -49,6 +49,7 @@ enum class Hold : uint8_t {
   Indicate,     // a light or sound pattern is playing
   Console,      // typed at recently
   Ota,          // downloading an update, or a new image not yet confirmed
+  Debug,        // the debug stream (debug.h); ends at its own expiry
   Count
 };
 

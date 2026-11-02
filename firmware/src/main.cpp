@@ -70,6 +70,7 @@
 #include "timekeep.h"
 #include "rxlog.h"
 #include "factory.h"
+#include "debug.h"
 
 namespace {
 
@@ -1639,6 +1640,8 @@ void print_help(void) {
   printf("  sleep test S    deep-sleep S seconds now, timer wake only (even on USB)\n");
   printf("  sn [set S]      the device serial number (factory: set, then reboot)\n");
   printf("  factory [on|off] the rack's commands over MQTT (factory line only)\n");
+  printf("  debug [on [MIN]|off]  the debug stream to the debug broker (debug.h)\n");
+  printf("  debug server set H P [U PW] | clear   the debug broker\n");
   printf("  flash           restart into download mode, for flashing over USB\n");
   printf("  soc             counted state of charge, capacity, anchor\n");
   printf("  soc set P       bench: set the count to P %%\n");
@@ -1905,6 +1908,23 @@ void run_command(char *line) {
     const bool gone = net_remove(ssid);
     if (gone) settings_touch();
     printf("  %s\n", gone ? "removed" : "not a known network");
+  } else if (!strcmp(line, "debug")) {
+    debug_print();
+  } else if (!strcmp(line, "debug off")) {
+    debug_set(false, 0, 0, 0);
+    printf("  debug off\n");
+  } else if (!strcmp(line, "debug on") || !strncmp(line, "debug on ", 9)) {
+    debug_set(true, line[8] ? (uint32_t)atoi(line + 9) : 0, 0, 0);
+    debug_print();
+  } else if (!strncmp(line, "debug server set ", 17)) {
+    // The debug broker (debug.h): only from here or the station's NVS image.
+    char host[64] = "", user[40] = "", pass[72] = "";
+    int port = 0;
+    sscanf(line + 17, "%63s %d %39s %71s", host, &port, user, pass);
+    printf("  %s\n", port > 0 && port < 65536 && debug_set_server(host, (uint16_t)port, user, pass)
+                         ? "stored" : "debug server set HOST PORT [USER PASS]");
+  } else if (!strcmp(line, "debug server clear")) {
+    printf("  %s\n", debug_clear_server() ? "cleared: the default broker again" : "could not clear");
   } else if (!strncmp(line, "mqtt set ", 9)) {
     char host[64] = "", user[40] = "", pass[72] = "";
     int port = 0;
@@ -2184,6 +2204,7 @@ extern "C" void app_main(void) {
     net_start();       // Wi-Fi, if credentials are set
     ota_start();       // a new image on probation, or a rollback to report
     uplink_start(sn);  // MQTT once Wi-Fi is up
+    debug_start(sn);   // after uplink: its broker login is the default
     // A full log gives up what the server already has first.
     trip_set_retention({uplink_fully_acked, uplink_forget});
     config_on_change(config_changed);

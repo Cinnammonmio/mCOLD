@@ -38,6 +38,31 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Debug over MQTT, client 2** (2026-11-02). A second MQTT client, to a
+  debug broker, only while debug is on (`src/debug.h`). Broker 1 switches it:
+  `mcold/v1/<sn>/debug/ctl` `{"id","on","min","channels","period_ms"}`
+  (a retained one is ignored), and the box reports `mcold/<sn>/debug/state`
+  there (retained: on, until, min_left, channels, period_ms, broker). On
+  broker 2: `debug/power` (battery current every 100..1000 ms, ten to a
+  message, cell mV, SoC, charger state once a second), `debug/sys` (heap,
+  internal RAM, PSRAM, uptime), `debug/net` (Wi-Fi, RSSI, broker 1),
+  `debug/log` (the console's output, whole lines), all QoS 0, one message a
+  second each; `debug/cmd` in (DEBUG_SET, or any rpc, answered on
+  `debug/reply`, changing only in factory mode). The broker: NVS `dbg`
+  (host, port, user, pass; console `debug server set|clear`), else
+  secrets.ini `[debug] host`; port and login left out are broker 1's.
+  It switches itself off after 60 min on USB (240 at most), 15 on battery.
+  Console `debug [on [MIN]|off]`. Checked on box 002: connected to
+  192.168.0.126, off at its time; what arrives on broker 2 and the ctl
+  topic are not checked from here. 0.7.0-dev.66.
+- **Internal RAM** (2026-11-02): 6 KB of it was left on box 002 at dev.65,
+  39 B at its lowest, and Wi-Fi failed to get buffers as soon as anything
+  more connected. `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` 16384 -> 4096 (the
+  MQTT buffers and cJSON prints go to PSRAM now): 39.5 KB free at rest,
+  24.6 KB with debug streaming. `GET_DEBUG` reports `internal`,
+  `min_internal`, `largest_internal`. The debug task's stack is in PSRAM
+  and made at the first `debug on`; its requests share broker 1's rpc
+  queue. 0.7.0-dev.66.
 - **Commands over MQTT, and factory mode** (2026-11-02), written by the
   flasher session for the line's rack (`flasher/docs/firmware-mqtt-rpc.md`
   on its branch) and reviewed here. `mcold/v1/<sn>/rpc` in,

@@ -22,6 +22,7 @@
 #include "settings.h"
 #include "config.h"
 #include "factory.h"
+#include "debug.h"
 #include "timekeep.h"
 #include "rpc.h"
 #include "trip.h"
@@ -40,13 +41,18 @@ char g_pass[72] = "";
 #define TOPIC_SUB "mcold/v1/"
 #define TOPIC_PUB "mcold/"
 char t_rec[64], t_ack[64], t_status[64], t_online[64], t_fw[64], t_ota[64], t_cfg[64],
-    t_cfg_state[72], t_settings[72], t_rpc[64], t_rpc_reply[72];
+    t_cfg_state[72], t_settings[72], t_rpc[64], t_rpc_reply[72], t_dbg_ctl[72], t_dbg_state[72];
+uint32_t g_dbg_sent = 0;     // debug_state_serial() last published; 0: not on this connection
 
 // Commands over MQTT (flasher/docs/firmware-mqtt-rpc.md): mcold/v1/<sn>/rpc
 // in, mcold/<sn>/rpc/reply out, the same JSON as BLE and the console. Run
 // one at a time by a task of their own -- FACTORY_TEST takes minutes --
 // and, outside factory mode, only the commands that read.
 QueueHandle_t g_rpc_q = nullptr;
+struct RpcReq {
+  char *req;          // malloc'd, NUL-terminated; the queue's to free
+  bool debug;         // came on the debug broker: answered there (debug.h)
+};
 const int RPC_MAX = 1024;
 
 // The box's settings as they stand, for the server (decided 2026-10-12):
@@ -259,6 +265,8 @@ void on_mqtt(void *, esp_event_base_t, int32_t id, void *data) {
       esp_mqtt_client_subscribe(g_client, t_fw, 1);
       esp_mqtt_client_subscribe(g_client, t_cfg, 1);
       esp_mqtt_client_subscribe(g_client, t_rpc, 1);
+      esp_mqtt_client_subscribe(g_client, t_dbg_ctl, 1);
+      g_dbg_sent = 0;
       esp_mqtt_client_publish(g_client, t_online, "1", 1, 1, 1);
       printf("[uplink] connected to %s:%u\n", g_host, g_port);
       ota_on_connected();       // what a new image proves itself by
@@ -298,8 +306,12 @@ void on_mqtt(void *, esp_event_base_t, int32_t id, void *data) {
         if (d) {
           memcpy(d, e->data, e->data_len);
           d[e->data_len] = 0;
-          if (xQueueSend(g_rpc_q, &d, 0) != pdTRUE) free(d);   // busy: the station asks again
+          const RpcReq q = {d, false};
+          if (xQueueSend(g_rpc_q, &q, 0) != pdTRUE) free(d);   // busy: the station asks again
         }
+      } else if (e->topic_len == (int)strlen(t_dbg_ctl) && !strncmp(e->topic, t_dbg_ctl, e->topic_len) &&
+                 e->data_len == e->total_data_len && e->data_len > 0 && e->data_len < 512) {
+        debug_ctl(e->data, e->data_len, e->retain);   // debug.h: a retained one is ignored
       } else if (e->topic_len == (int)strlen(t_fw) && !strncmp(e->topic, t_fw, e->topic_len) &&
                  e->data_len == e->total_data_len && e->data_len < 160) {
         // Just a file name (or a URL); everything else is the OTA module's.
@@ -774,6 +786,11 @@ void task(void *) {
     apply_cfg_doc();
     publish_cfg();
     publish_settings();
+    if (debug_state_serial() != g_dbg_sent) {
+      char st[256];
+      debug_state_json(st, sizeof(st));
+      if (esp_mqtt_client_publish(g_client, t_dbg_state, st, 0, 1, 1) >= 0) g_dbg_sent = debug_state_serial();
+    }
 
     // Status on change, and every five minutes regardless.
     TripStatus s;
@@ -807,15 +824,17 @@ void task(void *) {
 
 void rpc_task(void *) {
   for (;;) {
-    char *req = nullptr;
-    if (xQueueReceive(g_rpc_q, &req, portMAX_DELAY) != pdTRUE || !req) continue;
+    RpcReq q = {};
+    if (xQueueReceive(g_rpc_q, &q, portMAX_DELAY) != pdTRUE || !q.req) continue;
     // Authorized only in factory mode: one broker login is shared by every
-    // box, so outside the line the channel reads and never writes.
+    // box, so outside the line the channel reads and never writes. The same
+    // for the debug broker's, whose login is this one's.
     RpcSession sess = {};
     sess.authorized = factory_mode();
-    char *resp = rpc_handle(req, strlen(req), &sess);
-    free(req);
-    if (g_client && g_mqtt) esp_mqtt_client_publish(g_client, t_rpc_reply, resp, 0, 1, 0);
+    char *resp = rpc_handle(q.req, strlen(q.req), &sess);
+    free(q.req);
+    if (q.debug) debug_reply(resp);
+    else if (g_client && g_mqtt) esp_mqtt_client_publish(g_client, t_rpc_reply, resp, 0, 1, 0);
     free(resp);
   }
 }
@@ -835,6 +854,8 @@ void uplink_start(const char *sn) {
   snprintf(t_settings, sizeof(t_settings), TOPIC_PUB "%s/settings", g_sn);
   snprintf(t_rpc, sizeof(t_rpc), TOPIC_SUB "%s/rpc", g_sn);
   snprintf(t_rpc_reply, sizeof(t_rpc_reply), TOPIC_PUB "%s/rpc/reply", g_sn);
+  snprintf(t_dbg_ctl, sizeof(t_dbg_ctl), TOPIC_SUB "%s/debug/ctl", g_sn);
+  snprintf(t_dbg_state, sizeof(t_dbg_state), TOPIC_PUB "%s/debug/state", g_sn);
   {
     // A report not yet sent before the reset goes out at the next connection.
     nvs_handle_t h;
@@ -848,7 +869,7 @@ void uplink_start(const char *sn) {
   load();
   if (!pm_warm() || g_plan.magic != PLAN_MAGIC) g_plan = {PLAN_MAGIC, 0, 0, false, 0, 0, 0, LINK_OFFLINE};
   xTaskCreatePinnedToCore(task, "uplink", 6144, nullptr, 2, &g_task, 0);
-  g_rpc_q = xQueueCreate(4, sizeof(char *));
+  g_rpc_q = xQueueCreate(4, sizeof(RpcReq));
   xTaskCreatePinnedToCore(rpc_task, "mqtt_rpc", 6144, nullptr, 2, nullptr, 0);
 }
 
@@ -880,6 +901,20 @@ bool uplink_set_server(const char *host, uint16_t port, const char *user,
 }
 
 bool uplink_configured(void) { return g_host[0] != 0; }
+bool uplink_connected(void) { return g_mqtt; }
+
+bool uplink_rpc_submit(char *req, bool debug) {
+  const RpcReq q = {req, debug};
+  if (req && g_rpc_q && xQueueSend(g_rpc_q, &q, 0) == pdTRUE) return true;
+  free(req);
+  return false;
+}
+
+void uplink_login(uint16_t *port, char *user, size_t un, char *pass, size_t pn) {
+  if (port) *port = g_port;
+  if (user && un) snprintf(user, un, "%s", g_user);
+  if (pass && pn) snprintf(pass, pn, "%s", g_pass);
+}
 
 
 uint32_t uplink_acked(uint32_t trip) { return ack_get(trip); }
