@@ -62,11 +62,14 @@ class Site:
     factory: Factory = field(default_factory=Factory)
     # the station's own login to the broker (the rack); none = the boxes' login
     station_mqtt: dict = field(default_factory=dict)
+    # the debug broker: the boxes' debug stream (their second client), only while it is on
+    debug_mqtt: dict = field(default_factory=dict)
     path: str = ""
 
     def secrets(self) -> list[str]:
         out = [w.password for w in self.wifi if w.password]
-        for p in (self.mqtt.get("password"), self.station_mqtt.get("password"), self.factory.password):
+        for p in (self.mqtt.get("password"), self.station_mqtt.get("password"), self.factory.password,
+                  self.debug_mqtt.get("password")):
             if p:
                 out.append(p)
         return out
@@ -118,6 +121,11 @@ def load(path: str | None = None) -> Site:
                           if m.get(k, "").strip()}
         if s.station_mqtt.get("port"):
             s.station_mqtt["port"] = int(s.station_mqtt["port"])
+    if cp.has_section("debug_mqtt"):
+        m = cp["debug_mqtt"]
+        s.debug_mqtt = {k: m.get(k, "").strip() for k in ("host", "port", "username", "password")
+                        if m.get(k, "").strip()}
+        s.debug_mqtt["port"] = int(s.debug_mqtt.get("port") or 1883)
     return s
 
 
@@ -207,6 +215,8 @@ def save(site: Site, path: str | None = None) -> str:
                      "gateway": f.gateway, "subnet": f.subnet, "dns": f.dns}
     if site.station_mqtt:
         cp["station_mqtt"] = {k: str(v) for k, v in site.station_mqtt.items() if v not in ("", None)}
+    if site.debug_mqtt.get("host"):
+        cp["debug_mqtt"] = {k: str(v) for k, v in site.debug_mqtt.items() if v not in ("", None)}
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:

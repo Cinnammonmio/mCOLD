@@ -1,0 +1,27 @@
+# mCOLD Line on a server: the app, and Caddy in front for https.
+#   cd flasher/deploy && cp .env.example .env   (set LINE_HOST)
+#   docker compose up -d --build
+# Settings: /data/site.ini (the settings page writes it); firmware: mflash fw import, see docs/web.md
+services:
+  line:
+    build:
+      context: ../..
+      dockerfile: flasher/deploy/Dockerfile
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    # demo instead (simulated boxes and USB): command: python -m mflash.web --demo --host 0.0.0.0 --port 8800
+  caddy:
+    image: caddy:2.8.4
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - LINE_HOST=${LINE_HOST:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [line]
+    restart: unless-stopped
+volumes:
+  caddy_data:

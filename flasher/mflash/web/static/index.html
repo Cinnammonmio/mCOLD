@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="th" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mCOLD Line</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><div class="mark" data-icon="snow"></div>
+    <div><b>mCOLD Line</b><span id="subtitle">เพิ่มเครื่อง · ทดสอบ · firmware จริง</span></div></div>
+  <div class="ctl lot" id="lotctl" title="SN ส่วนที่เหมือนกันทั้งล็อต"><label for="lot">ล็อต</label>
+    <input id="lot" autocomplete="off" spellcheck="false"></div>
+  <div class="ctl"><label for="operator">ผู้ทำ</label><input id="operator" placeholder="ชื่อ"></div>
+  <div class="linkchip" id="link"><i></i><span>broker</span></div>
+  <div class="spacer"></div>
+  <button class="btn go" id="openadd"><span data-icon="plus"></span>เพิ่มเครื่อง</button>
+  <button class="btn" id="summary"><span data-icon="list"></span>สรุป SN</button>
+  <button class="btn icon ghost" id="settings" title="ตั้งค่า" data-icon="gear"></button>
+  <button class="btn icon ghost" id="theme" title="สว่าง / มืด"></button>
+  <div class="menu" id="menu"><button class="btn icon ghost" id="menubtn" data-icon="more" aria-label="เมนู"></button>
+    <div class="menu-list">
+      <button id="fwbtn"><span data-icon="flash"></span>Firmware ที่ใช้</button>
+      <button id="histbtn"><span data-icon="clock"></span>ประวัติการทำงาน</button>
+      <button id="apibtn"><span data-icon="code"></span>เอกสาร API (/docs)</button>
+    </div></div>
+</header>
+
+<div class="page">
+  <main class="main">
+    <div class="banner info" id="demo" hidden><span data-icon="info"></span>โหมดสาธิต: USB และกล่องเป็นแบบจำลอง ไม่มีอะไรถูก flash จริง · กล่องที่ 7, 14, … GNSS เสีย</div>
+    <div class="banner err" id="err" hidden></div>
+    <div class="kpis" id="kpis">
+      <div class="kpi k-flash" data-f="flashing"><span>กำลัง flash</span><b>0</b></div>
+      <div class="kpi k-wait" data-f="waiting"><span>รอขึ้น online</span><b>0</b></div>
+      <div class="kpi k-online" data-f="online"><span>พร้อมทดสอบ</span><b>0</b></div>
+      <div class="kpi k-run" data-f="running"><span>กำลังทดสอบ</span><b>0</b></div>
+      <div class="kpi k-ask" data-f="ask"><span>รอคนดู</span><b>0</b></div>
+      <div class="kpi k-pass" data-f="pass"><span>ผ่าน ส่งมอบแล้ว</span><b>0</b></div>
+      <div class="kpi k-fail" data-f="fail"><span>ไม่ผ่าน</span><b>0</b></div>
+    </div>
+    <div class="toolbar">
+      <button class="btn" id="testall" title="เริ่มทดสอบทุกเครื่องที่ online และยังไม่ผ่าน"><span data-icon="play"></span>ทดสอบเครื่องที่พร้อม</button>
+      <label class="switch" title="เครื่องที่ขึ้น online แล้วเริ่มทดสอบเอง"><input type="checkbox" id="auto">ทดสอบเองเมื่อ online</label>
+      <span class="note" id="hint">กดตัวเลขด้านบนเพื่อกรอง · ตอบคำถามด้วยคีย์ Y / N / R</span>
+    </div>
+    <div class="rq" id="rq" hidden></div>
+    <div class="grid" id="grid"></div>
+    <div class="empty" id="empty" hidden>ยังไม่มีเครื่องในล็อตนี้ · กด <b>เพิ่มเครื่อง</b> เสียบสาย USB ที่กล่อง แล้วกด <b>เพิ่ม</b></div>
+  </main>
+
+  <aside class="add" id="add" hidden>
+    <h2><span data-icon="plug"></span>เพิ่มเครื่อง <button class="btn sm icon ghost" id="closeadd" title="ปิด" data-icon="x"></button></h2>
+    <div class="banner warn" id="noserial" hidden>เบราว์เซอร์นี้ต่อ USB ไม่ได้: ใช้ Chrome หรือ Edge และเปิดผ่าน https</div>
+    <label class="fld"><span>เลขเครื่อง (เลขว่างถัดไป แก้ได้)</span>
+      <div class="unitrow"><button class="btn" id="udn">−</button><input id="unit" inputmode="numeric" autocomplete="off"><button class="btn" id="uup">+</button></div></label>
+    <div class="snprev" id="snprev"></div>
+    <div class="fld"><span>Wi-Fi ที่ใส่ให้กล่อง</span><div class="chks" id="wifis"></div></div>
+    <label class="chk"><input type="checkbox" id="erase">ลบทั้งชิปก่อนเขียน <small>(กล่องใหม่, ~30 วินาที)</small></label>
+    <div class="note" id="fwnote"></div>
+    <button class="btn go big" id="addbtn"><span data-icon="flash"></span>เสียบสายแล้ว — เพิ่ม <small>(Enter)</small></button>
+    <ol class="steps" id="steps" hidden></ol>
+    <div class="result" id="result" hidden></div>
+    <div class="recent" id="recent"></div>
+    <div class="note">ขั้นตอน: เสียบสาย USB ที่กล่อง → กด <b>เพิ่ม</b> → เลือกพอร์ต (USB JTAG) → รอเขียวแล้ว<b>ถอดสาย</b>
+      วางกล่องบนที่ชาร์จ → เสียบกล่องถัดไปแล้วกด <b>เพิ่ม</b> อีกครั้ง ค่าที่เลือกจำไว้ให้</div>
+  </aside>
+</div>
+
+<dialog id="logdlg"><header><span data-icon="log"></span><b id="logtitle">ประวัติเครื่อง</b><button class="btn sm" data-close>ปิด</button></header>
+  <div class="dbody"><div class="runs" id="runs"></div></div></dialog>
+
+<dialog id="dbgdlg"><header><span data-icon="bug"></span><b id="dbgtitle">Debug stream</b>
+  <label class="switch"><input type="checkbox" id="dbgon">เปิด stream</label><button class="btn sm" data-close>ปิด</button></header>
+  <div class="dbody"><div class="note" id="dbgnote"></div><div class="dbg" id="dbgch"></div><pre class="dlog" id="dbglog"></pre></div></dialog>
+
+<dialog id="sumdlg"><header><span data-icon="list"></span><b id="sumtitle">สรุป SN</b>
+  <a class="btn sm" id="sumcsv" href="#" download><span data-icon="download"></span>CSV</a><button class="btn sm" data-close>ปิด</button></header>
+  <div class="dbody"><div class="kpis" id="sumbar"></div><table><thead><tr><th>SN</th><th>ผล</th><th>MAC</th><th>Firmware</th>
+    <th>สาเหตุที่ไม่ผ่าน</th><th>เสร็จเมื่อ</th><th>ผู้ทำ</th><th></th></tr></thead><tbody id="sumbody"></tbody></table></div></dialog>
+
+<dialog id="fwdlg"><header><span data-icon="flash"></span><b>Firmware ที่ใช้</b><button class="btn sm" data-close>ปิด</button></header>
+  <div class="dbody form">
+    <div class="frow"><label class="fld" style="flex:1 1 260px"><span>Flash ผ่าน USB (ตอนเพิ่มเครื่อง)</span><select id="fwusb"></select></label>
+      <label class="fld" style="flex:1 1 260px"><span>Firmware จริง (OTA เป็นข้อท้าย ๆ ของการทดสอบ)</span><select id="fwfinal"></select></label></div>
+    <div class="note" style="margin-top:10px">เลือกได้เฉพาะที่อนุมัติแล้ว · "ล่าสุด" = รุ่นใหม่สุดที่อนุมัติ</div>
+    <h3>นำเข้า build ใหม่</h3>
+    <div class="frow">
+      <label class="fld" style="flex:2 1 260px"><span>zip ของโฟลเดอร์ build (.pio/build/mcold: bootloader, partitions, ota_data_initial, firmware.bin)</span>
+        <input type="file" id="fwzip" accept=".zip,application/zip"></label>
+      <label class="fld" style="flex:1 1 160px"><span>อนุมัติโดย (ว่าง = ยังไม่อนุมัติ)</span><input id="fwby"></label>
+      <button class="btn" id="fwup"><span data-icon="download"></span>นำเข้า</button></div>
+    <h3>คลัง firmware</h3>
+    <table><thead><tr><th>เวอร์ชัน</th><th>id</th><th>build</th><th>เซ็น</th><th>อนุมัติ</th><th></th></tr></thead><tbody id="fwlib"></tbody></table>
+  </div></dialog>
+
+<dialog id="histdlg"><header><span data-icon="clock"></span><b>ประวัติการทำงาน</b><button class="btn sm" data-close>ปิด</button></header>
+  <div class="dbody"><table><thead><tr><th>#</th><th>เวลา</th><th>ขั้น</th><th>ผล</th><th>SN</th><th>MAC</th><th>Firmware</th><th>ผู้ทำ</th></tr></thead>
+    <tbody id="histbody"></tbody></table></div></dialog>
+
+<dialog id="setdlg"><header><span data-icon="gear"></span><b>ตั้งค่า</b>
+  <button class="btn sm go" id="setsave"><span data-icon="check"></span>บันทึก</button><button class="btn sm" data-close>ปิด</button></header>
+  <div class="dbody form">
+    <h3>สถานี</h3>
+    <div class="frow"><label class="fld" style="width:260px"><span>ชื่อสถานี</span><input id="f-station"></label></div>
+    <h3>Wi-Fi โรงงาน + IP คงที่ตามเลขเครื่อง</h3>
+    <div class="frow">
+      <label class="fld" style="flex:1 1 180px"><span>SSID (ไม่มีช่องว่าง)</span><input id="f-fssid" class="mono" maxlength="32"></label>
+      <label class="fld" style="flex:1 1 180px"><span>รหัสผ่าน</span><input id="f-fpass" type="password" autocomplete="new-password"></label></div>
+    <div class="frow" style="margin-top:8px">
+      <label class="fld" style="width:150px"><span>IP ฐาน (เครื่อง n = ฐาน + n)</span><input id="f-fbase" class="mono"></label>
+      <label class="fld" style="width:140px"><span>Gateway</span><input id="f-fgw" class="mono"></label>
+      <label class="fld" style="width:140px"><span>Subnet</span><input id="f-fsub" class="mono" placeholder="255.255.255.0"></label>
+      <label class="fld" style="width:140px"><span>DNS</span><input id="f-fdns" class="mono"></label></div>
+    <div class="note" id="f-fnote"></div>
+    <h3>Wi-Fi ลูกค้า <span id="f-wcount"></span><button class="btn sm" id="f-addwifi"><span data-icon="plus"></span>เพิ่ม</button></h3>
+    <div id="f-wifi"></div>
+    <h3>MQTT broker (กล่องใช้)</h3>
+    <div class="frow">
+      <label class="fld" style="flex:2 1 200px"><span>Host</span><input id="f-mhost" class="mono"></label>
+      <label class="fld" style="width:90px"><span>Port</span><input id="f-mport" class="mono"></label>
+      <label class="fld" style="flex:1 1 140px"><span>ชื่อผู้ใช้</span><input id="f-muser" class="mono" autocomplete="off"></label>
+      <label class="fld" style="flex:1 1 160px"><span>รหัสผ่าน</span><input id="f-mpass" type="password" autocomplete="new-password"></label></div>
+    <div class="frow" style="margin-top:8px">
+      <label class="fld" style="flex:1 1 180px"><span>Login ของเว็บนี้ (ว่าง = ใช้ของกล่อง)</span><input id="f-suser" class="mono" autocomplete="off"></label>
+      <label class="fld" style="flex:1 1 180px"><span>รหัสผ่าน</span><input id="f-spass" type="password" autocomplete="new-password"></label></div>
+    <h3>Debug broker (stream จาก client ตัวที่สองของกล่อง)</h3>
+    <div class="frow">
+      <label class="fld" style="flex:2 1 200px"><span>Host (ว่าง = ปิด debug)</span><input id="f-dhost" class="mono"></label>
+      <label class="fld" style="width:90px"><span>Port</span><input id="f-dport" class="mono"></label>
+      <label class="fld" style="flex:1 1 140px"><span>ชื่อผู้ใช้</span><input id="f-duser" class="mono" autocomplete="off"></label>
+      <label class="fld" style="flex:1 1 160px"><span>รหัสผ่าน</span><input id="f-dpass" type="password" autocomplete="new-password"></label></div>
+    <h3>OTA</h3>
+    <div class="frow"><label class="fld" style="flex:1 1 420px"><span>ที่อยู่ file server ของ firmware (ota base)</span><input id="f-ota" class="mono" placeholder="https://..."></label></div>
+    <h3>ค่าตั้งต้นของกล่อง · ว่าง = ค่าของ firmware</h3>
+    <table class="cfg"><tbody id="f-cfg"></tbody></table>
+    <div class="formerr" id="f-err" hidden></div>
+    <div class="note" style="margin-top:12px">รหัสผ่านไม่แสดงบนหน้าจอ เว้นว่าง = ใช้รหัสเดิม · broker ที่เปลี่ยนใช้กับเว็บนี้หลังรีสตาร์ทโปรแกรม ·
+      บันทึกใน <span class="mono" id="f-path"></span></div>
+  </div></dialog>
+
+<dialog id="confdlg" style="width:min(500px,calc(100vw - 32px))"><header><span data-icon="trash"></span><b>ลบบันทึกเครื่องนี้?</b></header>
+  <div class="dbody"><div class="mono" id="conf-what" style="font-size:15px;font-weight:600;margin-bottom:8px"></div>
+    <div class="note">ประวัติทั้งหมดของเครื่องนี้ถูกลบ เลข SN ว่างให้เครื่องอื่นใช้ได้ (เก็บไว้แค่ว่าใครลบเมื่อไร)</div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px"><button class="btn" id="conf-no">ยกเลิก</button>
+      <button class="btn danger" id="conf-yes"><span data-icon="trash"></span>ลบ</button></div></div></dialog>
+
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>

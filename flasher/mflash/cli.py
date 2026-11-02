@@ -305,6 +305,18 @@ def cmd_gui(a) -> None:
           db_path=a.db, site_path=a.site, speed=a.speed)
 
 
+def cmd_web(a) -> None:
+    from .web.app import main as web_main
+    args = ["--host", a.host, "--port", str(a.port), "--product", a.product, "--speed", str(a.speed)]
+    if a.demo:
+        args.append("--demo")
+    if a.db:
+        args += ["--db", a.db]
+    if a.site:
+        args += ["--site", a.site]
+    web_main(args)
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="mflash", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -384,6 +396,14 @@ def main(argv=None) -> None:
     s.add_argument("--http-port", type=int, default=8765)
     s.add_argument("--no-browser", action="store_true", help="do not open a window")
     s.set_defaults(fn=cmd_gui)
+
+    s = sub.add_parser("web", help="the line's web app: add boxes over USB in the browser, test by MQTT")
+    s.add_argument("product", nargs="?", default="mcold")
+    s.add_argument("--demo", action="store_true", help="simulated broker, boxes and USB port")
+    s.add_argument("--speed", type=float, default=0.3, help="demo: delays x this")
+    s.add_argument("--host", default="127.0.0.1", help="0.0.0.0 behind the https proxy")
+    s.add_argument("--port", type=int, default=8800)
+    s.set_defaults(fn=cmd_web)
 
     a = ap.parse_args(argv)
     a.fn(a)

@@ -124,6 +124,24 @@ class SimBox:
         if self.net:
             self.net.check()
 
+    def apply_nvs(self, img: bytes) -> None:
+        """What the box finds in its NVS partition at boot (nvsimage.py)."""
+        from .nvsimage import read
+        import ipaddress
+        nvs = read(img)
+        self.sn = str(nvs.get("sys", {}).get("sn", ""))
+        net = nvs.get("net", {})
+        self.wifi, self.wifi_ip = [], {}
+        for i in range(5):
+            ssid = net.get(f"s{i}")
+            if ssid:
+                self.wifi.append(ssid)
+                blob = net.get(f"i{i}")
+                self.wifi_ip[ssid] = str(ipaddress.IPv4Address(blob[:4])) if blob else ""
+        self.mqtt = bool(nvs.get("mqtt", {}).get("host"))
+        self.config = {k: v for k, v in nvs.get("cfg", {}).items() if k != "schema"}
+        self.factory_mode = bool(nvs.get("factory", {}).get("on"))
+
     def erase(self) -> None:
         """What an erase of the whole chip takes with it: NVS and everything in it."""
         self.flash, self.sn, self.pending_sn, self.config = {}, "", "", {}
@@ -298,11 +316,17 @@ class SimNet:
     while it runs the product firmware, has an SN, a broker and a network in range;
     with the MQTT rpc of docs/firmware-mqtt-rpc.md when `rpc` is on."""
 
-    def __init__(self, box: SimBox, broker: SimBroker, rpc: bool = True):
+    def __init__(self, box: SimBox, broker: SimBroker, rpc: bool = True,
+                 debug_broker: SimBroker | None = None):
         self.box, self.broker, self.rpc = box, broker, rpc
         self.link: SimLink | None = None
         self.ssid = ""
         box.net = self
+        # the debug stream: a second client, to a broker of its own, only while on
+        self.debug_broker = debug_broker
+        self.debug_link: SimLink | None = None
+        self.debug_until = 0.0
+        self.debug_timer: threading.Timer | None = None
 
     def _can(self) -> str:
         b = self.box
@@ -371,8 +395,32 @@ class SimNet:
         elif leaf == "config":
             self._config(json.loads(text))
         elif leaf == "firmware":
-            self._pub("ota/state", {"file": text, "state": "skipped", "reason": "not newer",
-                                    "running": self.box.version})
+            self._ota(text)
+        elif leaf == "debug/ctl" and not retained:      # a retained one is ignored
+            d = json.loads(text)
+            self.debug(bool(d.get("on")), float(d.get("min", 60)), d.get("channels"))
+
+    def _ota(self, name: str) -> None:
+        """The box fetches the named image from its OTA base and restarts into it."""
+        b = self.box
+        handled = getattr(b, "ota_handled", set())
+        if name in handled:
+            return                    # a name already handled is ignored (PROTOCOL.md, OTA)
+        b.ota_handled = handled | {name}
+        ver = os.path.basename(name).removeprefix("mCOLD_").removesuffix(".bin")
+        if not ver or ver == b.version:
+            return self._pub("ota/state", {"file": name, "ver": ver, "state": "skipped",
+                                           "reason": "not newer", "running": b.version})
+        old = b.version
+        self._pub("ota/state", {"ver": ver, "state": "downloading", "pct": 40})
+
+        def done():
+            self._pub("ota/state", {"ver": ver, "state": "rebooting", "from": old})
+            b.version, b.elf16 = ver, hashlib.sha256(ver.encode()).hexdigest()[:16]
+            self.drop()
+            self.broker.later(2.0, lambda: (self._join(),
+                                            self._pub("ota/state", {"ver": ver, "state": "ok", "from": old})))
+        self.broker.later(6.0, done)
 
     def _rpc(self, req: dict) -> dict:
         b, cmd = self.box, req.get("cmd")
@@ -399,9 +447,76 @@ class SimNet:
                      fw=b.version, elf=b.elf16)
         elif cmd == "FACTORY_DONE":
             b.factory_mode = False
+        elif cmd == "DIAG_RUN" and getattr(b, "diag", True):
+            r.update(self._diag(req.get("items") or []))
+            r["ok"] = all(v.get("ok") for v in r.values() if isinstance(v, dict))
         else:
             r = {"id": req.get("id"), "ok": False, "err": "UNKNOWN_CMD"}
         return r
+
+    def _diag(self, items: list[str]) -> dict:
+        """DIAG_RUN: the bench checks, by name; the visual ones only show something."""
+        b = self.box
+        res = {"i2c": {"ok": True, "found": 8, "expected": 8},
+               "temp": {"ok": b.probe, "c": 23.5},
+               "gnss": {"ok": not b.gnss_dead, "good": 0 if b.gnss_dead else 14, "bad": 0},
+               "accel": {"ok": True, "g": [0.01, -0.02, 0.99]},
+               "nfc": {"ok": True},
+               "charger": {"ok": True, "ma": 280},
+               "rails": {"ok": True},
+               "logtest": {"ok": True, "failures": 0},
+               "leds": {"ok": True, "shown": "walk 4 x RGBW"},
+               "buzzer": {"ok": True, "shown": "beep 3 x 200 ms"},
+               "epd": {"ok": True, "shown": "test pattern"}}
+        return {k: res.get(k, {"ok": False, "err": "UNKNOWN_ITEM"}) for k in items}
+
+    # ---- the debug stream (docs: notes/firmware.md, PROPOSAL debug over MQTT) ----
+
+    def debug(self, on: bool, minutes: float = 60, channels=None) -> None:
+        b = self.box
+        if self.debug_timer:
+            self.debug_timer.cancel()
+            self.debug_timer = None
+        if not on or not self.debug_broker:
+            if self.debug_link:
+                self.debug_link.close()
+            self.debug_link, self.debug_until = None, 0.0
+            # the state goes out on client 1, the production broker
+            self._pub("debug/state", {"on": False, "broker": "connected" if self.debug_broker else "not set"})
+            return
+        if not self.debug_link:
+            self.debug_link = self.debug_broker.connect(b.sn + "-debug")
+        self.debug_until = time.time() + minutes * 60
+        self.debug_channels = list(channels or ["power", "temp", "net", "sys", "log"])
+        self._pub("debug/state", {"on": True, "until": int(self.debug_until), "channels": self.debug_channels,
+                                  "period_ms": 100, "broker": "connected"})
+        self._debug_tick()
+
+    def _debug_tick(self) -> None:
+        """One message a second per channel, ten points each (the 100 ms limit)."""
+        import random
+        b = self.box
+        if not self.debug_link or time.time() > self.debug_until:
+            return self.debug(False)
+        now = int(time.time() * 1000)
+        for ch in [c for c in self.debug_channels if c != "log"]:
+            rows = []
+            for i in range(10):
+                if ch == "power":
+                    rows.append({"mv": 4010 + random.randint(-6, 6), "ma": 280 + random.randint(-15, 15)})
+                elif ch == "temp":
+                    rows.append({"c": round(23.5 + random.uniform(-0.1, 0.1), 2)})
+                elif ch == "net":
+                    rows.append({"rssi": -52 + random.randint(-3, 3)})
+                else:
+                    rows.append({"heap": 180000 - random.randint(0, 900)})
+            self.debug_link.publish(f"mcold/{b.sn}/debug/{ch}", json.dumps(
+                {"from": now - 1000, "period_ms": 100, "rows": rows}))
+        self.debug_link.publish(f"mcold/{b.sn}/debug/log", json.dumps(
+            {"lines": [f"[uplink] status sent ({b.version})"]}))
+        self.debug_timer = threading.Timer(1.0, self._debug_tick)
+        self.debug_timer.daemon = True
+        self.debug_timer.start()
 
     def _config(self, doc: dict) -> None:
         b = self.box

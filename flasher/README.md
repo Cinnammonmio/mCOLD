@@ -25,6 +25,11 @@ verify      health ครบ, logtest 14 ข้อ, ไฟ, เสียง, ต
 ขั้นทดสอบไม่มีการวัดด้วยมัลติมิเตอร์ ไม่ทดสอบ charger และไม่ถอด/เสียบโพรบ เพราะกล่องประกอบเสร็จแล้ว
 คนตอบแค่ 2 ข้อ: ไฟ LED และเสียง buzzer
 
+**เว็บสายผลิต (ใช้แทนหน้าต่าง Dock):** `mflash web` หน้ารวมเครื่องของล็อต + ปุ่ม **เพิ่มเครื่อง**
+เสียบสาย USB กดเพิ่ม เบราว์เซอร์ (Chrome/Edge) flash firmware พร้อม SN, Wi-Fi, broker ในครั้งเดียว ถอดสายวางบนที่ชาร์จ
+แล้วทดสอบ ยืนยันด้วยตา OTA firmware จริง และส่งมอบ Wi-Fi ผ่าน MQTT ดู [docs/web.md](docs/web.md)
+(ลอง: `python -m mflash web --demo` แล้วเปิด http://127.0.0.1:8800) · หน้าต่าง 6 ช่องด้านล่างยังใช้ได้ (เดิม)
+
 **ผลิตทีละมาก (เช่น 100 เครื่อง):** โหมด **USB เร็ว → ชั้นวาง MQTT** ให้กล่องอยู่ที่ Dock แค่ราว 1.5 นาที
 (firmware, SN, Wi-Fi โรงงาน + IP คงที่ตามเลขเครื่อง, broker) แล้วทดสอบ ดึง debug ส่งค่าตั้ง และส่งมอบ Wi-Fi
 ผ่าน Wi-Fi → MQTT บนชั้นวางพร้อมกันหลายสิบกล่อง ดู [docs/rack.md](docs/rack.md)
@@ -36,14 +41,14 @@ Python 3.10 ขึ้นไป
 
 ```bash
 cd flasher
-pip install -r requirements.txt       # esptool, pyserial, PyYAML, paho-mqtt (ชั้นวาง)
+pip install -r requirements.txt       # esptool, pyserial, PyYAML, paho-mqtt, fastapi, uvicorn, nvs gen
 python -m mflash --help
 ```
 
 หรือ `pip install -e flasher` แล้วใช้คำสั่ง `mflash` ได้จากทุกที่
 ถ้าจะ build firmware จาก repo ด้วย ต้องมี PlatformIO (`pio`) ด้วย
 
-## หน้าต่าง 6 ช่อง
+## หน้าต่าง 6 ช่อง (เดิม: Dock บนเครื่องเดียว)
 
 ```bash
 python -m mflash gui              # บอร์ดจริงบนบัส USB · เปิดเป็นหน้าต่างของ Edge (app mode)
@@ -265,7 +270,7 @@ firmware อยู่ที่ไหนและ build อย่างไร, �
 
 ## สถานะ
 
-**ยังไม่ได้รันกับบอร์ดจริง** ที่ทดสอบแล้ว (`python -m pytest`, 53 ข้อ):
+**ยังไม่ได้รันกับบอร์ดจริง** ที่ทดสอบแล้ว (`python -m pytest`, 61 ข้อ):
 
 - ทุกขั้นตั้งแต่ test จนถึง verify กับบอร์ดจำลอง (`tests/fakes.py`) ที่ทำตัวตามที่วัดจากบอร์ดจริง:
   เปลี่ยนพอร์ต/PID/serial ตาม firmware ที่รัน, `flash` เข้า ROM, `sn set` มีผลหลัง reboot
@@ -284,8 +289,11 @@ firmware อยู่ที่ไหนและ build อย่างไร, �
   ตอบ "ไม่" / "ทำซ้ำ", กล่องหลุดกลางทาง, firmware ที่ไม่มีคำสั่ง MQTT ถูกหยุดที่ Dock,
   ส่งมอบแล้วกล่องออกจาก Wi-Fi โรงงาน และ server ของลูกค้าเริ่ม rev 1 ได้, **100 กล่องพร้อมกัน**
   · `PahoLink` กับ broker MQTT จริง (amqtt) ส่ง/รับ retained และ rpc ได้
-- firmware ([docs/firmware-mqtt-rpc.patch](docs/firmware-mqtt-rpc.patch)) **ยังไม่ได้ build**: เขียนบน
-  `firmware/p7-power` และ `git apply` ได้ ต้อง build และลองกับบอร์ดตาม [docs/firmware-mqtt-rpc.md](docs/firmware-mqtt-rpc.md) §6
+- เว็บ (`tests/test_web.py`): เพิ่มเครื่องผ่าน USB จำลอง (ไฟล์ NVS อ่านกลับได้ครบ), เลขซ้ำถูกปฏิเสธ,
+  กล่องเดิมได้ SN เดิม, ทดสอบ + ยืนยันด้วยตา + OTA firmware จริง + ส่งมอบ, ตอบ "ไม่", debug stream,
+  firmware ที่ยังไม่มี DIAG_RUN ใช้ fallback, นำเข้า/อนุมัติ firmware จาก zip · เปิดหน้าจริงใน Chromium ทั้งวงจร
+- firmware ([docs/firmware-mqtt-rpc.patch](docs/firmware-mqtt-rpc.patch)) ฝั่ง firmware รวมเข้า
+  0.7.0-dev.65 แล้ว (`firmware/p7-power`) ทาง MQTT ยังต้องลองกับบอร์ดตาม [docs/firmware-mqtt-rpc.md](docs/firmware-mqtt-rpc.md) §6
 
 ต้องลองกับบอร์ดจริงก่อนใช้ในสายผลิต: รูปแบบผลของ `esptool flash_id` กับชิปจริง, จังหวะเวลาของ
 `logtest`/`ledtest`/`sync`, ข้อความของ bringup `power` ตอนชาร์จ, การรันพร้อมกัน 6 เครื่องผ่าน Dock,
@@ -311,7 +319,11 @@ mflash/
   remote.py     ชั้นวาง: ขั้น rack: ผ่าน MQTT, thread ต่อกล่อง, คิวคำถาม
   gui.py        เว็บเซิร์ฟเวอร์ของหน้าต่าง (standard library) · gui.html หน้าต่างเอง
   sim.py        บอร์ดจำลองสำหรับ test และ --demo, broker จำลองและ Wi-Fi/MQTT ของกล่อง
+  core.py       หน้าตั้งค่าและสรุป SN ที่หน้าต่างกับเว็บใช้ร่วมกัน
+  nvsimage.py   ค่าตั้งของกล่องเป็นไฟล์ NVS ที่เขียนพร้อม firmware
+  web/          เว็บสายผลิต: app.py (FastAPI), line.py, demo.py, static/ (หน้าเว็บ + esptool-js)
 profiles/       mcold.yaml, etemp.yaml
-docs/           ภาพหน้าต่าง, rack.md (ชั้นวาง), firmware-mqtt-rpc.md + .patch
+docs/           ภาพหน้าต่าง, web.md (เว็บ), rack.md (ชั้นวาง), firmware-mqtt-rpc.md + .patch
+deploy/         Dockerfile, docker-compose.yml + Caddy (https) สำหรับ server
 tests/          บอร์ดจำลองและ test
 ```

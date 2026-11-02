@@ -102,6 +102,19 @@ sequence: [test, production, setup, verify]
 routes:
   - [test, production, setup, verify]
   - [quick, rack]
+  - [usb, line]          # the line's web app (mflash/web): USB in the browser, the rest by MQTT
+
+# Done in the browser by the web app (Web Serial + esptool-js), recorded here.
+external_stages: [usb]
+
+# The line's web app: what the browser writes over USB in one session --
+# the firmware's images and an NVS image with the box's settings
+# (mflash/nvsimage.py) -- before the box goes on a charger for `line:`.
+web:
+  firmware: production       # the kind flashed over USB, and the one `line:` ends on by OTA
+  nvs: {offset: 0x9000, size: 0x4000}
+  erase_all: true            # a new box: the whole chip, ~30 s
+  factory_mode: true         # so the line's commands are taken over MQTT
 
 # What the station offers to run. A box already made comes back for new
 # settings or a new firmware without losing its SN, its settings or its
@@ -349,5 +362,70 @@ rack:
     timeout: 600
     enabled: false           # the dock already flashed the chosen one
   - name: ส่งมอบ Wi-Fi (ใส่ของลูกค้า แล้วลบ Wi-Fi โรงงาน) -- ข้อสุดท้าย
+    type: wifi_handover
+    timeout: 120
+
+# ---- the line's web app: after the USB flash, everything by MQTT ----------
+# Bringup lives in the product firmware as DIAG_RUN (decided 2026-11-02, see
+# notes/flasher.md); the visual checks are asked of a person, one box at a time.
+line:
+  - name: กล่องต่อ broker, firmware ตรงกับที่ flash
+    type: online
+    timeout: 300
+    ip: true
+    firmware: production
+  - name: อุณหภูมิและไฟเลี้ยงจาก status
+    type: status
+    expect: {temp.ok: true, power.external: true}
+    range: {temp.c: [-40, 85]}
+  - name: ทดสอบโมดูลอัตโนมัติ (I2C, อุณหภูมิ, GNSS, accel, NFC, ชาร์จ, ราง, trip log)
+    type: rpc
+    cmd: DIAG_RUN
+    args: {items: [i2c, temp, gnss, accel, nfc, charger, rails, logtest]}
+    timeout: 240
+    expect: {ok: true, i2c.ok: true, temp.ok: true, gnss.ok: true, accel.ok: true, nfc.ok: true,
+             charger.ok: true, rails.ok: true, logtest.ok: true}
+    # the firmware side (notes/firmware.md): +250..300 mA into the cell on a USB port
+    range: {charger.ma: [250, 300]}
+    help: "i2c = ชิปไม่ตอบ · gnss = ราง SD/GNSS หรือ baud · charger 0 mA = firmware ก่อน dev.64 (CE#)"
+    # dev.65 has FACTORY_TEST (docs/firmware-mqtt-rpc.md), not DIAG_RUN yet
+    fallback:
+      cmd: FACTORY_TEST
+      args: {items: [i2c, temp, gnss, logtest], gnss_s: 15}
+      expect: {ok: true, i2c.ok: true, temp.ok: true, gnss.ok: true, logtest.ok: true}
+  - name: กล่องไหน (กะพริบ + beep)
+    type: identify_confirm
+    seconds: 10
+    ask: "เครื่อง {unit} ({ip}) คือกล่องที่กะพริบขาวและบี๊บอยู่?"
+  - name: ไฟทุกดวง ทุกสี
+    type: rpc_confirm
+    cmd: DIAG_RUN
+    args: {items: [leds]}
+    ask: "เครื่อง {unit}: ไฟ 4 ดวงติดไล่ครบ แดง เขียว น้ำเงิน ขาว?"
+    fallback: {cmd: IDENTIFY, args: {s: 8}, ask: "เครื่อง {unit}: ไฟทั้ง 4 ดวงกะพริบขาวครบ? (firmware นี้ยังไล่สีไม่ได้)"}
+  - name: เสียง buzzer
+    type: rpc_confirm
+    cmd: DIAG_RUN
+    args: {items: [buzzer]}
+    ask: "เครื่อง {unit}: ได้ยินเสียง beep 3 ครั้ง ดังชัด?"
+    fallback: {cmd: IDENTIFY, args: {s: 4}, ask: "เครื่อง {unit}: ได้ยินเสียง beep ดังชัด?"}
+  - name: จอ e-paper
+    type: rpc_confirm
+    cmd: DIAG_RUN
+    args: {items: [epd]}
+    timeout: 40
+    ask: "เครื่อง {unit}: จอแสดงลายทดสอบเต็มจอ ไม่มีเส้นหรือจุดขาด?"
+    fallback: {cmd: GET_STATUS, ask: "เครื่อง {unit}: จอแสดงหน้าปกติ (SN, อุณหภูมิ) ชัด ไม่มีเส้นหรือจุดขาด?"}
+  - name: ดึงข้อมูล debug
+    type: debug_pull
+    expect: {coredump: false}
+  - name: ค่าตั้งของ site
+    type: config_doc
+    timeout: 120
+  - name: Firmware จริง (OTA ถ้ายังไม่ใช่รุ่นที่เลือก)
+    type: ota
+    firmware: production
+    timeout: 600
+  - name: ส่งมอบ Wi-Fi -- ข้อสุดท้าย
     type: wifi_handover
     timeout: 120

@@ -115,8 +115,8 @@ class RemoteRunner:
         return self.fleet.box(self.rb.sn)
 
     def run(self) -> bool:
-        rb, steps = self.rb, self.p.rack
-        run_id = self.db.start_run(self.p.product, "rack", rb.mac, rb.sn,
+        rb, steps = self.rb, self.rack.steps
+        run_id = self.db.start_run(self.p.product, self.rack.stage, rb.mac, rb.sn,
                                    self.site.station or "rack", self.operator)
         ok = True
         for i, st in enumerate(steps):
@@ -213,8 +213,23 @@ class RemoteRunner:
             raise StepFailed(", ".join(bad), out)
         return StepResult(PASS, f"{dig(b.status, 'temp.c')} °C", out)
 
+    def _rpc_step(self, st: dict) -> tuple[dict, dict]:
+        """The step's command; a box that does not know it (UNKNOWN_CMD) gets the step's
+        `fallback` instead -- its own cmd, args, checks and question -- so an older
+        firmware is tested with what it has, never passed untested."""
+        try:
+            return self._rpc(st["cmd"], st.get("args"), self._t(st, 30)), st
+        except StepFailed as e:
+            fb = st.get("fallback")
+            if not fb or "UNKNOWN_CMD" not in e.detail:
+                raise
+            used = {k: v for k, v in st.items() if k in ("name", "timeout", "max_repeat", "help")}
+            used.update(fb)
+            self.rb.say(f"  {st['cmd']} ไม่มีใน firmware นี้ ใช้ {used['cmd']} แทน")
+            return self._rpc(used["cmd"], used.get("args"), self._t(used, 30)), used
+
     def step_rpc(self, st: dict, run_id: int) -> StepResult:
-        r = self._rpc(st["cmd"], st.get("args"), self._t(st, 30))
+        r, st = self._rpc_step(st)
         out = json.dumps(r, ensure_ascii=False)
         bad = check_fields(r, st.get("expect"), st.get("range"))
         if bad:
@@ -234,6 +249,27 @@ class RemoteRunner:
                 raise StepFailed("operator: no")
             return StepResult(PASS, f"after {n} repeats" if n else "")
         raise StepFailed("repeated too many times")
+
+    def step_rpc_confirm(self, st: dict, run_id: int) -> StepResult:
+        """A command that shows something (lights, a beep, the screen), then a person
+        says whether it was right; "again" sends the command once more."""
+        ctx = {"unit": f"{self.rb.unit:03d}" if self.rb.unit is not None else "?",
+               "sn": self.rb.sn, "ip": self.rb.ip or self.net().ip() or "-"}
+        out = ""
+        for n in range(int(st.get("max_repeat", 10)) + 1):
+            r, used = self._rpc_step(st)
+            text = used["ask"].format(**ctx)
+            out = json.dumps(r, ensure_ascii=False)
+            bad = check_fields(r, used.get("expect"), used.get("range"))
+            if bad:
+                raise StepFailed(", ".join(bad), out)
+            a = self.rack.ask(self.rb, text, repeat=True)
+            if a is None:
+                continue
+            if not a:
+                raise StepFailed("operator: no", out)
+            return StepResult(PASS, f"after {n} repeats" if n else "", out)
+        raise StepFailed("repeated too many times", out)
 
     def step_debug_pull(self, st: dict, run_id: int) -> StepResult:
         b = self.net()
@@ -327,8 +363,11 @@ class RemoteRunner:
         self.fleet.clear(self.rb.sn, "firmware")
         if not s:
             raise StepFailed(f"OTA {name}: ไม่จบใน {self._t(st, 600):.0f} s")
-        if s["state"] != "ok":
+        already = s["state"] == "skipped" and s.get("running") == m["version"]
+        if s["state"] != "ok" and not already:
             raise StepFailed(f"OTA {s['state']}: {s.get('reason', '')}", json.dumps(s))
+        if self.rb.mac:      # what it runs now: a run again checks against this one
+            self.db.set_value(self.rb.mac, f"firmware_{kind}", m["id"], run_id)
         return StepResult(PASS, f"{s.get('from', '?')} → {m['version']}", json.dumps(s))
 
     def step_wifi_handover(self, st: dict, run_id: int) -> StepResult:
@@ -339,15 +378,23 @@ class RemoteRunner:
         if self.rb.rpc_ok and st.get("factory_done", True):
             r = self._rpc("FACTORY_DONE", None, self._t(st, 15))
             out.append(json.dumps(r))
+        # the networks the box was given at its USB flash, when the web app recorded them:
+        # only the customer's it lacks go on, the line's goes only if it has it
+        given = None
+        if self.rb.mac:
+            try:
+                given = json.loads(self.db.values(self.rb.mac).get("wifi", "null"))
+            except ValueError:
+                given = None
         add = [{"ssid": w.ssid, "pass": w.password, "dhcp": w.dhcp,
                 **({} if w.dhcp else {"ip": w.ip, "gateway": w.gateway, "subnet": w.subnet,
                                       **({"dns": w.dns} if w.dns else {})})}
-               for w in self.site.wifi if w.ssid != f.ssid]
+               for w in self.site.wifi if w.ssid != f.ssid and (given is None or w.ssid not in given)]
         if add:
             stt, _ = self._send_doc({"wifi": {"add": add}}, self._t(st, 120))
             out.append(json.dumps(stt, ensure_ascii=False))
         how = "ไม่มี Wi-Fi โรงงานให้ลบ"
-        if f.ssid:
+        if f.ssid and (given is None or f.ssid in given):
             stt, gone = self._send_doc({"wifi": {"del": [f.ssid]}}, self._t(st, 120), gone_ok=True)
             out.append(json.dumps(stt, ensure_ascii=False) if stt else "(left the broker)")
             how = "ออกจาก Wi-Fi โรงงานแล้ว" + (" (ยืนยันจาก offline)" if gone else "")
@@ -363,8 +410,11 @@ class Rack:
     """Every box of the lot that passed the quick route, wherever it is."""
 
     def __init__(self, station, fleet: Fleet, time_scale: float = 1.0,
-                 debug_dir: str | None = None):
+                 debug_dir: str | None = None, entry_stage: str = "quick", auto: bool = True,
+                 stage: str = "rack"):
         self.st = station
+        self.stage = stage               # the profile's step list it runs, and the record's stage name
+        self.entry_stage = entry_stage   # the USB stage a box must have passed to be here
         self.fleet = fleet
         self.time_scale = time_scale     # the demo runs its timeouts faster
         self.debug_dir = debug_dir or DEBUG_DIR
@@ -372,7 +422,7 @@ class Rack:
         self.lock = threading.RLock()
         self.questions: list[RackQuestion] = []
         self._qid = 0
-        self.auto = True                 # a box that comes online starts by itself
+        self.auto = auto                 # a box that comes online starts by itself
         self.operator = ""
         self.last_rev: dict[str, int] = {}
         self.counts = {"pass": 0, "fail": 0}
@@ -391,6 +441,10 @@ class Rack:
     def site(self) -> Site:
         return self.st.site
 
+    @property
+    def steps(self) -> list[dict]:
+        return (getattr(self.profile, self.stage, None) or []) if self.profile else []
+
     def fw_choice(self) -> dict:
         return dict(self.st.fw_choice)
 
@@ -408,15 +462,15 @@ class Rack:
         if not p or not prefix:
             return
         rows = self.db.q("SELECT d.mac, d.sn FROM device d WHERE d.product=? AND d.sn LIKE ? AND "
-                         "EXISTS (SELECT 1 FROM run r WHERE r.mac=d.mac AND r.stage='quick' AND r.result='PASS')",
-                         (p.product, prefix + "%"))
+                         "EXISTS (SELECT 1 FROM run r WHERE r.mac=d.mac AND r.stage=? AND r.result='PASS')",
+                         (p.product, prefix + "%", self.entry_stage))
         with self.lock:
             for r in rows:
                 rb = self.boxes.get(r["sn"])
                 if not rb:
                     rb = self.boxes[r["sn"]] = RackBox(r["sn"], r["mac"], p.unit_from_sn(r["sn"]))
-                    last = self.db.q("SELECT result FROM run WHERE mac=? AND stage='rack' "
-                                     "AND finished IS NOT NULL ORDER BY id DESC LIMIT 1", (r["mac"],))
+                    last = self.db.q("SELECT result FROM run WHERE mac=? AND stage=? "
+                                     "AND finished IS NOT NULL ORDER BY id DESC LIMIT 1", (r["mac"], self.stage))
                     if last:
                         rb.state = "pass" if last[0]["result"] == "PASS" else "fail"
                         rb.tried = True
@@ -467,8 +521,8 @@ class Rack:
                 raise RuntimeError(f"ไม่มีกล่อง {sn} บนชั้นวาง")
             if rb.busy:
                 raise RuntimeError(f"{sn} กำลังทำงานอยู่")
-            if not self.profile.rack:
-                raise RuntimeError("profile ไม่มีขั้นชั้นวาง (rack:)")
+            if not self.steps:
+                raise RuntimeError(f"profile ไม่มีขั้น {self.stage}:")
             rb.stop.clear()
             rb.fail, rb.step_idx, rb.step_name = None, 0, ""
             rb.state, rb.started, rb.finished, rb.tried = "running", time.time(), 0.0, True
@@ -539,7 +593,7 @@ class Rack:
     # ---- what the window shows -----------------------------------------------
 
     def state(self, log_sn: str = "") -> dict:
-        steps = self.profile.rack if self.profile else []
+        steps = self.steps
         with self.lock:
             boxes = sorted(self.boxes.values(), key=lambda b: (b.unit is None, b.unit or 0, b.sn))
             qs = sorted(self.questions, key=lambda q: q.id)

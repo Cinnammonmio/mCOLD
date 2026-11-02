@@ -135,6 +135,7 @@ class NetBox:
     config_state: dict = field(default_factory=dict)
     ota_state: dict = field(default_factory=dict)
     replies: dict = field(default_factory=dict)     # rpc id -> reply
+    debug_state: dict = field(default_factory=dict) # mcold/<sn>/debug/state (client 1)
     seen_at: float = 0.0                            # last message of any kind, live (not retained)
 
     def ip(self) -> str:
@@ -155,7 +156,7 @@ class Fleet:
         self.cond = threading.Condition()
         self._ids = itertools.count(int(time.time()) % 100000 * 10)
         self.on_change: Callable[[str], None] | None = None
-        for leaf in ("online", "status", "settings", "config/state", "ota/state", "rpc/reply"):
+        for leaf in ("online", "status", "settings", "config/state", "ota/state", "rpc/reply", "debug/state"):
             link.subscribe(f"{self.up}/+/{leaf}", self._got)
 
     def _got(self, topic: str, payload: bytes, retained: bool) -> None:
@@ -186,6 +187,8 @@ class Fleet:
                     b.config_state = d
                 elif leaf == "ota/state":
                     b.ota_state = d
+                elif leaf == "debug/state":
+                    b.debug_state = d
                 elif leaf == "rpc/reply" and "id" in d:
                     b.replies[d["id"]] = d
             self.cond.notify_all()
@@ -222,6 +225,18 @@ class Fleet:
         with self.cond:
             b.replies.pop(rid, None)
         return r or None
+
+    def debug_ctl(self, sn: str, on: bool, minutes: int = 60, channels: list[str] | None = None) -> int:
+        """Debug mode on or off, through the production broker (notes/firmware.md,
+        2026-11-02): never retained, so a reconnect cannot switch it on by itself."""
+        rid = next(self._ids)
+        msg = {"id": rid, "on": bool(on)}
+        if on:
+            msg["min"] = int(minutes)
+            if channels:
+                msg["channels"] = list(channels)
+        self.link.publish(f"{self.down}/{sn}/debug/ctl", json.dumps(msg), retain=False, qos=1)
+        return rid
 
     def send_config(self, sn: str, doc: dict) -> None:
         self.link.publish(f"{self.down}/{sn}/config", json.dumps(doc), retain=True)

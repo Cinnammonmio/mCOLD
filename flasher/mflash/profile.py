@@ -24,7 +24,7 @@ STEP_TYPES = {
 
 # what the rack (remote.py) runs over Wi-Fi -> MQTT, on boxes off the dock
 RACK_STEP_TYPES = {
-    "online", "status", "rpc", "identify_confirm", "debug_pull", "config_doc", "ota",
+    "online", "status", "rpc", "identify_confirm", "rpc_confirm", "debug_pull", "config_doc", "ota",
     "wifi_handover",
 }
 
@@ -59,6 +59,9 @@ class Profile:
     sequence: list[str]
     modes: list[dict] = field(default_factory=list)
     rack: list[dict] = field(default_factory=list)    # the rack's steps, by MQTT
+    line: list[dict] = field(default_factory=list)    # the web app's tests, by MQTT, same step types
+    external_stages: list[str] = field(default_factory=list)   # recorded, run elsewhere (the browser)
+    web: dict = field(default_factory=dict)          # the line's web app: its flash and its tests
     # the ways a new box goes through the line; a box that has passed all the
     # stages of one of them is done (the SN summary's PASS)
     routes: list[list[str]] = field(default_factory=list)
@@ -150,6 +153,9 @@ def load(product: str) -> Profile:
                    for m in (d.get("modes") or [])],
             chip_expect=d.get("chip_expect", {}), incomplete=d.get("incomplete", []) or [],
             rack=list(d.get("rack") or []),
+            line=list(d.get("line") or []),
+            external_stages=list(d.get("external_stages") or []),
+            web=dict(d.get("web") or {}),
             routes=[list(r) for r in (d.get("routes") or [])],
             path=path)
         if not p.routes:
@@ -173,15 +179,20 @@ def validate(p: Profile) -> list[str]:
                 out.append(f"mode {m['name']} names stage '{s}', which is not defined")
     for r in p.routes:
         for s in r:
-            if s not in p.stages and not (s == "rack" and p.rack):
+            # `usb` is done in the browser (the line's web app), `rack` by remote.py
+            if s not in p.stages and not (s == "rack" and p.rack) and not (s == "line" and p.line) \
+                    and s not in p.external_stages:
                 out.append(f"route {r} names stage '{s}', which is not defined")
-    for i, st in enumerate(p.rack):
-        if st.get("type") not in RACK_STEP_TYPES:
-            out.append(f"rack step {i + 1}: unknown type {st.get('type')!r}")
-        elif "name" not in st:
-            out.append(f"rack step {i + 1}: no name")
-        elif st["type"] == "ota" and st.get("firmware", "production") not in p.firmware:
-            out.append(f"rack step {i + 1}: firmware {st.get('firmware')!r} not in firmware:")
+    for where, steps in (("rack", p.rack), ("line", p.line)):
+        for i, st in enumerate(steps):
+            if st.get("type") not in RACK_STEP_TYPES:
+                out.append(f"{where} step {i + 1}: unknown type {st.get('type')!r}")
+            elif "name" not in st:
+                out.append(f"{where} step {i + 1}: no name")
+            elif st["type"] == "ota" and st.get("firmware", "production") not in p.firmware:
+                out.append(f"{where} step {i + 1}: firmware {st.get('firmware')!r} not in firmware:")
+            elif st["type"] == "rpc_confirm" and not (st.get("cmd") and st.get("ask")):
+                out.append(f"{where} step {i + 1}: rpc_confirm needs cmd and ask")
     for sname, steps in p.stages.items():
         for i, st in enumerate(steps or []):
             where = f"stage {sname} step {i + 1}"

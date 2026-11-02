@@ -3,7 +3,8 @@ name = "mflash"
 version = "0.1.0"
 description = "Factory station for mCOLD: test, flash, provision and verify ESP32 boxes"
 requires-python = ">=3.10"
-dependencies = ["esptool>=4.7", "pyserial>=3.5", "PyYAML>=6.0", "paho-mqtt>=2.0"]
+dependencies = ["esptool>=4.7", "pyserial>=3.5", "PyYAML>=6.0", "paho-mqtt>=2.0",
+                "fastapi>=0.115", "uvicorn[standard]>=0.32", "esp-idf-nvs-partition-gen>=0.3"]
 
 [project.scripts]
 mflash = "mflash.cli:main"
@@ -13,10 +14,11 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["mflash"]
+packages = ["mflash", "mflash.web"]
 
 [tool.setuptools.package-data]
 mflash = ["gui.html"]
+"mflash.web" = ["static/*", "static/vendor/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
