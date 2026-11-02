@@ -494,10 +494,11 @@ void apply_cfg_doc(void) {
       cJSON_AddStringToObject(rep, "why", "needs rev, a whole number from 1, higher each time");
       cfg_report(rep);
     }
-  } else if (fac && !factory_mode()) {
+  } else if (fac && !factory_docs_ok()) {
     // A shipped box takes the line's documents no more: a retained one the
     // station forgot to clear, or anyone with the shared login, would
-    // otherwise skip the server's revision order.
+    // otherwise skip the server's revision order. (The hand-over's come
+    // just after FACTORY_DONE: factory.h.)
     cJSON_AddNumberToObject(rep, "rev", jr->valuedouble);
     cJSON_AddTrueToObject(rep, "factory");
     cJSON_AddStringToObject(rep, "state", "refused");

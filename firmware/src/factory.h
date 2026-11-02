@@ -16,6 +16,10 @@
 bool factory_mode(void);
 void factory_set(bool on);
 
+// Settings documents marked "factory": taken in factory mode and for 10
+// minutes after it goes off (this boot), for the rack's Wi-Fi hand-over.
+bool factory_docs_ok(void);
+
 // FACTORY_TEST {items:[i2c,temp,gnss,logtest], gnss_s}: the console's
 // bench checks, each {ok, ...}; ok at the top when all of them are.
 // Runs for as long as its items take (logtest ~2 min, gnss gnss_s).

@@ -29,6 +29,13 @@ const uint8_t I2C_EXPECTED[] = {0x18, 0x36, 0x40, 0x42, 0x53, 0x57, 0x68, 0x6B};
 
 bool g_known = false, g_on = false;
 
+// The rack's hand-over is FACTORY_DONE, then the customer's networks in,
+// then the line's out -- in that order, because the box leaves the broker
+// with the line's network. So its documents are still taken for a while
+// after the mode goes off, this boot only.
+const int64_t FACTORY_DOCS_GRACE_MS = 10 * 60 * 1000;
+int64_t g_off_at = 0;      // esp_timer ms + 1 when it went off; 0: not this boot
+
 bool wants(const cJSON *items, const char *name) {
   if (!cJSON_IsArray(items)) return true;          // none named: all of them
   const cJSON *it;
@@ -135,9 +142,15 @@ void factory_set(bool on) {
     nvs_commit(h);
     nvs_close(h);
   }
+  if (g_on && !on) g_off_at = esp_timer_get_time() / 1000 + 1;
   g_on = on;
   g_known = true;
   printf("[factory] mode %s\n", on ? "on" : "off");
+}
+
+bool factory_docs_ok(void) {
+  return factory_mode() ||
+         (g_off_at && esp_timer_get_time() / 1000 - g_off_at < FACTORY_DOCS_GRACE_MS);
 }
 
 void factory_test(cJSON *out, const cJSON *req) {
