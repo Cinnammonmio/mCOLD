@@ -1,7 +1,9 @@
 # mCOLD firmware — handoff
 
 Written 2026-10-02 for whoever picks this up next, including a Claude
-session with no memory of how any of it was arrived at.
+session with no memory of how any of it was arrived at. **Brought up to
+date 2026-11-02 at 0.7.0-dev.64** (section 2 first; older sections keep
+their dates).
 
 Everything below was measured on the real PCB unless it says otherwise.
 Where a thing is still a guess, it says so. The expensive parts of this
@@ -20,7 +22,38 @@ find and will cost it again if it is rediscovered rather than read.
 | `C:\Arduino\Foam V.1\Firmware\mCOLD-main` | an older zip copy of the repo, **not a git checkout**. Its `bringup/` and `bench/` work is now on branch `bringup/import`; its stale `firmware/` (an abandoned first attempt) was left out |
 | `bringup/` (branch `bringup/import`) | the bring-up tool that proved the hardware. Arduino/PlatformIO, still useful, not the product |
 
-The board is on **COM7**, native USB, MAC `28:84:85:27:9A:74`.
+**Boxes** (SN `MCDV1-L0169-1069-NNN`; the USB serial number is the SN,
+the ROM loader's is the MAC; the full first-flash table is
+`C:\mCOLD\exports\first_flash.csv`):
+
+| Box | MAC | Port | Notes (2026-11-02) |
+|---|---|---|---|
+| 002 | 28:84:85:27:9B:84 | COM13 | four-ink panel; Wi-Fi + broker in NVS; the field-test box |
+| 003 | 28:84:85:27:9A:50 | COM19 | no Wi-Fi set |
+| 004 | 28:84:85:27:9B:30 | COM21 | dev.63, trip 20261029 #1 running (not reflashed for that reason) |
+| 005 | 28:84:85:27:9A:A8 | COM23 | four-ink panel, the one `epd probe` was worked out on |
+| 006 | 28:84:85:27:9B:28 | COM25 | never charged until dev.64 (section 4, CE#); probe reads ~10 C above the others: check it |
+| 007 | 28:84:85:27:9A:8C | COM28 | |
+| 008 | 28:84:85:27:9B:48 | COM31 | I2C bus dead |
+| 009 | 28:84:85:27:9B:50 | COM34 | |
+
+The first bench board (MAC `28:84:85:27:9A:74`, COM7) is where sections
+3 and 4 were measured. Wi-Fi passwords are typed by a person on the
+console (`wifi add`), never written down here.
+
+**Two Claude sessions work this repo at once** (2026-11-02): the
+firmware session in a worktree, `C:\mCOLD\exports\fw-wt` on
+`firmware/p7-power`; the factory flasher (`mflash`) in the main checkout
+`C:\mCOLD` on its own branch. Neither switches the other's branch. The
+gitignored files a build needs (`keys/ota_signing.pem`, `secrets.ini`,
+`src/secrets_gen.h`) are copied into the worktree, never committed.
+What one session learns that the other needs goes in
+`C:\mCOLD\exports\SHARED.md` (section 8).
+
+Build and flash: `~/.platformio/penv/Scripts/pio.exe run`, then
+`~/.platformio/penv/Scripts/python.exe tools/usb_flash_all.py` -- which
+flashes **every** box on the bus, one mid-trip included (section 4).
+The plain `python` on this PC has no pyserial.
 
 Requirements live in `docs/mCOLD_Firmware_Requirements_2026-09-19.md`.
 Section numbers below refer to it.
@@ -28,6 +61,45 @@ Section numbers below refer to it.
 ---
 
 ## 2. State right now
+
+### 2026-11-02: 0.7.0-dev.64
+
+Branch `firmware/p7-power`, commit `4185a46`. On the boxes: 002, 005,
+006 at dev.64; 004 at dev.63 (mid-trip); the rest not checked since
+2026-10-15 (dev.5x).
+
+Since the last update of this file (dev.33, 2026-10-05), by area --
+CHANGELOG.md has each one:
+
+| Area | Now |
+|---|---|
+| App protocol | `trip_id` (UUID) + `trip_date` + `trip_number`; Wi-Fi in five slots the app edits (ADD/EDIT/DEL_WIFI) and a WIFI event; START_TRIP carries the app's clock and the box sets its RTC from it (`quality: host`); alarm dwell and hysteresis are config. The documents are `docs/app/` and `docs/server/`; PROTOCOL.md is the old English draft |
+| Charging | dock limits `chg_in_ma` 400, `chg_ma` 300; **CE# driven low (dev.64)**; the side light trusts the shunt current, not the gauge, to tell charging from no cell |
+| Battery | the cell fitted now is **1200 mAh** (`batt_mah` default, dev.64). 7 days on it is 7.1 mA average |
+| Display | four-ink panel (GDEY0213F51 type) drawn beside the mono one, 15.2 s refresh, yellow as the fourth ink; a closed trip's summary goes back to READY after 5 min (dev.62) |
+| GNSS | a session every **5 min** (`gnss_period_s` 300, dev.63), timed to end 40 s before each sample in a trip; no stretching when sessions fail; motion after a failed session brings the next one forward (dev.61) |
+| Tools | `tools/usb_first_flash.py` (blank boards, SN by MAC), `tools/usb_flash_all.py` (every box on the bus, by MAC) |
+
+**Field trips on 002** (CSVs in `C:\mCOLD\exports`, positions kept out
+of git):
+
+| Trip | Setting | Result |
+|---|---|---|
+| 20261025 #1 | GNSS every 1800 s | fixes every 30 min, so the map draws 25-29 km straight jumps; this is why dev.63 went to 300 s |
+| 20261026 #2 | dev.63, 300 s | 557 samples over 2.7 days, **one** fix; 264 rows `last`, 293 `none`; battery 4.3-5.3 %/h against ~1.7 %/h at 1800 s |
+
+**Open, found in those trips (not fixed yet, waiting for a decision):**
+
+- **The indoor give-up never fires.** It needs `in_view == 0 &&
+  heard == 0`, but `in_view` comes from the almanac and stays above
+  zero indoors, so every session indoors runs its full length -- every
+  5 minutes now. Proposed: give up on `heard == 0` alone after ~20 s;
+  after 3 empty sessions wait for motion; a per-session GNSS log on the
+  console.
+- USB_IN / USB_OUT rows carry a wrong battery percent (33 at an unplug
+  from 98), and BATTERY_LOW was raised at 7 % that was not low.
+
+### History
 
 Firmware **0.6.0** released (tag `firmware/v0.6.0`, ELF sha256 `87a009c0a...`).
 Running on the board:
@@ -303,6 +375,20 @@ record with a time the device cannot vouch for.** Without the cell, the
 time comes back from NTP (seconds after Wi-Fi), GNSS (`$GNRMC`), or the
 app. Never a default date.
 
+### The charger's CE# is not held low by R22 alone
+
+CE# (GPIO44, low = charge) has R22, 10k to ground, so that charging
+works with the MCU off. But GPIO44 is the UART0 RX pad and the chip
+brings it out of reset with its ~45k pull-up on, and until dev.64 no
+code touched the pin: the two left it near **0.6 V**, between the
+BQ25601's low (0.4 V) and high (1.3 V) thresholds. Most boards read it
+as low. Box 006 read it as high and never charged -- REG01 charge
+enable set, ICHG 300 mA, REG09 no fault, REG08 "not charging", and
+neither HIZ nor toggling CHG_CONFIG changed it (2026-10-29). `pin 44 0`
+on the console: +300 mA at once. `power_init()` drives it low now and
+`pm` holds it through deep sleep. A board that "has no battery" and no
+fault: check CE# before the cell.
+
 ### The BQ25601 silently undoes its own configuration
 
 It runs a ~40 s I2C watchdog. Let it expire and every register returns
@@ -473,6 +559,21 @@ reset -- makes the bootloader treat it as failed and go back. `ota.cpp`
 holds `Hold::Ota` until the broker answers (or 3 minutes pass), and the
 uplink opens a session at once for it, records or not.
 
+### `usb_flash_all.py` flashes every box on the bus
+
+Including one in the middle of a trip, which then restarts (a POWER_ON
+row; the trip carries on). With a box mid-trip on the dock, flash the
+others one by one with `flash(sn, port, ...)` from that script.
+
+### The four-ink panel's boost will not come up with the reference init
+
+On these boards 0x01 (power setting) and 0x06 (boost soft start) from
+the reference four-ink init each keep the boost from ever starting: the
+boost parts differ from Waveshare's (R33, L7, R44). Without them the
+panel refreshes in 15.2 s. `epd_4ink_full 1` sends them anyway, for a
+board built like the reference. `epd probe` / `epd probe init` find
+this on a new panel.
+
 ### The USB isolator browns the board out
 
 Any load step — the SD/GNSS rail, the buzzer, an e-paper refresh —
@@ -584,10 +685,10 @@ README once carried an older 14-step plan; this is the one in use.
 | P1 drivers | 0.1.0 ✅ | every on-board device: MAX6675, PCF8523, power chain, LIS2DW12, GNSS, ST25DV, LEDs, buzzer; side light shows charge state | a GNSS fix has never been seen |
 | P2 time/config/storage | 0.2.0 ✅ | UTC with quality + boot counter; NVS config; power-cut-safe trip log | -- |
 | P3 trip and sensing | 0.3.0 ✅ | trip state machine (§8, state axes kept separate); START/STOP with a trip header carrying that trip's alarm thresholds; a sample every 5 min into the log; events (motion, probe fault, alarms, reset/data gap); alarm engine (thresholds, hysteresis, dwell; ack never erases history); resume after a reset mid-trip; retention when full (§9.6). Driven from the console until BLE exists. Door switched off | shock threshold |
-| P4 display, LED, buzzer | 0.4.0 ✅ | e-paper driver and screens from `display-mock`, live from state, on the mono panel in hand; LED and buzzer patterns per `docs/led-design.md` (never together); attention window | the four-ink panel (a driver table entry when it comes) |
+| P4 display, LED, buzzer | 0.4.0 ✅ | e-paper driver and screens from `display-mock`, live from state, on the mono panel; LED and buzzer patterns per `docs/led-design.md` (never together); attention window. The four-ink panel came later, in P7 (dev.56-59) | -- |
 | P5 BLE/NFC/protocol | 0.5.0 ✅ | NimBLE GATT advertising the SN; the §13 command set with request IDs and idempotency; NDEF record; tap brings BLE up; tap to authorize (decided 2026-10-02). NFC GPO wake moves to P7 | the iOS team's answer to PROTOCOL.md |
 | P6 sync, USB, OTA | 0.6.0 ✅ in part | Done: Wi-Fi (5 networks), NTP, MQTT to the team's broker, live and backlog upload, application ACK then reclaim. Deferred: USB mass storage with CSV, SD archive, OTA (signed, rollback) | the server team: ACK, TLS, per-device logins; a file server for OTA |
-| **P7 power** | 0.7.0 | deep sleep between samples; every wake source (timer, accel, door, NFC, PG#); GPIO holds; log head kept in RTC memory; charger and PD policy; current measured until 7 days on 1500 mAh is shown | battery datasheet (RCOMP, charge limits) |
+| **P7 power** | 0.7.0 | deep sleep between samples; every wake source (timer, accel, door, NFC, PG#); GPIO holds; log head kept in RTC memory; charger and PD policy; current measured until 7 days on 1200 mAh is shown (was 1500 until 2026-10-29) | the 1200 mAh cell's datasheet (RCOMP, charge limits) |
 | P8 hardening | 1.0.0 | watchdog and core-dump retrieval; quiet production logging; flash encryption / secure boot decision; the §14 acceptance cases; 31-day offline simulation; 6-device Dock; factory provisioning | -- |
 
 P7 is where power is *measured*, not where it is designed: the event
@@ -620,8 +721,8 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
   (not the CPU clock, not the radios; idle signal pins only 15–25 mA)
 - **NFC tap wake** from deep sleep: armed (GPO, EXT1) but not yet tried
   with a phone
-- The 4-colour panel is not in hand; busy polarity and 25 s refresh
-  cannot be verified without it
+- The four-ink panel is in hand and driven (dev.56-59, section 4); the
+  (B) V3/V4 sequences (`epd_panel` 3, 4) are untested on glass
 - **Server is MQTT** (decided by the team, 2026-10-02): broker
   `siamatic.co.th:1883`, run by the team themselves. Login is in the
   team's hands; it goes in `secrets.ini` (gitignored, template in
@@ -657,7 +758,7 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
   the trip header. **Sample period: 5 min** (300 s, the config default)
 - Shock threshold — the only real data point is that lifting the board
   by hand exceeds 1.45 g, which is not enough to set one
-- Battery datasheet, so MAX17048 `RCOMP` and the charger limits can be
+- Battery datasheet (now the 1200 mAh cell), so MAX17048 `RCOMP` and the charger limits can be
   set rather than left at defaults. SOC currently reads low after a deep
   discharge; ModelGauge needs a full charge cycle before it is worth
   judging. The user sees the percent fall fast near 90 % (surface
@@ -667,3 +768,8 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
 - `bringup/` and the `bench/epd29-s3` edits, recovered from the zip copy,
   are on branch `bringup/import` (pushed 2026-10-02), waiting for a pull
   request into `main`
+- **Two sessions, one shared note** (2026-11-02): the firmware and the
+  flasher sessions each read `C:\mCOLD\exports\SHARED.md` at every
+  prompt (a hook) and add to it what the other must know: a new
+  firmware version, a changed console command or rpc, a box's state.
+  It is a log, newest at the bottom, and outside git
