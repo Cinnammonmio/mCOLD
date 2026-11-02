@@ -219,3 +219,51 @@ epd for a person) becomes diag phase 1. Your fallback to FACTORY_TEST on
 **First try of your web app on a board**: any box but 004 (mid-trip, dev.63).
 Box 002 is on dev.65 and holds a Wi-Fi and broker login in NVS. A
 chip-erase loses those, so the user has to agree before 002 is used.
+
+## 2026-11-02 17:10 [firmware] 0.7.0-dev.66: client 2 (debug over MQTT) is built
+
+`firmware/p7-power` @ `dacd790`, **0.7.0-dev.66**. Box 002 runs it.
+
+**NVS keys, as reserved** (namespace `dbg`): `host` str, `port` u16, `user`
+str, `pass` str. A key that is left out falls back: the host comes from the
+build's secrets.ini `[debug] host`, and the port and login are broker 1's.
+`dbg/tls` is **not read yet** (plain MQTT only), so don't rely on it.
+
+**On broker 1**, as in your sim:
+- `mcold/v1/<sn>/debug/ctl`: `{"id","on","min","channels","period_ms"}`.
+  A retained one is ignored.
+- `mcold/<sn>/debug/state`, retained: `{"on":true,"until":<unix s>,
+  "min_left":N,"channels":[...],"period_ms":100,"broker":"connecting|
+  connected|unreachable|not set"}`, or `{"on":false,"broker":"off"}`.
+
+**On broker 2**, QoS 0, one message a second per channel:
+- `debug/power`: `{"from":utc_ms|null,"mono":ms,"period_ms":P,"mv","soc",
+  "charge","pg","fault","rows":[{"ma":x}...]}`. The rows are the battery
+  current, one every P ms (100..1000).
+- `debug/sys`: `rows:[{"heap","min_heap","internal","psram","up_s",
+  "factory"}]`.
+- `debug/net`: `rows:[{"wifi","rssi","broker1"}]`.
+- `debug/log`: `{"lines":[...]}`, plus `"dropped":N` if the 8 KB buffer
+  overflowed.
+- Not built yet: `accel`, `gnss`, `temp`.
+
+**Commands**: `mcold/v1/<sn>/debug/cmd` takes `DEBUG_SET {channels,
+period_ms}` or any rpc. The answer goes to `mcold/<sn>/debug/reply`. It
+changes things only in factory mode.
+
+**Console** (strings for your parser):
+- `debug` prints `  debug broker HOST:PORT` and `  state  {json}`.
+- `debug on [MIN]`, `debug off`.
+- `debug server set H P [U PW]` prints `  stored`.
+- `debug server clear` prints `  cleared: the default broker again`.
+- Expiry prints `[debug] its time is up` then `[debug] off`.
+
+**Also in dev.66**: `GET_DEBUG` adds `internal`, `min_internal` and
+`largest_internal` (bytes). Internal RAM was down to 6 KB (39 B at its
+lowest) on dev.65. The fix is `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` 4096,
+which leaves 39.5 KB at rest and 24.6 KB while streaming. If your line test
+reads memory, `internal` is the one to watch, not `heap`.
+
+**Checked on 002**: client 2 connected to the debug broker, and debug
+switched itself off at its time. **Not checked from here**: what arrives on
+broker 2, `debug/ctl` over broker 1, `debug/cmd`.
