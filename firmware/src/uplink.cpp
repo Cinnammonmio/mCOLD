@@ -494,6 +494,15 @@ void apply_cfg_doc(void) {
       cJSON_AddStringToObject(rep, "why", "needs rev, a whole number from 1, higher each time");
       cfg_report(rep);
     }
+  } else if (fac && !factory_mode()) {
+    // A shipped box takes the line's documents no more: a retained one the
+    // station forgot to clear, or anyone with the shared login, would
+    // otherwise skip the server's revision order.
+    cJSON_AddNumberToObject(rep, "rev", jr->valuedouble);
+    cJSON_AddTrueToObject(rep, "factory");
+    cJSON_AddStringToObject(rep, "state", "refused");
+    cJSON_AddStringToObject(rep, "why", "factory mode is off");
+    cfg_report(rep);
   } else if ((uint32_t)jr->valuedouble <= (fac ? cfg_frev() : cfg_rev())) {
     // Seen before: nothing to do, nothing to say.
   } else {

@@ -191,6 +191,13 @@ RTC_DATA_ATTR GnssPlan g_gnss_plan;
 // does not keep the receiver on.
 const uint32_t GNSS_MOTION_DELAY_MS = 60000;
 const uint32_t GNSS_MOTION_GAP_MS = 600000;
+
+bool trip_active(void) {
+  TripStatus s;
+  trip_status(&s);
+  return s.active;
+}
+
 void gnss_note_motion(void) {
   if (g_gnss_plan.magic != GNSS_PLAN_MAGIC || !g_gnss_plan.misses || pm_external_power()) return;
   TripStatus s;
@@ -1955,7 +1962,10 @@ void run_command(char *line) {
   else if (!strncmp(line, "screen ", 7)) screen_command(line + 7);
   else if (!strcmp(line, "trip")) trip_command("");
   else if (!strncmp(line, "trip ", 5)) trip_command(line + 5);
-  else if (!strcmp(line, "logtest")) {
+  else if (!strcmp(line, "logtest") && trip_active()) {
+    // It points the log at a RAM image for two minutes (flashlog_test.cpp).
+    printf("  not during a trip: its samples would be lost (trip stop first)\n");
+  } else if (!strcmp(line, "logtest")) {
     printf("\n");
     const int f = flashlog_selftest();
     printf("\n  %s\n\n", f == 0 ? "all passed" : "FAILURES above");

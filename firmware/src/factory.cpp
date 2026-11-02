@@ -4,6 +4,7 @@
 #include <esp_core_dump.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <nvs.h>
@@ -19,6 +20,7 @@
 #include "net.h"
 #include "temp.h"
 #include "timekeep.h"
+#include "trip.h"
 
 namespace {
 
@@ -97,6 +99,14 @@ bool test_gnss(cJSON *o, int seconds) {
 }
 
 bool test_log(cJSON *o) {
+  // The self-test points the log at a RAM image while it runs: a running
+  // trip's samples in those two minutes would go there and be lost.
+  TripStatus ts;
+  trip_status(&ts);
+  if (ts.active) {
+    cJSON_AddStringToObject(o, "err", "a trip is running");
+    return false;
+  }
   const int f = flashlog_selftest();
   cJSON_AddNumberToObject(o, "failures", f);
   return f == 0;
@@ -173,7 +183,9 @@ void factory_debug(cJSON *out) {
   TimeStamp t;
   time_now(&t);
   cJSON_AddNumberToObject(out, "boot", t.boot);
-  cJSON_AddNumberToObject(out, "uptime_s", mono_ms() / 1000);
+  // Since this reset (or wake): mono_ms() is the RTC's count, which a
+  // software reset does not restart (778 s just after `reboot` on 002).
+  cJSON_AddNumberToObject(out, "uptime_s", (double)(esp_timer_get_time() / 1000000));
   cJSON_AddBoolToObject(out, "coredump", esp_core_dump_image_check() == ESP_OK);
   cJSON_AddNumberToObject(out, "heap", esp_get_free_heap_size());
   cJSON_AddNumberToObject(out, "min_heap", esp_get_minimum_free_heap_size());
