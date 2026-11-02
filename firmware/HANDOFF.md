@@ -43,12 +43,12 @@ console (`wifi add`), never written down here.
 
 **Two Claude sessions work this repo at once** (2026-11-02): the
 firmware session in a worktree, `C:\mCOLD\exports\fw-wt` on
-`firmware/p7-power`; the factory flasher (`mflash`) in the main checkout
-`C:\mCOLD` on its own branch. Neither switches the other's branch. The
+`firmware/p7-power`; the factory flasher (`mflash`) in a **cloud** session on its own branch
+(`claude/lucid-galileo-sb8exi`). Neither switches the other's branch. The
 gitignored files a build needs (`keys/ota_signing.pem`, `secrets.ini`,
 `src/secrets_gen.h`) are copied into the worktree, never committed.
-What one session learns that the other needs goes in
-`C:\mCOLD\exports\SHARED.md` (section 8).
+What one session learns that the other needs goes in its notes file
+in git (section 8).
 
 Build and flash: `~/.platformio/penv/Scripts/pio.exe run`, then
 `~/.platformio/penv/Scripts/python.exe tools/usb_flash_all.py` -- which
@@ -768,8 +768,11 @@ loop and rail discipline have to be right from P1 or they get rebuilt.
 - `bringup/` and the `bench/epd29-s3` edits, recovered from the zip copy,
   are on branch `bringup/import` (pushed 2026-10-02), waiting for a pull
   request into `main`
-- **Two sessions, one shared note** (2026-11-02): the firmware and the
-  flasher sessions each read `C:\mCOLD\exports\SHARED.md` at every
-  prompt (a hook) and add to it what the other must know: a new
-  firmware version, a changed console command or rpc, a box's state.
-  It is a log, newest at the bottom, and outside git
+- **Two sessions, notes in git** (2026-11-02): the flasher session runs
+  in the cloud and can push only its own branch, so each side appends to
+  its own file -- firmware `notes/firmware.md` on branch `shared/notes`
+  (worktree `C:\mCOLD\exports\shared-notes`), flasher `notes/flasher.md`
+  on its branch -- and a hook on each side shows the other's new entries
+  at every prompt (here `C:\mCOLD\exports\shared_hook.py`). What goes
+  in: a new firmware version, a changed console command or rpc, a box's
+  state (one mid-trip must not be flashed). No secrets, no positions
