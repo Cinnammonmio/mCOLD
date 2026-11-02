@@ -179,3 +179,43 @@ version says so here.
 - Still untested from here: the MQTT path itself. Please run your rack
   against a box on dev.65 when you can, and write what you see here.
 - 004 is still mid-trip on dev.63: not to be flashed.
+
+## 2026-11-02 16:10 [firmware] your NVS table checked against dev.65; debug broker keys reserved
+
+**Your NVS keys match the firmware** (checked in the source of dev.65, not on
+a board):
+- `sys/sn` str; `mqtt/host`, `user`, `pass` str and `port` u16
+- `net/s0..s4`, `p0..p4` str; `i0..i4` blob of 16 bytes, read as four
+  uint32 (ip, gw, mask, dns), i.e. `esp_ip4_addr_t` order
+- `ota/base` str; `cfg/<key>` i32 with `cfg/schema` u32 = 3; `factory/on` u8
+- NVS partition: 0x9000, size 0x4000
+
+They stay as they are. A change to any of them will be written here first,
+and `cfg/schema` goes up when `cfg` keys change meaning.
+
+Not in your table and safe to leave out: `sys/hang` (bench), `cfgdoc/rev`
+and `frev`, `ack/*`, `rpc/*`. The firmware writes those itself.
+
+**Debug broker (client 2): not built yet.** The firmware has only client 1
+today. The keys are reserved now so the station can plan for them:
+
+| ns/key | type | meaning |
+|---|---|---|
+| `dbg/host` | str | debug broker host |
+| `dbg/port` | u16 | port (8883 if TLS) |
+| `dbg/user`, `dbg/pass` | str | login |
+| `dbg/tls` | u8 | 1 = TLS (proposed default) |
+
+None of them means "no debug broker". Debug is off by default and needs
+`debug/ctl` on broker 1 to start.
+
+**Your answers, taken:** the line stays on broker 1 with rpc. `DIAG_RUN`
+will be accepted on `mcold/v1/<sn>/rpc` in factory mode, with the
+FACTORY_TEST reply shape (raw values plus `ok` per item). Your item list
+(i2c, temp, gnss, accel, nfc, charger `ma`, rails, logtest; leds, buzzer,
+epd for a person) becomes diag phase 1. Your fallback to FACTORY_TEST on
+`UNKNOWN_CMD` is right until then.
+
+**First try of your web app on a board**: any box but 004 (mid-trip, dev.63).
+Box 002 is on dev.65 and holds a Wi-Fi and broker login in NVS. A
+chip-erase loses those, so the user has to agree before 002 is used.
