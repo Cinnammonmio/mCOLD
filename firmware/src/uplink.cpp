@@ -4,6 +4,7 @@
 #include <esp_attr.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include <mqtt_client.h>
@@ -20,6 +21,7 @@
 #include "pm.h"
 #include "settings.h"
 #include "config.h"
+#include "factory.h"
 #include "timekeep.h"
 #include "rpc.h"
 #include "trip.h"
@@ -38,7 +40,14 @@ char g_pass[72] = "";
 #define TOPIC_SUB "mcold/v1/"
 #define TOPIC_PUB "mcold/"
 char t_rec[64], t_ack[64], t_status[64], t_online[64], t_fw[64], t_ota[64], t_cfg[64],
-    t_cfg_state[72], t_settings[72];
+    t_cfg_state[72], t_settings[72], t_rpc[64], t_rpc_reply[72];
+
+// Commands over MQTT (flasher/docs/firmware-mqtt-rpc.md): mcold/v1/<sn>/rpc
+// in, mcold/<sn>/rpc/reply out, the same JSON as BLE and the console. Run
+// one at a time by a task of their own -- FACTORY_TEST takes minutes --
+// and, outside factory mode, only the commands that read.
+QueueHandle_t g_rpc_q = nullptr;
+const int RPC_MAX = 1024;
 
 // The box's settings as they stand, for the server (decided 2026-10-12):
 // mcold/<sn>/settings, retained, sent once per connection and again
@@ -178,10 +187,22 @@ uint32_t cfg_rev(void) {
   return r;
 }
 
-void cfg_set_rev(uint32_t r) {
+uint32_t cfg_frev(void) {
+  nvs_handle_t h;
+  uint32_t r = 0;
+  if (nvs_open("cfgdoc", NVS_READONLY, &h) == ESP_OK) {
+    nvs_get_u32(h, "frev", &r);
+    nvs_close(h);
+  }
+  return r;
+}
+
+// "rev" for the server's documents, "frev" for the factory line's: the
+// line's revisions never decide whether the customer's server is heard.
+void cfg_set_rev(uint32_t r, const char *key = "rev") {
   nvs_handle_t h;
   if (nvs_open("cfgdoc", NVS_READWRITE, &h) != ESP_OK) return;
-  nvs_set_u32(h, "rev", r);
+  nvs_set_u32(h, key, r);
   nvs_commit(h);
   nvs_close(h);
 }
@@ -237,6 +258,7 @@ void on_mqtt(void *, esp_event_base_t, int32_t id, void *data) {
       esp_mqtt_client_subscribe(g_client, t_ack, 1);
       esp_mqtt_client_subscribe(g_client, t_fw, 1);
       esp_mqtt_client_subscribe(g_client, t_cfg, 1);
+      esp_mqtt_client_subscribe(g_client, t_rpc, 1);
       esp_mqtt_client_publish(g_client, t_online, "1", 1, 1, 1);
       printf("[uplink] connected to %s:%u\n", g_host, g_port);
       ota_on_connected();       // what a new image proves itself by
@@ -268,6 +290,15 @@ void on_mqtt(void *, esp_event_base_t, int32_t id, void *data) {
           portEXIT_CRITICAL(&g_cfg_mux);
           free(old);
           if (g_task) xTaskNotifyGive(g_task);
+        }
+      } else if (e->topic_len == (int)strlen(t_rpc) && !strncmp(e->topic, t_rpc, e->topic_len) &&
+                 e->data_len == e->total_data_len && e->data_len > 0 && e->data_len < RPC_MAX &&
+                 g_rpc_q) {
+        char *d = (char *)malloc(e->data_len + 1);
+        if (d) {
+          memcpy(d, e->data, e->data_len);
+          d[e->data_len] = 0;
+          if (xQueueSend(g_rpc_q, &d, 0) != pdTRUE) free(d);   // busy: the station asks again
         }
       } else if (e->topic_len == (int)strlen(t_fw) && !strncmp(e->topic, t_fw, e->topic_len) &&
                  e->data_len == e->total_data_len && e->data_len < 160) {
@@ -453,6 +484,8 @@ void apply_cfg_doc(void) {
   cJSON *doc = cJSON_Parse(d);
   free(d);
   const cJSON *jr = doc ? cJSON_GetObjectItemCaseSensitive(doc, "rev") : nullptr;
+  // {"factory":true,...}: the line's rack, counted apart (frev).
+  const bool fac = doc && cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(doc, "factory"));
   cJSON *rep = cJSON_CreateObject();
   if (!cJSON_IsNumber(jr) || jr->valuedouble < 1) {
     if (doc) {   // an empty retained message clears the topic: no news
@@ -461,15 +494,16 @@ void apply_cfg_doc(void) {
       cJSON_AddStringToObject(rep, "why", "needs rev, a whole number from 1, higher each time");
       cfg_report(rep);
     }
-  } else if ((uint32_t)jr->valuedouble <= cfg_rev()) {
+  } else if ((uint32_t)jr->valuedouble <= (fac ? cfg_frev() : cfg_rev())) {
     // Seen before: nothing to do, nothing to say.
   } else {
     const uint32_t rev = (uint32_t)jr->valuedouble;
     cJSON_AddNumberToObject(rep, "rev", rev);
+    if (fac) cJSON_AddTrueToObject(rep, "factory");
     const bool all = settings_apply(doc, rep);
     cJSON_AddStringToObject(rep, "state", all ? "ok" : "partial");
-    cfg_set_rev(rev);
-    printf("[config] rev %lu from the server\n", (unsigned long)rev);
+    cfg_set_rev(rev, fac ? "frev" : "rev");
+    printf("[config] rev %lu from the %s\n", (unsigned long)rev, fac ? "factory line" : "server");
     cfg_report(rep);
   }
   cJSON_Delete(rep);
@@ -734,7 +768,8 @@ void task(void *) {
     // Status on change, and every five minutes regardless.
     TripStatus s;
     trip_status(&s);
-    if (g_status_now || !status_at || now_ms() - status_at > 300000 ||
+    const uint32_t every = factory_mode() ? 30000 : 300000;   // the rack wants to see it soon
+    if (g_status_now || !status_at || now_ms() - status_at > every ||
         s.active != prev.active || s.alarms_active != prev.alarms_active ||
         s.samples != prev.samples) {
       g_status_now = false;
@@ -760,6 +795,21 @@ void task(void *) {
   }
 }
 
+void rpc_task(void *) {
+  for (;;) {
+    char *req = nullptr;
+    if (xQueueReceive(g_rpc_q, &req, portMAX_DELAY) != pdTRUE || !req) continue;
+    // Authorized only in factory mode: one broker login is shared by every
+    // box, so outside the line the channel reads and never writes.
+    RpcSession sess = {};
+    sess.authorized = factory_mode();
+    char *resp = rpc_handle(req, strlen(req), &sess);
+    free(req);
+    if (g_client && g_mqtt) esp_mqtt_client_publish(g_client, t_rpc_reply, resp, 0, 1, 0);
+    free(resp);
+  }
+}
+
 }  // namespace
 
 void uplink_start(const char *sn) {
@@ -773,6 +823,8 @@ void uplink_start(const char *sn) {
   snprintf(t_cfg, sizeof(t_cfg), TOPIC_SUB "%s/config", g_sn);
   snprintf(t_cfg_state, sizeof(t_cfg_state), TOPIC_PUB "%s/config/state", g_sn);
   snprintf(t_settings, sizeof(t_settings), TOPIC_PUB "%s/settings", g_sn);
+  snprintf(t_rpc, sizeof(t_rpc), TOPIC_SUB "%s/rpc", g_sn);
+  snprintf(t_rpc_reply, sizeof(t_rpc_reply), TOPIC_PUB "%s/rpc/reply", g_sn);
   {
     // A report not yet sent before the reset goes out at the next connection.
     nvs_handle_t h;
@@ -786,6 +838,8 @@ void uplink_start(const char *sn) {
   load();
   if (!pm_warm() || g_plan.magic != PLAN_MAGIC) g_plan = {PLAN_MAGIC, 0, 0, false, 0, 0, 0, LINK_OFFLINE};
   xTaskCreatePinnedToCore(task, "uplink", 6144, nullptr, 2, &g_task, 0);
+  g_rpc_q = xQueueCreate(4, sizeof(char *));
+  xTaskCreatePinnedToCore(rpc_task, "mqtt_rpc", 6144, nullptr, 2, nullptr, 0);
 }
 
 bool uplink_set_server(const char *host, uint16_t port, const char *user,

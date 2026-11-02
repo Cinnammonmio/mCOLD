@@ -69,6 +69,7 @@
 #include "temp.h"
 #include "timekeep.h"
 #include "rxlog.h"
+#include "factory.h"
 
 namespace {
 
@@ -1630,6 +1631,7 @@ void print_help(void) {
   printf("  sleep clear     start the wake record again\n");
   printf("  sleep test S    deep-sleep S seconds now, timer wake only (even on USB)\n");
   printf("  sn [set S]      the device serial number (factory: set, then reboot)\n");
+  printf("  factory [on|off] the rack's commands over MQTT (factory line only)\n");
   printf("  flash           restart into download mode, for flashing over USB\n");
   printf("  soc             counted state of charge, capacity, anchor\n");
   printf("  soc set P       bench: set the count to P %%\n");
@@ -1702,6 +1704,13 @@ void run_command(char *line) {
     sn_usb_label(sn, label, sizeof(label));
     printf("  %s   (USB drive %s%s)\n", sn, label,
            sn_pattern_ok(sn) ? "" : "; not the factory pattern");
+  } else if (!strcmp(line, "factory")) {
+    printf("  factory mode %s\n", factory_mode() ? "on" : "off");
+  } else if (!strcmp(line, "factory on") || !strcmp(line, "factory off")) {
+    // The line's rack (flasher/docs/firmware-mqtt-rpc.md): on at the dock,
+    // off by the box itself at the hand-over (FACTORY_DONE).
+    factory_set(line[9] == 'n');
+    printf("  factory mode %s\n", factory_mode() ? "on" : "off");
   } else if (!strncmp(line, "sn set ", 7)) {
     // Factory: the name on the label. Everything that carries the SN
     // read it at boot, so it takes effect at the next one.
@@ -2117,6 +2126,8 @@ void task_supervisor(void *) {
 }
 
 }  // namespace
+
+void gnss_hold_for(uint32_t ms) { g_gnss_hold_until = now_ms() + ms; }
 
 extern "C" void app_main(void) {
   // The port is the USB-Serial-JTAG's until usbdrive takes it (usbdrive.h).

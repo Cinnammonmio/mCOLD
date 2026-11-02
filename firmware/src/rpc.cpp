@@ -32,6 +32,7 @@
 #include "net.h"
 #include "trip.h"
 #include "uplink.h"
+#include "factory.h"
 
 namespace {
 
@@ -841,6 +842,40 @@ cJSON *c_later(uint32_t id, const cJSON *, RpcSession *) {
   return fail(id, "NOT_SUPPORTED", "arrives with the USB drive (P6)");
 }
 
+// ---- the factory line's rack (flasher/docs/firmware-mqtt-rpc.md) ----------
+// Testing and identifying are for the console, or for MQTT while the box
+// is in factory mode; never for a phone, nor for a shipped box.
+bool factory_ok(const RpcSession *s) { return (s && s->console) || factory_mode(); }
+
+cJSON *c_factory_test(uint32_t id, const cJSON *req, RpcSession *s) {
+  if (!factory_ok(s)) return fail(id, "NOT_FACTORY", "factory mode is off");
+  cJSON *o = ok(id);
+  factory_test(o, req);
+  return o;
+}
+
+cJSON *c_identify(uint32_t id, const cJSON *req, RpcSession *s) {
+  if (!factory_ok(s)) return fail(id, "NOT_FACTORY", "factory mode is off");
+  double sec = 10;
+  get_num(req, "s", &sec);
+  factory_identify((int)sec);
+  cJSON *o = ok(id);
+  cJSON_AddNumberToObject(o, "s", (int)sec);
+  return o;
+}
+
+cJSON *c_debug(uint32_t id, const cJSON *, RpcSession *) {
+  cJSON *o = ok(id);
+  factory_debug(o);
+  return o;
+}
+
+cJSON *c_factory_done(uint32_t id, const cJSON *, RpcSession *s) {
+  if (!factory_ok(s)) return fail(id, "NOT_FACTORY", "factory mode is off");
+  factory_set(false);
+  return ok(id);
+}
+
 struct Cmd {
   const char *name;
   bool changes;     // needs an authorized link; idempotent by id
@@ -874,6 +909,10 @@ const Cmd CMDS[] = {
     {"EDIT_WIFI", true, c_edit_wifi},
     {"DEL_WIFI", true, c_del_wifi},
     {"GET_USB_SNAPSHOT_STATUS", false, c_later},
+    {"FACTORY_TEST", true, c_factory_test},
+    {"IDENTIFY", true, c_identify},
+    {"GET_DEBUG", false, c_debug},
+    {"FACTORY_DONE", true, c_factory_done},
 };
 
 char *print(cJSON *o) {

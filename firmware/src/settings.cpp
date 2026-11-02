@@ -242,6 +242,12 @@ void settings_snapshot(cJSON *out, bool authorized) {
     nvs_close(h);
   }
   cJSON_AddNumberToObject(out, "server_rev", rev);
+  uint32_t frev = 0;      // the factory line's documents (uplink.cpp)
+  if (nvs_open("cfgdoc", NVS_READONLY, &h) == ESP_OK) {
+    nvs_get_u32(h, "frev", &frev);
+    nvs_close(h);
+  }
+  cJSON_AddNumberToObject(out, "factory_rev", frev);
   if (authorized) settings_network(cJSON_AddObjectToObject(out, "network"));
 }
 
