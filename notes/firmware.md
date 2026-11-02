@@ -100,3 +100,12 @@ Open, for you and the user to decide (not changed):
   taken). Fine on a USB rack; not on battery.
 - `factory_rev` is a new field in `mcold/<sn>/settings`, and
   `NOT_FACTORY` is a new error: docs/server and docs/app need them.
+
+## 2026-11-02 15:55 [firmware] correction to 15:40 fix 2: keep your hand-over order
+
+Your order (FACTORY_DONE, customer in, line out) is right: the box leaves the
+broker with the line's network. Commit `856f5e5` on `firmware/p7-mqtt-rpc`
+takes factory documents in factory mode **and for 10 minutes after it goes
+off, this boot only**. So no change needed on your side; ignore "swap the
+order". A factory document after that window, or after a reboot with the
+mode off, is refused (`state` `refused`, `why` `factory mode is off`).
