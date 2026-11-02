@@ -152,8 +152,7 @@ a.btn { text-decoration: none; }
 .menu-list button:hover { background: var(--surface-2); color: var(--ink); }
 
 /* ---- overview strip ---- */
-.overview { display: flex; gap: 12px; padding: 0 28px 12px; flex-wrap: wrap; align-items: stretch;
-  flex: 1 1 auto; max-height: 128px; }
+.overview { display: flex; gap: 10px; padding: 0 28px 10px; flex-wrap: wrap; align-items: stretch; flex: none; }
 .kpi {
   flex: 1 1 120px; min-width: 110px; padding: 7px 14px; border-radius: 14px;
   background: var(--surface); border: 1px solid var(--line); backdrop-filter: blur(12px);
@@ -162,6 +161,12 @@ a.btn { text-decoration: none; }
 .kpi span { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .kpi span::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--faint)); }
 .kpi b { font-size: clamp(20px, 3.6vh, 38px); font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.overview .kpi { flex-direction: row; align-items: center; justify-content: space-between; padding: 4px 14px; }
+.overview .kpi b { font-size: 22px; }
+.overview .fwbox { padding: 4px 12px; }
+.overview .fwbox > span { display: none; }
+.runbox { flex-direction: row !important; }
+.runbox .btn, .runbox .switch { height: 40px !important; width: auto !important; }
 .kpi.k-run { --c: var(--run); } .kpi.k-ask { --c: var(--ask); } .kpi.k-pass { --c: var(--pass); }
 .kpi.k-fail { --c: var(--fail); } .kpi.k-ready { --c: var(--accent); }
 .kpi.k-ask.hot { border-color: var(--ask); background: color-mix(in srgb, var(--ask) 12%, var(--surface)); }
@@ -233,8 +238,8 @@ a.btn { text-decoration: none; }
 
 .slot {
   --c: var(--faint);
-  position: relative; display: flex; flex-direction: column; gap: 10px; min-width: 0;
-  padding: 14px 16px 14px; overflow: hidden;
+  position: relative; display: flex; flex-direction: column; gap: 7px; min-width: 0;
+  padding: 10px 14px 12px; overflow: hidden;
   background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
   box-shadow: var(--shadow); backdrop-filter: blur(16px);
   transition: border-color .25s, box-shadow .25s;
@@ -247,32 +252,39 @@ a.btn { text-decoration: none; }
 .slot > * { position: relative; z-index: 1; }
 .slot[data-state=ready] { --c: var(--accent); }
 .slot[data-state=running] { --c: var(--run); }
-.slot[data-state=ask] { --c: var(--ask); border-color: color-mix(in srgb, var(--ask) 70%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ask) 40%, transparent), 0 24px 60px -24px color-mix(in srgb, var(--ask) 55%, transparent); }
-.slot[data-state=pass] { --c: var(--pass); border-color: color-mix(in srgb, var(--pass) 45%, transparent); }
-.slot[data-state=fail], .slot[data-state=stopped] { --c: var(--fail); border-color: color-mix(in srgb, var(--fail) 50%, transparent); }
+.slot[data-state=ask] { --c: var(--ask); border-color: var(--ask); border-width: 2px;
+  animation: askpulse 1.6s ease-in-out infinite; }
+@keyframes askpulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--ask) 30%, transparent), 0 24px 60px -24px color-mix(in srgb, var(--ask) 55%, transparent); } }
+/* a verdict reads across the room: the whole slot takes its colour */
+.slot[data-state=pass] { --c: var(--pass); border: 2px solid var(--pass);
+  background: color-mix(in srgb, var(--pass) 14%, var(--surface-solid)); }
+.slot[data-state=fail], .slot[data-state=stopped] { --c: var(--fail); border: 2px solid var(--fail);
+  background: color-mix(in srgb, var(--fail) 14%, var(--surface-solid)); }
 .slot:not([data-state=empty]):not([data-state=ready])::after { opacity: 1; }
-.slot[data-state=empty] { background: transparent; border: 1.5px dashed var(--line-2); box-shadow: none; backdrop-filter: none;
-  min-height: 200px; }
+.slot[data-state=empty] { background: transparent; border: 1.5px dashed var(--line-2); box-shadow: none; backdrop-filter: none; }
 .slot[data-state=empty] > :not(.head):not(.emptynote) { display: none; }
 .slot:not([data-state=empty]) .emptynote { display: none; }
-.emptynote { margin: auto; text-align: center; color: var(--muted); display: flex; flex-direction: column;
-  align-items: center; gap: 10px; font-size: 14px; }
-.emptynote .plug { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
-  background: var(--surface-2); color: var(--faint); }
-.emptynote .plug svg.i { width: 24px; height: 24px; }
+.emptynote { color: var(--muted); display: flex; align-items: center; gap: 12px; font-size: 14px; padding: 6px 2px 2px; }
+.emptynote .plug { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
+  background: var(--surface-2); color: var(--faint); flex: none; }
+.emptynote .plug svg.i { width: 20px; height: 20px; }
 
 /* header: who, where, state, time, and the small tools */
 .head { display: flex; align-items: center; gap: 12px; }
-.num { font-size: 34px; font-weight: 300; letter-spacing: -1px; line-height: 1; font-variant-numeric: tabular-nums; }
+.num { font-size: 40px; font-weight: 600; letter-spacing: -1.5px; line-height: 1; font-variant-numeric: tabular-nums; }
+/* the box's unit number, the one on its label: what the person looks for */
+.unitbig { display: flex; flex-direction: column; align-items: center; line-height: 1; flex: none; padding: 3px 10px 4px;
+  border-radius: 10px; background: color-mix(in srgb, var(--c) 16%, var(--surface-2)); }
+.unitbig small { font-size: 10.5px; color: var(--muted); margin-bottom: 2px; }
+.unitbig b { font-family: var(--mono); font-size: 24px; font-weight: 700; color: var(--ink); letter-spacing: -.5px; }
 .title { min-width: 0; flex: 1; }
 .title b { display: block; font-size: 15px; font-weight: 600; color: var(--ink); }
 .port { display: block; font-size: 12px; color: var(--faint); font-family: var(--mono);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.status { display: flex; align-items: center; gap: 8px; }
+.status { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .badge {
-  display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px; border-radius: 999px;
-  font-size: 14px; font-weight: 600; color: var(--c); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 14px; border-radius: 999px;
+  font-size: 15px; font-weight: 700; color: var(--c); white-space: nowrap;
   background: color-mix(in srgb, var(--c) 14%, transparent);
 }
 .badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
@@ -283,20 +295,25 @@ a.btn { text-decoration: none; }
 .tools { display: flex; gap: 6px; align-self: flex-start; }
 
 /* the box: always on show while it is in the slot */
-.ids { display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; padding: 7px 12px;
-  border-radius: 12px; background: var(--surface-2); }
+.ids { display: flex; flex-direction: column; gap: 1px; font-size: 12px; padding: 5px 10px;
+  border-radius: 10px; background: var(--surface-2); }
 .idrow { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
 .idrow .k { color: var(--faint); font-size: 11px; letter-spacing: .4px; flex: none; width: 30px; }
-.idrow.two .mac { flex: none; }
-.idrow.two .k:nth-of-type(2) { width: auto; margin-left: 10px; }
+.idrow.line { flex-wrap: wrap; row-gap: 0; }
+.idrow.line span:not(.k) { flex: none; overflow: visible; }      /* never cut: wraps instead */
+.idrow.line .k { width: auto; }
+.idrow.line .k:not(:first-child) { margin-left: 8px; }
+.idrow.line .mac { flex: none; }
 .idrow span:not(.k) { font-family: var(--mono); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.ids .sn { color: var(--ink) !important; font-weight: 600; font-size: 13.5px; }
+.ids .sn { color: var(--ink) !important; font-weight: 700; font-size: 15px; }
 .ids .sn em { font-style: normal; font-family: "Plex Thai", sans-serif; font-weight: 500; font-size: 11px;
   color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
   padding: 1px 7px; border-radius: 999px; margin-left: 8px; vertical-align: 1px; }
 
 /* stepper */
 .stages { list-style: none; margin: 0; padding: 0; display: flex; }
+.stages li .node { width: 16px !important; height: 16px !important; }
+.stages li::before { top: 7px !important; }
 .stages li { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px;
   font-size: 11.5px; color: var(--faint); text-align: center; min-width: 0; }
 .stages li::before { content: ""; position: absolute; top: 9px; right: 50%; width: 100%; height: 2px;
@@ -316,8 +333,8 @@ a.btn { text-decoration: none; }
 .stages li.FAIL .node { background: var(--fail); border-color: var(--fail); color: #fff; }
 
 /* the action area: one place, kept free, for what happens now */
-.act { flex: 0 0 auto; min-height: 64px; display: flex; flex-direction: column; justify-content: center;
-  border-radius: 14px; padding: 10px 12px; background: color-mix(in srgb, var(--c) 7%, transparent);
+.act { flex: 0 0 auto; min-height: 52px; display: flex; flex-direction: column; justify-content: center;
+  border-radius: 12px; padding: 8px 10px; background: color-mix(in srgb, var(--c) 7%, transparent);
   border: 1px solid color-mix(in srgb, var(--c) 22%, transparent); }
 .act > div { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .act .grow { flex: 1; min-width: 0; }
@@ -325,12 +342,12 @@ a.btn { text-decoration: none; }
 .act .t2 { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* running: ring and the step */
-.ring { position: relative; width: 52px; height: 52px; flex: none; }
-.ring svg { width: 52px; height: 52px; transform: rotate(-90deg); }
+.ring { position: relative; width: 60px; height: 60px; flex: none; }
+.ring svg { width: 60px; height: 60px; transform: rotate(-90deg); }
 .ring circle { fill: none; stroke-width: 5; }
 .ring .track { stroke: var(--line-2); }
 .ring .val { stroke: var(--c); stroke-linecap: round; transition: stroke-dashoffset .5s ease, stroke .3s; }
-.ring .mid { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 600;
+.ring .mid { position: absolute; inset: 0; display: grid; place-items: center; font-size: 16px; font-weight: 700;
   font-variant-numeric: tabular-nums; }
 
 /* ready: the unit number */
@@ -375,11 +392,15 @@ a.btn { text-decoration: none; }
 .redo { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .redo .btn { height: 26px; font-size: 12.5px; padding: 0 9px; border-radius: 8px; gap: 5px; }
 .redo .btn svg.i { width: 14px; height: 14px; }
-.big { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none;
-  background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); }
-.big svg.i { width: 24px; height: 24px; stroke-width: 2.6; }
-.slot[data-state=pass] .t1 { color: var(--pass); }
-.slot[data-state=fail] .t1, .slot[data-state=stopped] .t1 { color: var(--fail); }
+.big { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; flex: none;
+  background: var(--c); color: var(--on-accent); }
+.big svg.i { width: 30px; height: 30px; stroke-width: 3; }
+.verdict { font-size: 26px; font-weight: 700; line-height: 1.15; color: var(--c); letter-spacing: -.3px; }
+.slot[data-state=pass] .act, .slot[data-state=fail] .act, .slot[data-state=stopped] .act {
+  background: color-mix(in srgb, var(--c) 10%, transparent); }
+.failwhy .fstep { font-weight: 600; color: var(--ink) !important; }
+.failwhy > .big { display: none; }       /* the red slot and the word say it: the reason gets the width */
+.redo .btn.b-retry { border-color: color-mix(in srgb, var(--fail) 55%, transparent); color: var(--ink); }
 .failwhy .t2 { white-space: normal; color: var(--ink-2); }
 .failwhy .hint { display: flex; gap: 6px; font-size: 12.5px; color: var(--ink-2); margin-top: 2px; }
 .failwhy .hint svg.i { color: var(--ask); width: 15px; height: 15px; margin-top: 2px; }
@@ -564,6 +585,10 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
   .ask .btns button, .ask input { height: 32px; font-size: 13.5px; }
   .unitpick input, .unitpick .btn { height: 34px; }
   .btn { height: 34px; }
+  .stages li { font-size: 10.5px; }
+  .verdict { font-size: 22px; }
+  .big { width: 44px; height: 44px; }
+  .redo { margin-top: 4px; }
   .runbox { flex-direction: row; }
   .runbox .btn, .runbox .switch { height: 34px; width: auto; }
 }
@@ -624,7 +649,7 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
     <span class="dot" style="background:var(--fail)"></span><b>แดง</b> = ไม่ผ่าน ดูสาเหตุในช่อง</span>
 </div>
 
-<div class="banner demo" id="demo" hidden><span data-icon="info"></span>โหมดสาธิต: กล่องจำลอง 5 ตัวใน 6 ช่อง · ช่อง 6 คือกล่องที่ GNSS ไม่ส่งข้อมูล จะไม่ผ่านขั้นทดสอบ · ไม่มีอะไรถูก flash จริง · กด "ล้าง" = ถอดกล่องไปวางชั้นวาง แล้วใส่กล่องใหม่</div>
+<div class="banner demo" id="demo" hidden><span data-icon="info"></span>โหมดสาธิต: กล่องจำลอง ไม่มีอะไรถูก flash จริง · ช่อง 6 GNSS เสีย · "ล้าง" = ย้ายกล่องไปชั้นวาง แล้วใส่กล่องใหม่</div>
 <div class="banner warn" id="lotwarn" hidden><span data-icon="info"></span>ยังไม่ได้กรอกล็อต SN: กรอกที่ช่อง "ล็อต SN" ด้านบนก่อน ไม่งั้นโปรแกรมจะถามทั้งหมายเลขในแต่ละช่อง</div>
 <div class="banner err" id="err" hidden></div>
 
@@ -752,6 +777,7 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
     <div class="head">
       <div class="num"></div>
       <div class="title"><b></b><span class="port"></span></div>
+      <div class="unitbig" title="เลขเครื่อง (ท้าย SN)"><small>เครื่อง</small><b></b></div>
       <div class="status"><span class="badge"></span><span class="elapsed"></span></div>
       <div class="tools">
         <button class="btn sm icon b-log" title="Log ของช่องนี้"><span data-icon="log"></span></button>
@@ -761,8 +787,7 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
     <div class="emptynote"><div class="plug" data-icon="plug"></div><div>ว่าง · เสียบกล่องที่ช่องนี้</div></div>
     <div class="ids">
       <div class="idrow"><span class="k">SN</span><span class="sn">—</span></div>
-      <div class="idrow two"><span class="k">MAC</span><span class="mac">—</span><span class="k">FW</span><span class="fwv">—</span></div>
-      <div class="idrow ip" hidden><span class="k">IP</span><span class="ipv">—</span></div>
+      <div class="idrow line"><span class="k">MAC</span><span class="mac">—</span><span class="k">FW</span><span class="fwv">—</span><span class="k k-ip" hidden>IP</span><span class="ipv" hidden></span></div>
     </div>
     <ol class="stages"></ol>
     <div class="act">
@@ -786,16 +811,16 @@ td.wrap { white-space: normal; min-width: 240px; color: var(--ink-2); }
       <div class="ask a-ask"></div>
       <div class="a-pass">
         <div class="big" data-icon="check"></div>
-        <div class="grow"><div class="t1">ผ่านทุกขั้น</div><div class="t2 p-next">ถอดกล่องออก แล้วเสียบตัวถัดไป</div>
+        <div class="grow"><div class="verdict">ผ่าน</div><div class="t2 p-next">ถอดกล่องออก แล้วเสียบตัวถัดไป</div>
           <div class="redo"><button class="btn b-clear"><span data-icon="reset"></span>ล้าง</button></div></div>
       </div>
       <div class="a-fail failwhy">
         <div class="big" data-icon="x"></div>
         <div class="grow">
-          <div class="t1 fstep"></div>
-          <div class="t2 fstage"></div>
+          <div class="verdict fverdict">ไม่ผ่าน</div>
+          <div class="t2 fstep"></div>
           <div class="hint fhelp"><span data-icon="bulb"></span><span class="fhelptext"></span></div>
-          <div class="redo"><button class="btn b-clear2"><span data-icon="reset"></span>ล้าง</button></div>
+          <div class="redo"><button class="btn b-retry" title="ทำโหมดเดิมกับกล่องนี้อีกครั้ง"><span data-icon="play"></span>ทำซ้ำ</button><button class="btn b-clear2"><span data-icon="reset"></span>ล้าง</button></div>
         </div>
       </div>
     </div>
@@ -913,11 +938,12 @@ function makeCard(i) {
   const q = (s) => el.querySelector(s);
   const c = { el, i, qid: 0, stagesKey: "", mode: "",
     num: q(".num"), title: q(".title b"), port: q(".port"), badge: q(".badge"), elapsed: q(".elapsed"),
-    sn: q(".sn"), mac: q(".mac"), fwv: q(".fwv"), stages: q(".stages"), iprow: q(".idrow.ip"), ipv: q(".ipv"),
+    sn: q(".sn"), mac: q(".mac"), fwv: q(".fwv"), stages: q(".stages"), kip: q(".k-ip"), ipv: q(".ipv"),
+    unitbig: q(".unitbig"), unitnum: q(".unitbig b"), fverdict: q(".fverdict"), retry: q(".b-retry"),
     aReady: q(".a-ready"), aRun: q(".a-run"), aAsk: q(".a-ask"), aPass: q(".a-pass"), aFail: q(".a-fail"),
     unit: q(".unit"), up: q(".u-up"), dn: q(".u-dn"), rnote: q(".r-note"), unitpick: q(".unitpick"),
     ringval: q(".ring .val"), ringmid: q(".ring .mid"), rstage: q(".r-stage"), rstep: q(".r-step"),
-    fstep: q(".fstep"), fstage: q(".fstage"), fhelp: q(".fhelp"), fhelptext: q(".fhelptext"),
+    fstep: q(".fstep"), fhelp: q(".fhelp"), fhelptext: q(".fhelptext"),
     start: q(".b-start"), stop: q(".b-stop"), clear: q(".b-clear"), clear2: q(".b-clear2"), logbtn: q(".b-log") };
   c.num.textContent = String(i + 1).padStart(2, "0");
   c.title.textContent = "ช่อง " + (i + 1);
@@ -926,6 +952,7 @@ function makeCard(i) {
   c.start.onclick = () => { beep(); post("/api/start", { slot: i, operator: op.value }); };
   c.stop.onclick = () => post("/api/stop", { slot: i });
   c.clear.onclick = c.clear2.onclick = () => post("/api/clear", { slot: i });
+  c.retry.onclick = () => { beep(); post("/api/start", { slot: i, operator: op.value }); };   // the mode chosen above
   c.logbtn.onclick = () => openLog(i);
   c.up.onclick = () => post("/api/unit", { slot: i, step: 1 });
   c.dn.onclick = () => post("/api/unit", { slot: i, step: -1 });
@@ -996,7 +1023,11 @@ function renderSlot(c, s) {
     if (s.existing_sn) { const em = document.createElement("em"); em.textContent = "SN เดิม"; c.sn.appendChild(em); }
   }
   text(c.mac, s.mac || "—"); text(c.fwv, s.firmware || "—");
-  c.iprow.hidden = !s.ip; text(c.ipv, s.ip || "");
+  c.kip.hidden = c.ipv.hidden = !s.ip; text(c.ipv, s.ip || "");
+  /* the unit number on the box's label, large: what the person looks for */
+  const um = (s.sn || "").match(/-(\d{2,4})$/);
+  const unit = um ? um[1] : (s.unit != null ? pad(s.unit) : "");
+  c.unitbig.hidden = !unit || s.state === "empty"; text(c.unitnum, unit);
 
   /* stepper */
   const key = s.stages.map((x) => x.name).join(",");
@@ -1014,7 +1045,7 @@ function renderSlot(c, s) {
     const cls = x.result || "";
     if (li.className !== cls) { li.className = cls; li.firstChild.innerHTML = cls === "PASS" ? icon("check") : cls === "FAIL" ? icon("x") : ""; }
   });
-  c.stages.hidden = !s.stages.length;
+  c.stages.hidden = s.stages.length < 2;      // one stage: the ring says it all
 
   /* the action area: exactly one of these */
   const mode = s.state === "ready" ? "ready" : s.state === "running" ? "run" : s.state === "ask" ? "ask"
@@ -1042,21 +1073,23 @@ function renderSlot(c, s) {
     text(c.rstep, (s.step_name || "") + n);
   }
   renderAsk(c, s);
+  const quick = s.stages.some((x) => x.name === "quick");    // USB-quick: the rack does the rest
   if (mode === "pass") {
-    const toRack = s.stages.some((x) => x.name === "quick");
-    text(c.el.querySelector(".p-next"), toRack ? "วางบนชั้นวาง (ที่ชาร์จ USB) ที่เหลือทำผ่าน Wi-Fi · เสียบตัวถัดไปได้เลย"
-                                               : "ถอดกล่องออก แล้วเสียบตัวถัดไป");
+    text(c.el.querySelector(".p-next"), quick ? "วางบนชั้นวาง แล้วเสียบตัวถัดไป" : "ถอดกล่องออก แล้วเสียบตัวถัดไป");
   }
   if (mode === "fail") {
     const f = s.fail || {};
-    text(c.fstep, s.state === "stopped" ? "หยุดแล้ว" : "ไม่ผ่าน: " + (f.step || ""));
+    const stopped = s.state === "stopped";
+    text(c.fverdict, stopped ? "หยุดแล้ว" : "ไม่ผ่าน");
     const st = s.stages.find((x) => x.name === f.stage);
-    text(c.fstage, s.state === "stopped" ? "กด ล้าง เพื่อเริ่มใหม่" : (st ? "ขั้น" + st.label : ""));
-    text(c.fhelptext, f.help || ""); c.fhelp.hidden = !f.help || s.state === "stopped";
+    text(c.fstep, stopped ? "กด ทำซ้ำ หรือ ล้าง"
+                  : (f.step || "") + (st && s.stages.length > 1 ? " · ขั้น" + st.label : "") + (quick ? " → ส่งโต๊ะซ่อม" : ""));
+    text(c.fhelptext, f.help || ""); c.fhelp.hidden = !f.help || stopped;
   }
 
   /* the same box again: only one that was made (it has its SN) */
-  const redoKey = (mode === "pass" || mode === "fail") && s.sn && !s.sn_planned ? state.redo.map((m) => m.name).join(",") : "";
+  // not in USB-quick: a box made there is finished on the rack, not flashed again here
+  const redoKey = (mode === "pass" || mode === "fail") && s.sn && !s.sn_planned && !quick ? state.redo.map((m) => m.name).join(",") : "";
   if (c.redoKey !== redoKey) {
     c.redoKey = redoKey;
     for (const box of [c.aPass, c.aFail]) {
