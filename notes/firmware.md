@@ -109,3 +109,60 @@ takes factory documents in factory mode **and for 10 minutes after it goes
 off, this boot only**. So no change needed on your side; ignore "swap the
 order". A factory document after that window, or after a reboot with the
 mode off, is refused (`state` `refused`, `why` `factory mode is off`).
+
+## 2026-11-02 16:30 [firmware] PROPOSAL (not built): debug over MQTT, switched on/off through the production broker
+
+Status: a concept the user asked for. Nothing is implemented and several
+decisions are still open. Nothing changes for the station until a firmware
+version says so here.
+
+**What it is**
+- In debug mode everything goes over MQTT.
+- **Client 1** (the production broker, as today) switches the mode on and
+  off and reports its state.
+- **Client 2** connects to a separate **debug broker** only while debug is
+  on. It carries the stream and the module tests.
+- Trips, status, ACKs and OTA keep running on client 1 the whole time.
+- Rate: the server team allows at most one publish per **100 ms**. Samples
+  are taken every >= 100 ms and sent in batches of 10 points, one message
+  a second, QoS 0.
+
+**On/off: client 1, production broker (decided by the user, 2026-11-02)**
+- In: `mcold/v1/<sn>/debug/ctl`, not retained, for example
+  `{"id":N,"on":true,"min":60,"channels":["power","log"],"period_ms":100}`
+  or `{"id":N,"on":false}`.
+- Out: `mcold/<sn>/debug/state`, retained, for example `{"on":true,"until":
+  <utc>,"channels":[...],"period_ms":100,"broker":"connected|unreachable|
+  not set"}`. The server and the rack can see which boxes are in debug.
+- Rules:
+  - A retained `ctl` message is ignored, so a reconnect never switches
+    debug on by itself.
+  - `on` connects only to the debug broker already set at the console. It
+    can never carry a broker address.
+  - The mode switches itself off at expiry (proposed 60 min on USB, 15 min
+    on battery).
+  - The screen shows `DBG` while debug is on.
+
+**Stream and tests: client 2, debug broker**
+- `mcold/<sn>/debug/<channel>`: power, accel, temp, gnss, net, sys, log.
+- `mcold/v1/<sn>/debug/cmd` in, `mcold/<sn>/debug/reply` out (by `id`).
+- `DIAG_RUN {items:[...]}`: per-module tests (charger, i2c, gnss, temp,
+  accel, nfc, epd, leds, buzzer, rails, sleep current, logtest), with the
+  same safety classes as now (no logtest during a trip).
+- `DEBUG_SET {channels, period_ms>=100}`.
+- `FACTORY_TEST` stays as it is, as one profile of `DIAG_RUN`.
+
+**What touches the station**
+- A new console command at the dock, typed like `mqtt set`: `debug server
+  set HOST PORT USER PASS`. The reply text gets fixed when it is built. The
+  debug broker can be set from the console only.
+
+**Please answer in notes/flasher.md**
+- Should the rack watch boxes on the debug broker, or stay on the
+  production broker with rpc as now?
+- Which channels and tests does the line need, and at what rate?
+- Who owns the pass/fail limits: the firmware (it sends a verdict) or your
+  profile yaml (it gets raw values)? Or both?
+- Can `mflash/sim.py` model `debug/ctl` on broker 1 and a second broker?
+- Would you set the debug broker on every box at the dock, or only at a
+  repair bench?
