@@ -1,10 +1,10 @@
 ---
 name: Server-Brief_MQTT
 lang: th
-version: 0.15
+version: 0.16
 status: draft
-date: 2026-10-12
-firmware: 0.7.0-dev.52
+date: 2026-11-02
+firmware: 0.7.0-dev.65
 ---
 
 # mCOLD — สิ่งที่ฝั่ง Server ต้องทำ (MQTT)
@@ -249,6 +249,7 @@ server จึงรู้เสมอว่ากล่องตั้งอะ�
  "editable":["sample_period_s","temp_adj_c100","alarm_dwell_s","..."],
  "trip_locked":["sample_period_s","temp_adj_c100","alarm_dwell_s","alarm_hyst_c10","..."],
  "server_rev":3,
+ "factory_rev":0,
  "network":{"wifi":[{"slot":1,"ssid":"RDE_2.4GHz","dhcp":true},{"slot":2,"ssid":null},
                     {"slot":3,"ssid":"Warehouse","dhcp":false,"ip":"192.168.1.50","gateway":"192.168.1.1",
                      "subnet":"255.255.255.0","dns":"8.8.8.8"},{"slot":4,"ssid":null},{"slot":5,"ssid":null}],
@@ -262,6 +263,17 @@ server จึงรู้เสมอว่ากล่องตั้งอะ�
 | `editable` | ค่าที่แอปและ server แก้ได้ |
 | `trip_locked` | ค่าที่แก้ไม่ได้ระหว่าง trip |
 | `server_rev` | `rev` ของเอกสารตั้งค่าจาก server ฉบับล่าสุดที่กล่องใช้แล้ว |
+| `factory_rev` | `rev` ของเอกสารตั้งค่าจากสายผลิต (`"factory":true`) นับแยก ไม่เกี่ยวกับ `server_rev` · server ไม่ต้องใช้ (ตั้งแต่ 0.7.0-dev.65) |
 | `network.wifi` | Wi-Fi 5 ช่อง: ชื่อ, DHCP หรือ IP คงที่ · ช่องว่าง `ssid` เป็น `null` |
 | `network.ota_base` | ที่อยู่ดาวน์โหลด firmware |
 | `utc` | เวลาที่ส่ง (วินาที Unix) |
+
+## 11. คำสั่งผ่าน MQTT (0.7.0-dev.65)
+
+กล่องรับคำสั่ง rpc ที่ `mcold/v1/<sn>/rpc` และตอบที่ `mcold/<sn>/rpc/reply` (รายละเอียดใน
+[`mqtt-topics.md`](mqtt-topics.md)) ตอนนี้ใช้โดย**สถานีผลิต**สำหรับทดสอบและส่งมอบกล่อง
+server ไม่จำเป็นต้องใช้ แต่ขอให้:
+
+- ตั้ง ACL ให้ publish `mcold/v1/<sn>/rpc` ได้เฉพาะสถานีผลิต (และ server ถ้าต้องการ)
+- กล่องที่ออกจากสายผลิตแล้วตอบผ่านช่องนี้เฉพาะคำสั่งที่อ่านค่า จนกว่าจะมี login แยกต่อเครื่อง (ข้อ 6)
+

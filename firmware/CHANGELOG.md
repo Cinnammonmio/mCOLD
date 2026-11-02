@@ -38,6 +38,23 @@ To cut a release:
 
 P7, power: in progress.
 
+- **Commands over MQTT, and factory mode** (2026-11-02), written by the
+  flasher session for the line's rack (`flasher/docs/firmware-mqtt-rpc.md`
+  on its branch) and reviewed here. `mcold/v1/<sn>/rpc` in,
+  `mcold/<sn>/rpc/reply` out, the same JSON as BLE and the console, one
+  request at a time (task `mqtt_rpc`, queue of 4). Outside factory mode the
+  channel only reads; in it, commands that change something are taken.
+  Factory mode is an NVS flag: console `factory [on|off]`, cleared by
+  `FACTORY_DONE`; status every 30 s while on. New commands `FACTORY_TEST`
+  (i2c, temp, gnss, logtest), `IDENTIFY`, `GET_DEBUG`, `FACTORY_DONE`;
+  the first, second and last answer `NOT_FACTORY` unless factory mode is
+  on or they come from the console. Settings documents marked
+  `"factory":true` count by their own revision (`frev`, `factory_rev` in
+  `settings`) and are taken only in factory mode or for 10 minutes after
+  it goes off (the rack's Wi-Fi hand-over). `logtest` is refused during a
+  trip, from the console too: it points the log at a RAM image for two
+  minutes. Checked over the console on box 002; the MQTT path is not yet
+  tested. 0.7.0-dev.65.
 - **Charging on every board** (2026-10-29): the charger's CE# (GPIO44)
   is now driven low from boot and held low through deep sleep. Left to
   R22's 10k pull-down against the pad's own pull-up it sat near 0.6 V,

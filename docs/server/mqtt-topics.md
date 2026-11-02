@@ -1,9 +1,9 @@
 ---
 name: MQTT-Topics
 lang: th
-version: 1.3
-date: 2026-10-12
-firmware: 0.7.0-dev.52
+version: 1.4
+date: 2026-11-02
+firmware: 0.7.0-dev.65
 ---
 
 # mCOLD — MQTT topics
@@ -44,6 +44,8 @@ firmware: 0.7.0-dev.52
 | `mcold/v1/<sn>/config` | **sub** | **pub** | 1 | **ใช่** | เอกสารตั้งค่า (Wi-Fi + DHCP/IP คงที่, รอบส่ง, เสียง, temp adjust …) |
 | `mcold/<sn>/config/state` | **pub** | **sub** | 1 | ใช่ | ผลการตั้งค่า |
 | `mcold/<sn>/settings` | **pub** | **sub** | 1 | ใช่ | ค่าตั้งทั้งหมดของกล่องตอนนี้ ส่งใหม่ทุกครั้งที่มีการแก้ (จากแอป, server หรือสาย USB) |
+| `mcold/v1/<sn>/rpc` | **sub** | **pub** (สถานีผลิต) | 1 | **ไม่** | คำสั่ง rpc หนึ่งคำสั่ง แบบเดียวกับ BLE (ตั้งแต่ 0.7.0-dev.65) |
+| `mcold/<sn>/rpc/reply` | **pub** | **sub** | 1 | ไม่ | คำตอบของคำสั่ง rpc ตาม `id` |
 
 **Server subscribe:** `mcold/+/rec`, `mcold/+/status`, `mcold/+/online`, `mcold/+/ota/state`,
 `mcold/+/config/state`, `mcold/+/settings`
@@ -142,11 +144,32 @@ payload คือชื่อไฟล์อย่างเดียว เช�
  "editable":["sample_period_s","temp_adj_c100","alarm_dwell_s","..."],
  "trip_locked":["sample_period_s","temp_adj_c100","alarm_dwell_s","alarm_hyst_c10","..."],
  "server_rev":3,
+ "factory_rev":0,
  "network":{"wifi":[{"slot":1,"ssid":"RDE_2.4GHz","dhcp":true},{"slot":2,"ssid":null},
                     {"slot":3,"ssid":"Warehouse","dhcp":false,"ip":"192.168.1.50","gateway":"192.168.1.1",
                      "subnet":"255.255.255.0","dns":"8.8.8.8"},{"slot":4,"ssid":null},{"slot":5,"ssid":null}],
             "ota_base":"https://..."},
  "utc":1791792252}
+```
+
+### `mcold/v1/<sn>/rpc` → `mcold/<sn>/rpc/reply` — คำสั่งผ่าน MQTT (0.7.0-dev.65)
+
+ใช้โดยสถานีผลิต (rack) เป็นหลัก ข้อความ JSON เหมือนคำสั่ง BLE ทุกอย่าง (`docs/app/ble-protocol.md`)
+คำตอบมี `id` เดียวกับคำขอ ส่งซ้ำด้วย `id` เดิมได้ผลเดิม (idempotent)
+
+- **นอก factory mode** (กล่องที่ส่งให้ลูกค้าแล้ว): ตอบเฉพาะคำสั่งที่อ่านค่า เช่น `GET_STATUS`, `GET_DEBUG`
+  คำสั่งที่เปลี่ยนค่าตอบ `NOT_AUTHORIZED` เพราะทุกกล่องใช้ login ของ broker ร่วมกัน
+- **ใน factory mode** (เปิดที่สถานีด้วยสาย USB): รับคำสั่งที่เปลี่ยนค่าด้วย และมีคำสั่งของสายผลิต
+  `FACTORY_TEST`, `IDENTIFY`, `FACTORY_DONE` (นอกโหมดนี้ตอบ `NOT_FACTORY`) และส่ง status ทุก 30 วินาที
+- เอกสารตั้งค่าที่มี `"factory":true` นับ revision แยก (`factory_rev`) ไม่กระทบ `server_rev`
+  และรับเฉพาะใน factory mode หรือ 10 นาทีหลัง `FACTORY_DONE`
+- **ห้าม retain** ข้อความ rpc
+
+```json
+{"id":101,"cmd":"GET_DEBUG"}
+{"id":101,"ok":true,"reset":"POWERON","boot":85,"uptime_s":28,"coredump":false,"heap":8222360,
+ "min_heap":8174068,"psram":8201452,"ip":"192.168.0.9","ssid":"...","wifi_fail_reason":0,
+ "fw":"0.7.0-dev.65","elf":"31d89cc0e","factory_mode":false}
 ```
 
 ### `mcold/<sn>/online`
@@ -157,5 +180,6 @@ payload คือชื่อไฟล์อย่างเดียว เช�
 
 - กล่องแต่ละตัว publish ได้เฉพาะ `mcold/<sn>/#` ของตัวเอง
 - กล่องแต่ละตัว subscribe ได้เฉพาะ `mcold/v1/<sn>/#` ของตัวเอง
+- `mcold/v1/<sn>/rpc` ให้ publish ได้เฉพาะสถานีผลิต (หรือ server) เท่านั้น
 - `mcold/v1/#` ให้ publish ได้เฉพาะ server: ACK คือคำสั่งให้กล่องลบข้อมูล และ firmware
   คือคำสั่งอัปเดต ถ้าใครปลอมได้ ข้อมูลที่ยังไม่ถึง server จะหาย
