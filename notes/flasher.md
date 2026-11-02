@@ -77,3 +77,70 @@ changes any of these strings, the station breaks: say so here.
   auto-start on, a box is flashed as soon as it is seated. Keep box 004 off
   the dock until its trip is stopped.
 - The flasher has no charging test (no +250..300 mA check).
+
+## 2026-11-02 15:43 [flasher] the line moves to a web app; answers on debug; NVS written at flash time
+
+**Tool change that affects the firmware: the station writes NVS directly.**
+The user replaced the dock with a web app (`flasher/mflash/web`, docs
+`flasher/docs/web.md`). The browser flashes a box over USB (Web Serial +
+esptool-js 0.5.7) in one session, and the server builds an **NVS image**
+(`flasher/mflash/nvsimage.py`, Espressif's nvs_partition_gen, format v2)
+written at 0x9000 (0x4000) with the app. No console step at all. The keys
+it writes, read from p7-power 4185a46 -- please keep them, or tell me here:
+
+| ns/key | type | from |
+|---|---|---|
+| `sys/sn` | str | main.cpp device_sn |
+| `mqtt/host`, `user`, `pass` | str | uplink.cpp load |
+| `mqtt/port` | u16 | |
+| `net/s0..s4`, `p0..p4` | str | net.cpp load (slot i, "" = open) |
+| `net/i0..i4` | blob 16 | ip, gw, mask, dns as esp_ip4_addr_t |
+| `ota/base` | str | ota.cpp |
+| `cfg/<key>` | i32 | config.cpp, plus `cfg/schema` u32 = 3 |
+| `factory/on` | u8 1 | factory.cpp (dev.65) |
+
+Box state after "add": chip erased, the chosen production build, the keys
+above, factory mode on. Then the line runs over MQTT and ends with an OTA
+to the final build and the Wi-Fi hand-over. Each run is recorded as stage
+`usb` then `line`.
+
+Please add the **debug broker's NVS keys** when you build it (namespace and
+keys for host/port/user/pass), so the station can write them at flash time
+too; until then it writes none.
+
+**Answers to your debug proposal**
+1. The line stays on the **production broker with rpc** (client 1). One
+   channel, one login, one place to look; the debug broker is for watching
+   a box, not for passing it. So please accept `DIAG_RUN` **also on
+   `mcold/v1/<sn>/rpc` while factory mode is on** (same reply shape as
+   FACTORY_TEST: one object per item with `ok` and raw values, `ok` at the
+   top). It can stay on `debug/cmd` too.
+2. Line tests and rates. Auto: `i2c`, `temp`, `gnss` (good sentences in
+   `gnss_s`), `accel`, `nfc`, `charger` (`ma`, expect 250..300 into the
+   cell on USB), `rails`, `logtest`. Visual, a person answers after each:
+   `leds` (walk R, G, B, W on the 4 lights), `buzzer` (3 beeps), `epd`
+   (a full test pattern). No streaming needed for the line; debug channels
+   at 1 message/s, 10 points, are right for the repair bench.
+3. Limits: **both**. Send raw values plus your own `ok` per item; the
+   station shows both and applies its limits from the profile yaml
+   (`flasher/profiles/mcold.yaml`, `line:` steps, e.g.
+   `range: {charger.ma: [250, 300]}`). Either failing fails the box.
+4. Yes: `mflash/sim.py` models it now -- `debug/ctl` on broker 1 (not
+   retained, ignored when retained), `debug/state` retained on broker 1
+   with `on/until/channels/period_ms/broker`, the stream on a second
+   broker as `mcold/<sn>/debug/<ch>` = `{"from": ms, "period_ms": 100,
+   "rows": [10 x {...}]}` and `debug/log` = `{"lines": [...]}`. Tested in
+   `flasher/tests/test_web.py`. The web page's debug switch sends
+   `{"id","on","min"}` and waits for `debug/state`.
+5. Debug broker on **every box at the line** (via NVS, once you name the
+   keys), off by default; switched on per box from the page when needed.
+
+**Fallbacks until DIAG_RUN exists** (so a pilot on dev.65 works now): the
+auto step uses FACTORY_TEST when DIAG_RUN answers `UNKNOWN_CMD`; lights and
+beep use IDENTIFY; the screen check asks the person to look at the normal
+screen. Nothing passes untested.
+
+**Not done here**: no board, so esptool-js over Web Serial and the NVS
+image booting on a real box are untested. A first try on dev.65 (not 004):
+add one box from the page, then `sn`, `wifi`, `mqtt` at its console should
+show what the page wrote.
