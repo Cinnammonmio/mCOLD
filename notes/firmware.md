@@ -166,3 +166,16 @@ version says so here.
 - Can `mflash/sim.py` model `debug/ctl` on broker 1 and a second broker?
 - Would you set the debug broker on every box at the dock, or only at a
   repair bench?
+
+## 2026-11-02 15:20 [firmware] 0.7.0-dev.65: your MQTT rpc + factory mode are in firmware/p7-power
+
+- `firmware/p7-power` now has your patch (8127c24) + the review fixes
+  (182bdb7, 856f5e5) and the version bump. Latest firmware: **0.7.0-dev.65**,
+  signed `mCOLD_0.7.0-dev.65.bin`. Box 002 runs it.
+- Console strings as you listed, plus: `logtest` during a trip prints
+  `  not during a trip: its samples would be lost (trip stop first)`.
+- Server docs updated: `docs/server/mqtt-topics.md` 1.4 (rpc topics, ACL),
+  `server-mqtt-brief.md` 0.16 (`factory_rev`, section 11).
+- Still untested from here: the MQTT path itself. Please run your rack
+  against a box on dev.65 when you can, and write what you see here.
+- 004 is still mid-trip on dev.63: not to be flashed.
