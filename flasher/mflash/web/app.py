@@ -14,7 +14,7 @@ import asyncio
 import os
 
 from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -86,9 +86,28 @@ def create_app(line: Line, demo_usb=None) -> FastAPI:
         return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
 
     # ---- the page -------------------------------------------------------------------
+    def version() -> str:
+        """Changes whenever a file of the page does: in the asset URLs, so a browser
+        never keeps an old script under a new page."""
+        h = 0
+        for root, _, files in os.walk(STATIC):
+            for f in files:
+                h = (h * 31 + int(os.path.getmtime(os.path.join(root, f)) * 1000)) % (1 << 40)
+        return format(h, "x")
+
     @app.get("/", include_in_schema=False)
     def index():
-        return FileResponse(os.path.join(STATIC, "index.html"), headers={"Cache-Control": "no-store"})
+        with open(os.path.join(STATIC, "index.html"), encoding="utf-8") as f:
+            page = f.read().replace("__V__", version())
+        return HTMLResponse(page, headers={"Cache-Control": "no-store"})
+
+    @app.middleware("http")
+    async def revalidate(request, call_next):
+        # the page's files are checked with the server each time (cheap: 304 when unchanged)
+        response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     if os.path.isdir(FONTS):
