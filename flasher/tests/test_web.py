@@ -27,7 +27,7 @@ def web(monkeypatch):
     os.environ.pop("MFLASH_LIBRARY", None)
 
 
-def add(c, unit=None, wifi=("mCOLD-Line",)):
+def add(c, unit=None, wifi=("etemp",)):
     """What the page does: connect, prepare, download every image, write, report."""
     port = c.post("/api/demo/usb/connect").json()
     r = c.post("/api/usb/prepare", json={"mac": port["mac"], "lot": LOT, "unit": unit,
@@ -57,7 +57,7 @@ def test_add_device_writes_firmware_and_settings(web):
     assert prep["sn"] == f"{LOT}-001" and prep["factory_ip"] == "10.20.0.101"
     assert set(files) == {"bootloader.bin", "partitions.bin", "ota_data_initial.bin", "firmware.bin", "nvs.bin"}
     nvs = nvsimage.read(files["nvs.bin"])
-    assert nvs["sys"]["sn"] == f"{LOT}-001" and nvs["net"]["s0"] == "mCOLD-Line"
+    assert nvs["sys"]["sn"] == f"{LOT}-001" and nvs["net"]["s0"] == "etemp"
     assert nvs["mqtt"]["host"] == "broker.example" and nvs["factory"]["on"] == 1
     assert done["next_unit"] == 2
     # the image is gone once it is used: a token is for one flash
@@ -65,7 +65,7 @@ def test_add_device_writes_firmware_and_settings(web):
     # the next box gets the next number; a taken number is refused
     assert add(c)[0]["sn"] == f"{LOT}-002"
     port = c.post("/api/demo/usb/connect").json()
-    r = c.post("/api/usb/prepare", json={"mac": port["mac"], "lot": LOT, "unit": 1, "wifi": ["mCOLD-Line"]})
+    r = c.post("/api/usb/prepare", json={"mac": port["mac"], "lot": LOT, "unit": 1, "wifi": ["etemp"]})
     assert r.status_code == 409 and "ใช้แล้ว" in r.json()["error"]
     # the box comes up on the broker with its SN and the unit's address
     rows = wait(lambda: [x for x in c.get("/api/devices").json()["rows"] if x["online"]] or None)
@@ -75,7 +75,7 @@ def test_add_device_writes_firmware_and_settings(web):
 def test_reflash_of_a_known_box_keeps_its_sn(web):
     c, line, usb = web
     prep, _, _ = add(c)
-    r = c.post("/api/usb/prepare", json={"mac": prep["mac"], "lot": LOT, "unit": 9, "wifi": ["mCOLD-Line"]})
+    r = c.post("/api/usb/prepare", json={"mac": prep["mac"], "lot": LOT, "unit": 9, "wifi": ["etemp"]})
     assert r.json()["sn"] == prep["sn"] and r.json()["existing"]
 
 
@@ -100,7 +100,7 @@ def test_line_tests_confirm_ota_and_handover(web):
         b = usb.boxes[r["mac"]]
         assert b.version == "0.7.0-demo"                     # OTA'd to the final firmware
         # tested, still at the company: on the line's Wi-Fi, online, debug possible
-        assert b.wifi == ["mCOLD-Line"] and b.factory_mode
+        assert b.wifi == ["etemp"] and b.factory_mode
     assert all(r["online"] for r in rows)
     sn = rows[0]["sn"]
     assert c.post(f"/api/devices/{sn}/debug", json={"on": True, "minutes": 1}).json()["on"] is True
@@ -116,7 +116,7 @@ def test_line_tests_confirm_ota_and_handover(web):
     for r in rows:
         b = usb.boxes[r["mac"]]
         # five slots: the line's network stays (on DHCP now), the customer's is added
-        assert b.wifi == ["mCOLD-Line", "Customer-WiFi"] and b.wifi_ip["mCOLD-Line"] == ""
+        assert b.wifi == ["etemp", "Customer-WiFi"] and b.wifi_ip["etemp"] == ""
         assert not b.factory_mode and r["online"]          # still reachable at the company
     assert "factory_ip" not in line.db.values(rows[0]["mac"])   # its fixed address is free again
     log = c.get(f"/api/devices/{rows[0]['mac']}/log").json()
@@ -233,10 +233,10 @@ def test_debug_without_a_debug_broker_says_why(web):
 def test_line_and_customer_wifi_from_the_start(web):
     """Both networks written at the USB flash: shipping only turns factory mode off."""
     c, line, usb = web
-    prep, files, _ = add(c, wifi=("mCOLD-Line", "Customer-WiFi"))
+    prep, files, _ = add(c, wifi=("etemp", "Customer-WiFi"))
     net = nvsimage.read(files["nvs.bin"])["net"]
-    assert (net["s0"], net["s1"]) == ("mCOLD-Line", "Customer-WiFi")
+    assert (net["s0"], net["s1"]) == ("etemp", "Customer-WiFi")
     port = c.post("/api/demo/usb/connect").json()
     r = c.post("/api/usb/prepare", json={"mac": port["mac"], "lot": LOT,
-                                         "wifi": ["mCOLD-Line", "Customer-WiFi"] * 3})
+                                         "wifi": ["etemp", "Customer-WiFi"] * 3})
     assert r.status_code == 409 and "5" in r.json()["error"]

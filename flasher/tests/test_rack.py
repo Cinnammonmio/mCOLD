@@ -16,7 +16,7 @@ from mflash.site import Factory, Site, Wifi, validate  # noqa: E402
 from mflash.station import Station  # noqa: E402
 
 LOT = "mCDV1-L0169-1069"
-LINE = "mCOLD-Line"
+LINE = "etemp"
 
 
 def make_site(tmp_path, customer=True):
@@ -104,7 +104,7 @@ def test_quick_route_end_to_end(line):
     assert [s.state for s in st.slots] == ["pass", "pass", "pass", "empty", "pass", "pass"]
     # the USB step: no bringup, the line's Wi-Fi at the unit's address, the customer's not yet
     b0 = bus.boxes[0]
-    assert "wifi ip mCOLD-Line 10.20.0.101 10.20.0.1 255.255.255.0" in b0.sent
+    assert "wifi ip etemp 10.20.0.101 10.20.0.1 255.255.255.0" in b0.sent
     assert b0.wifi == [LINE] and b0.sn == f"{LOT}-001"
     assert not any(c.startswith(("scan", "walk", "logtest")) for c in b0.sent)
     assert st.db.values(b0.mac)["factory_ip"] == "10.20.0.101"

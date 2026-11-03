@@ -22,7 +22,7 @@ Wi-Fi: กล่องจำได้ 5 เครือข่าย เจอต
 
 ## ใช้งาน
 
-1. ตั้งค่า (⚙): Wi-Fi โรงงาน + IP pool, Wi-Fi ลูกค้า, MQTT broker, debug broker, OTA base, ค่าตั้งต้น
+1. ตั้งค่า (⚙): Wi-Fi โรงงาน (SSID `etemp` ใส่รหัสผ่านในหน้านี้ครั้งเดียว ไม่เก็บใน git) + IP pool, Wi-Fi ลูกค้า, MQTT broker, debug broker, OTA base, ค่าตั้งต้น
 2. ⋯ → Firmware ที่ใช้: นำเข้า zip ของ build (`.pio/build/mcold`) อนุมัติ แล้วเลือก
    - **Flash ผ่าน USB**: รุ่นที่เขียนตอนเพิ่มเครื่อง
    - **Firmware จริง**: รุ่นที่ OTA เป็นข้อท้าย ๆ ของการทดสอบ (ถ้าเหมือนกันก็ข้าม)

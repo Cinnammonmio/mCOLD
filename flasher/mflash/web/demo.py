@@ -68,10 +68,10 @@ def setup(product: str = "mcold", speed: float = 0.3) -> tuple[Line, DemoUsb]:
     site = Site(station="demo-web", wifi=[Wifi("Customer-WiFi", "demo-password")],
                 mqtt={"host": "broker.example", "port": 1883, "username": "demo", "password": "demo-secret"},
                 ota_base="https://files.example/mcold",
-                factory=Factory("mCOLD-Line", "line-password", "10.20.0.100", "10.20.0.1", "255.255.255.0"),
+                factory=Factory("etemp", "line-password", "10.20.0.100", "10.20.0.1", "255.255.255.0"),
                 debug_mqtt={"host": "debug.example", "port": 1883, "username": "demo", "password": "debug-secret"},
                 path=os.path.join(root, "site.ini"))
-    broker = SimBroker(speed=speed, in_range={"mCOLD-Line"})
+    broker = SimBroker(speed=speed, in_range={"etemp"})
     debug_broker = SimBroker(speed=speed)
     line = Line(product, Db(os.path.join(root, "demo.db")), site,
                 fleet=Fleet(broker.connect("mflash-web-demo")),

@@ -185,12 +185,12 @@ def serve(product: str = "mcold", host: str = "127.0.0.1", port: int = 8765, dem
         from .sim import SimBroker, SimHardware, demo_setup
         from .site import Factory, Site, Wifi
         root = tempfile.mkdtemp(prefix="mflash-demo-")
-        broker = SimBroker(speed=speed, in_range={"mCOLD-Line"})
+        broker = SimBroker(speed=speed, in_range={"etemp"})
         bus = demo_setup(root, speed=speed, broker=broker)
         site = Site(station="demo", wifi=[Wifi("Customer-WiFi", "demo-password")],
                     mqtt={"host": "broker.example", "port": 1883, "username": "demo",
                           "password": "demo-secret"},
-                    factory=Factory("mCOLD-Line", "line-password", "10.20.0.100", "10.20.0.1",
+                    factory=Factory("etemp", "line-password", "10.20.0.100", "10.20.0.1",
                                     "255.255.255.0"),
                     path=os.path.join(root, "site.ini"))     # the demo never touches the real one
         station = Station(product, Db(os.path.join(root, "demo.db")), site, hw=SimHardware(bus),

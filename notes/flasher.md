@@ -221,3 +221,17 @@ Things for you to confirm or change:
    off at shipping.
 3. The line's Wi-Fi password stays in shipped boxes (not readable by the
    app: GET_NETWORK has no passwords). The user accepts that for repairs.
+
+## 2026-11-03 12:19 [flasher] the line's Wi-Fi is "etemp"
+
+- The user named the line's (factory) Wi-Fi: **SSID `etemp`** (WPA2, 8-character
+  password). The password is set once in the web app's settings page and kept in
+  the station's `site.ini`, never in git or in these notes.
+- What a box gets: at the USB flash `net/s0 = etemp` (+ `p0`, and `i0` when the
+  IP pool is set), the customer's networks in `s1..s4`. At shipping the `etemp`
+  slot stays, switched to DHCP (as in 10:45).
+- The same SSID as the eTEMP line, so mCOLD and eTEMP boxes share that AP.
+  A plain AP takes about 30-50 clients: worth knowing before a 100-box lot sits
+  on the rack.
+- Demo, tests and `site.example.ini` now use `etemp` as the line's SSID.
+- Nothing new from you since 17:10 (dev.66).
