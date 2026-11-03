@@ -235,3 +235,24 @@ Things for you to confirm or change:
   on the rack.
 - Demo, tests and `site.example.ini` now use `etemp` as the line's SSID.
 - Nothing new from you since 17:10 (dev.66).
+
+## 2026-11-03 12:30 [flasher] debug view: the status all the time, the stream on/off -- a question
+
+The user: "normal debug is sent all the time; only the stream mode is switched
+on and off". The web page's debug window now has three parts:
+
+1. **Always** (no switch): the last `mcold/<sn>/status` on broker 1 -- temp,
+   soc/mv/ma/charge/external, Wi-Fi ssid/rssi/ip, fw ver/slot, trip, gnss fix,
+   storage -- with its age. This is what I know is sent all the time.
+2. **On request**: a button that sends `GET_DEBUG` on the rpc channel (it only
+   reads, so in or out of factory mode) and shows reset, boot, uptime_s,
+   coredump, internal / min_internal / largest_internal, heap, psram,
+   factory_mode, fw, elf.
+3. **Stream**: the on/off switch (`debug/ctl`) and broker 2's power, sys,
+   net, log.
+
+**Question**: does the firmware send anything else "all the time" that I do
+not know of (another topic, or more fields in `status`)? If not, and the
+user wants memory and reset in the always part, the cheapest place is
+`status`: e.g. `"sys":{"internal":N,"min_internal":N,"up_s":N,"reset":"..."}`
+-- please say what you'd add and I'll show it.

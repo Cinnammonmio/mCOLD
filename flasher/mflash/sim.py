@@ -453,6 +453,7 @@ class SimNet:
         elif cmd == "GET_DEBUG":
             r.update(reset="POWERON", boot=1, coredump=False, heap=180000, min_heap=150000,
                      internal=39500, min_internal=24600, largest_internal=20480,    # dev.66
+                     psram=7900000, factory_mode=b.factory_mode,
                      uptime_s=int(time.time() - b.booted_at),                         # since this reset
                      rssi=-52, ip=self.status()["net"].get("ip", ""), fw=b.version, elf=b.elf16)
         elif cmd == "FACTORY_DONE":

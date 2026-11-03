@@ -119,8 +119,8 @@ function tile(d) {
       <div class="acts"><button class="btn sm a-go">${icon("play")}<span>ทดสอบ</span></button>
         <button class="btn sm a-stop">${icon("stop")}หยุด</button>
         <button class="btn sm a-ship" title="ปิดโหมดโรงงาน ใส่ Wi-Fi ลูกค้า (Wi-Fi โรงงานยังอยู่ เป็น DHCP)">${icon("truck")}ส่งมอบ</button>
-        <label class="switch a-dbg" title="debug stream (client ตัวที่สองของกล่อง)"><input type="checkbox">debug</label>
-        <button class="btn sm icon a-view" title="ดู stream">${icon("bug")}</button>
+        <label class="switch a-dbg" title="เปิด/ปิด stream (client ตัวที่สองของกล่อง → debug broker)"><input type="checkbox">stream</label>
+        <button class="btn sm icon a-view" title="ดู debug: ข้อมูลปกติ, GET_DEBUG, stream">${icon("bug")}</button>
         <button class="btn sm icon a-log" title="ประวัติ">${icon("log")}</button></div>`;
     const q = (s) => el.querySelector(s);
     t = { el, u: q(".u"), badge: q(".badge"), sn: q(".sn"), mac: q(".mac"), ip: q(".ip"), fw: q(".fw"), bar: q(".bar i"),
@@ -156,7 +156,8 @@ function tile(d) {
   t.ship.hidden = !["pass", "ship_fail"].includes(d.state) || !d.online;
   text(t.golbl, d.state === "online" ? "ทดสอบ" : "ทำซ้ำ");
   t.stop.hidden = !active;
-  t.dbg.hidden = t.view.hidden = !cfg.debug_available || !d.online;
+  t.dbg.hidden = !cfg.debug_available || !d.online;      // the stream: a debug broker and the box online
+  t.view.hidden = !d.sn || d.state === "flashing";         // the status it sends all the time: any box
   if (document.activeElement !== t.dbgin) t.dbgin.checked = !!d.debug;
   t.log.hidden = !d.mac;
   return t;
@@ -406,20 +407,76 @@ $("conf-yes").onclick = async () => {
   if (!j.error) { toast(`ลบ ${j.deleted.sn || j.deleted.mac} แล้ว`, true); $("logdlg").close(); tiles.get(confDev.sn)?.el.remove(); tiles.delete(confDev.sn); poll(); }
 };
 
-/* ---- the debug stream ---- */
+/* ---- debug: the status sent all the time, GET_DEBUG on request, the stream when on ---- */
 let dbgWs = null, dbgDev = null;
 const chans = {};
+const kb = (n) => n == null ? "—" : n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : n >= 1024 ? (n / 1024).toFixed(1) + " KB" : n + " B";
+const dur = (s) => { if (s == null) return "—"; s = Math.floor(s); const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  return (d ? d + " วัน " : "") + `${h}:${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+const rssi = (v) => v == null ? ["—", ""] : [`${v} dBm · ${v >= -60 ? "ดีมาก" : v >= -70 ? "ดี" : v >= -80 ? "พอใช้" : "อ่อน"}`,
+  v >= -70 ? "good" : v >= -80 ? "warn" : "bad"];
+const yes = (v, on = "เปิด", off = "ปิด") => v == null ? "—" : v ? on : off;
+// what each stream channel's fields mean (firmware dev.66, notes/firmware.md 17:10)
+const CH = {
+  power: { title: "ไฟ / แบต", graph: ["ma", "กระแสแบต (mA)"], fields: (d, r) => [
+    ["กระแสแบต", `${r.ma > 0 ? "+" : ""}${r.ma} mA`, r.ma > 0 ? "good" : ""], ["แรงดัน", d.mv != null ? (d.mv / 1000).toFixed(3) + " V" : "—"],
+    ["แบต", d.soc != null ? d.soc + " %" : "—"], ["ชาร์จ", d.charge ?? "—"], ["ไฟเข้า (PG)", yes(d.pg, "มี", "ไม่มี")],
+    ["fault", d.fault ?? "—", d.fault && d.fault !== "none" ? "bad" : ""]] },
+  sys: { title: "ระบบ / หน่วยความจำ", graph: ["internal", "RAM ภายใน (KB)"], fields: (d, r) => [
+    ["RAM ภายใน", kb(r.internal), r.internal < 8192 ? "bad" : r.internal < 16384 ? "warn" : "good"], ["heap", kb(r.heap)],
+    ["heap ต่ำสุด", kb(r.min_heap)], ["PSRAM ว่าง", kb(r.psram)], ["เปิดเครื่องมา", dur(r.up_s)], ["โหมดโรงงาน", yes(r.factory)]] },
+  net: { title: "เครือข่าย", graph: ["rssi", "สัญญาณ (dBm)"], fields: (d, r) => [
+    ["Wi-Fi", r.wifi || "—"], ["สัญญาณ", ...rssi(r.rssi)], ["broker หลัก", r.broker1 || "—", r.broker1 === "connected" ? "good" : "bad"]] },
+};
+function kvs(box, list) {
+  box.innerHTML = "";
+  for (const [k, v, cls] of list) {
+    const d = document.createElement("div"); d.className = "kv";
+    d.innerHTML = "<span></span><b></b>"; d.firstChild.textContent = k; d.lastChild.textContent = v ?? "—";
+    if (cls) d.lastChild.className = cls; box.appendChild(d);
+  }
+}
+function renderBase(m) {
+  const s = m.status || {}, t = s.temp || {}, p = s.power || {}, n = s.net || {}, fw = s.fw || {}, tr = s.trip || {}, g = s.gnss || {};
+  if (!m.status_at) { $("dbgbase").innerHTML = '<div class="note">ยังไม่มี status จากกล่องนี้ (offline?)</div>'; return; }
+  kvs($("dbgbase"), [
+    ["สถานะ", m.online ? "online" : "offline", m.online ? "good" : "bad"],
+    ["อุณหภูมิ", t.ok ? `${t.c} °C` : "อ่านไม่ได้", t.ok ? "" : "bad"],
+    ["แบต", p.soc != null ? `${p.soc} % · ${(p.mv / 1000).toFixed(2)} V` : "—"],
+    ["กระแส", p.ma != null ? `${p.ma > 0 ? "+" : ""}${p.ma} mA` : "—"], ["ชาร์จ", p.charge ?? "—"],
+    ["ไฟเลี้ยงภายนอก", yes(p.external, "มี", "ไม่มี")], ["Wi-Fi", n.ssid || (n.connected ? "?" : "ไม่ได้ต่อ")],
+    ["สัญญาณ", ...rssi(n.rssi)], ["IP", n.ip || "—"], ["firmware", `${fw.ver || "—"}${fw.slot ? " · " + fw.slot : ""}`],
+    ["trip", tr.active ? `กำลังทำ #${tr.id}` : "ไม่มี", tr.active ? "warn" : ""], ["GNSS", g.fix ? "fix" : "ไม่มี fix"],
+    ["พื้นที่ log", s.storage ? `${s.storage.used_pct} %` : "—"]]);
+  dbgBaseAt = m.status_at;
+}
+let dbgBaseAt = 0;
+setInterval(() => { if ($("dbgdlg").open && dbgBaseAt) text($("dbgage"), `อัปเดต ${Math.round(Date.now() / 1000 - dbgBaseAt)} วินาทีที่แล้ว`); }, 1000);
+$("dbgget").onclick = async () => {
+  const r = await post(`/api/devices/${encodeURIComponent(dbgDev.sn)}/get_debug`);
+  if (r.error) return;
+  const box = $("dbginfo"); box.hidden = false;
+  kvs(box, [["GET_DEBUG", new Date().toLocaleTimeString("th-TH")], ["reset ล่าสุด", r.reset ?? "—"], ["boot ครั้งที่", r.boot ?? "—"],
+    ["เปิดเครื่องมา", dur(r.uptime_s)], ["core dump", r.coredump ? "มี" : "ไม่มี", r.coredump ? "bad" : "good"],
+    ["RAM ภายใน", kb(r.internal), r.internal < 8192 ? "bad" : ""], ["RAM ภายในต่ำสุด", kb(r.min_internal)],
+    ["ก้อนใหญ่สุด", kb(r.largest_internal)], ["heap", kb(r.heap)], ["heap ต่ำสุด", kb(r.min_heap)], ["PSRAM ว่าง", kb(r.psram)],
+    ["โหมดโรงงาน", yes(r.factory_mode)], ["firmware", r.fw ?? "—"], ["ELF", r.elf ?? "—"]]);
+};
 function openDebug(d) {
-  dbgDev = d;
-  text($("dbgtitle"), `Debug stream · เครื่อง ${pad(d.unit)} · ${d.sn}`);
+  dbgDev = d; dbgBaseAt = 0;
+  text($("dbgtitle"), `Debug · เครื่อง ${pad(d.unit)} · ${d.sn}`);
   $("dbgon").checked = !!d.debug;
-  text($("dbgnote"), "ข้อมูลจาก debug broker (client ตัวที่สองของกล่อง) ทุก 1 วินาที 10 จุด · ปิดเองเมื่อครบเวลา");
-  $("dbgch").innerHTML = ""; $("dbglog").textContent = "";
+  $("dbgch").innerHTML = ""; $("dbglog").textContent = ""; $("dbglog").hidden = true; $("dbginfo").hidden = true;
+  text($("dbgage"), ""); $("dbgbase").innerHTML = "";
   for (const k of Object.keys(chans)) delete chans[k];
   if (dbgWs) dbgWs.close();
   const proto = location.protocol === "https:" ? "wss" : "ws";
   dbgWs = new WebSocket(`${proto}://${location.host}/api/devices/${encodeURIComponent(d.sn)}/debug/ws`);
-  dbgWs.onmessage = (ev) => { const m = JSON.parse(ev.data); $("dbgon").checked = m.on; for (const x of m.messages) onDebug(x); };
+  dbgWs.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    $("dbgon").checked = m.on; renderBase(m);
+    for (const x of m.messages) onDebug(x);
+  };
   if (!$("dbgdlg").open) $("dbgdlg").showModal();
 }
 $("dbgdlg").addEventListener("close", () => { if (dbgWs) dbgWs.close(); dbgWs = null; });
@@ -430,28 +487,38 @@ $("dbgon").onchange = async (e) => {
 function onDebug(m) {
   if (m.ch === "log") {
     const l = $("dbglog"), at = new Date(m.at * 1000).toLocaleTimeString("th-TH");
+    l.hidden = false;
     for (const line of (m.data.lines || [JSON.stringify(m.data)])) l.textContent += `${at} ${line}\n`;
+    if (m.data.dropped) l.textContent += `${at} … ทิ้งไป ${m.data.dropped} ไบต์ (buffer เต็ม)\n`;
     if (l.textContent.length > 20000) l.textContent = l.textContent.slice(-15000);
     l.scrollTop = l.scrollHeight; return;
   }
   const rows = (m.data && m.data.rows) || [];
   if (!rows.length) return;
+  const spec = CH[m.ch];
   let c = chans[m.ch];
   if (!c) {
     const el = document.createElement("div"); el.className = "ch";
-    el.innerHTML = `<h5><span></span><span class="unit"></span></h5><div class="val"></div><canvas width="300" height="46"></canvas>`;
-    el.querySelector("h5 span").textContent = m.ch;
+    el.innerHTML = `<h5><span></span></h5><div class="kvs"></div><div class="gl"></div><canvas width="300" height="46"></canvas>`;
+    el.querySelector("h5 span").textContent = spec ? spec.title : m.ch;
     $("dbgch").appendChild(el);
-    // the value worth a graph (firmware dev.66): battery current, internal RAM, Wi-Fi signal
-    const prefer = ["ma", "internal", "rssi", "c"];
     const nums = Object.keys(rows[0]).filter((k) => typeof rows[0][k] === "number");
-    c = chans[m.ch] = { el, pts: [], key: prefer.find((k) => nums.includes(k)) || nums[0] };
+    const key = spec && nums.includes(spec.graph[0]) ? spec.graph[0] : nums[0];
+    c = chans[m.ch] = { el, pts: [], key };
+    text(el.querySelector(".gl"), spec ? spec.graph[1] : key || "");
   }
-  for (const r of rows) c.pts.push(r[c.key]);
+  for (const r of rows) if (c.key) c.pts.push(c.key === "internal" ? r[c.key] / 1024 : r[c.key]);
   c.pts.splice(0, Math.max(0, c.pts.length - 300));
   const last = rows[rows.length - 1];
-  const head = Object.entries(m.data).filter(([k, v]) => !["from", "mono", "period_ms", "rows"].includes(k) && v !== null && typeof v !== "object");
-  text(c.el.querySelector(".val"), [...head, ...Object.entries(last)].map(([k, v]) => `${k} ${v}`).join("  "));
+  const list = spec ? spec.fields(m.data, last)
+    : Object.entries(last).map(([k, v]) => [k, typeof v === "object" ? JSON.stringify(v) : String(v)]);
+  const box = c.el.querySelector(".kvs"); box.innerHTML = "";
+  for (const [k, v, cls] of list) {
+    const a = document.createElement("span"); a.textContent = k;
+    const b = document.createElement("b"); b.textContent = v ?? "—"; if (cls) b.className = cls;
+    box.append(a, b);
+  }
+  if (!c.pts.length) return;
   const cv = c.el.querySelector("canvas"), g = cv.getContext("2d");
   const lo = Math.min(...c.pts), hi = Math.max(...c.pts), span = hi - lo || 1;
   g.clearRect(0, 0, cv.width, cv.height);

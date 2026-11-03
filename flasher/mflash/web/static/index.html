@@ -74,9 +74,16 @@
 <dialog id="logdlg"><header><span data-icon="log"></span><b id="logtitle">ประวัติเครื่อง</b><button class="btn sm" data-close>ปิด</button></header>
   <div class="dbody"><div class="runs" id="runs"></div></div></dialog>
 
-<dialog id="dbgdlg"><header><span data-icon="bug"></span><b id="dbgtitle">Debug stream</b>
-  <label class="switch"><input type="checkbox" id="dbgon">เปิด stream</label><button class="btn sm" data-close>ปิด</button></header>
-  <div class="dbody"><div class="note" id="dbgnote"></div><div class="dbg" id="dbgch"></div><pre class="dlog" id="dbglog"></pre></div></dialog>
+<dialog id="dbgdlg"><header><span data-icon="bug"></span><b id="dbgtitle">Debug</b><button class="btn sm" data-close>ปิด</button></header>
+  <div class="dbody">
+    <div class="dsec"><h4>ข้อมูลปกติ <small>ส่งมาตลอดทาง broker หลัก (status ทุก 5 นาที, โหมดโรงงานทุก 30 วินาที)</small>
+      <span class="age" id="dbgage"></span><button class="btn sm" id="dbgget">ขอ GET_DEBUG</button></h4>
+      <div class="kvgrid" id="dbgbase"></div>
+      <div class="kvgrid" id="dbginfo" hidden></div></div>
+    <div class="dsec"><h4>Stream <small id="dbgnote">client ตัวที่สอง → debug broker ทุก 1 วินาที · ปิดเองเมื่อครบเวลา</small>
+      <label class="switch"><input type="checkbox" id="dbgon">เปิด stream</label></h4>
+      <div class="dbg" id="dbgch"></div><pre class="dlog" id="dbglog" hidden></pre></div>
+  </div></dialog>
 
 <dialog id="sumdlg"><header><span data-icon="list"></span><b id="sumtitle">สรุป SN</b>
   <a class="btn sm" id="sumcsv" href="#" download><span data-icon="download"></span>CSV</a><button class="btn sm" data-close>ปิด</button></header>

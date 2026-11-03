@@ -240,3 +240,13 @@ def test_line_and_customer_wifi_from_the_start(web):
     r = c.post("/api/usb/prepare", json={"mac": port["mac"], "lot": LOT,
                                          "wifi": ["etemp", "Customer-WiFi"] * 3})
     assert r.status_code == 409 and "5" in r.json()["error"]
+
+
+def test_debug_view_has_the_status_and_get_debug(web):
+    c, line, usb = web
+    prep, _, _ = add(c)
+    wait(lambda: [x for x in c.get("/api/devices").json()["rows"] if x["online"]])
+    d = c.get(f"/api/devices/{prep['sn']}/debug").json()
+    assert d["on"] is False and d["status_at"] and d["status"]["net"]["ip"] == "10.20.0.101"
+    r = c.post(f"/api/devices/{prep['sn']}/get_debug").json()
+    assert {"internal", "coredump", "uptime_s", "reset"} <= set(r)

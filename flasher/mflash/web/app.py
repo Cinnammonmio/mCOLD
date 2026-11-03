@@ -196,15 +196,21 @@ def create_app(line: Line, demo_usb=None) -> FastAPI:
     def debug_poll(sn: str, since: int = 0):
         return line.debug_since(sn, since)
 
+    @app.post("/api/devices/{sn}/get_debug")
+    def get_debug(sn: str):
+        return call(line.get_debug, sn)
+
     @app.websocket("/api/devices/{sn}/debug/ws")
     async def debug_ws(ws: WebSocket, sn: str):
+        """The stream as it comes, and the box's status whenever a new one arrives."""
         await ws.accept()
-        seq = 0
+        seq, status_at, first = 0, -1.0, True
         try:
             while True:
                 d = line.debug_since(sn, seq)
-                if d["messages"]:
-                    seq = d["messages"][-1]["seq"]
+                if d["messages"] or d["status_at"] != status_at or first:
+                    seq = d["messages"][-1]["seq"] if d["messages"] else seq
+                    status_at, first = d["status_at"], False
                     await ws.send_json(d)
                 await asyncio.sleep(0.4)
         except (WebSocketDisconnect, RuntimeError):

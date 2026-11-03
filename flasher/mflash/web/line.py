@@ -577,9 +577,25 @@ class Line(LineCore):
         return dict(st)
 
     def debug_since(self, sn: str, seq: int) -> dict:
+        """What the debug view shows: the status the box sends all the time on broker 1
+        (every 5 min, every 30 s in factory mode), and the stream since `seq` when it is on."""
+        nb = self.fleet.boxes.get(sn) if self.fleet else None
+        base = {"status": dict(nb.status) if nb else {}, "status_at": nb.status_at if nb else 0,
+                "online": bool(nb and nb.online), "state": dict(nb.debug_state) if nb else {}}
         if not self.debug:
-            return {"on": False, "messages": []}
-        return {"on": self.debug_on(sn), "messages": self.debug.since(sn, seq)}
+            return {"on": False, "messages": [], **base}
+        return {"on": self.debug_on(sn), "messages": self.debug.since(sn, seq), **base}
+
+    def get_debug(self, sn: str) -> dict:
+        """GET_DEBUG over the rpc channel: it only reads, so a box answers it in or out of factory mode."""
+        if not self.fleet:
+            raise RuntimeError(self.link_error or "ยังไม่ได้ต่อ MQTT broker")
+        r = self.fleet.rpc(sn, "GET_DEBUG", None, timeout=10)
+        if r is None:
+            raise RuntimeError(f"{sn} ไม่ตอบ GET_DEBUG (offline?)")
+        if r.get("ok") is False:
+            raise RuntimeError(f"{sn}: {r.get('err', '')}")
+        return r
 
     def delete(self, mac: str, by: str = "") -> dict:
         with self.lock:
