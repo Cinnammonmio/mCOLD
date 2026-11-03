@@ -93,8 +93,8 @@ API หลัก (ดูครบที่ `/docs`):
 | ต้องการ | มีแล้ว | ถ้ายังไม่มี |
 |---|---|---|
 | โหมดโรงงาน `factory/on`, rpc `mcold/v1/<sn>/rpc`, `FACTORY_TEST`, `IDENTIFY`, `GET_DEBUG`, `FACTORY_DONE`, `factory_rev` | **0.7.0-dev.65** | — |
-| `DIAG_RUN` (accel, NFC, ชาร์จ, ราง, ไฟไล่สี, เสียง, จอ) | ยัง (ข้อเสนอ) | ใช้ `FACTORY_TEST` + `IDENTIFY` + ให้คนดูหน้าจอปกติ แทน (fallback ใน profile) |
-| debug mode: `mcold/v1/<sn>/debug/ctl` (client 1) → stream บน debug broker (client 2) | ยัง (ข้อเสนอ) | ปุ่ม debug ขึ้นว่ากล่องไม่ตอบ |
+| `DIAG_RUN` (accel, NFC, ชาร์จ, ราง, ไฟไล่สี, เสียง, จอ) บน rpc ในโหมดโรงงาน | ยัง (ฝั่ง firmware รับทำเป็น diag phase 1) | ใช้ `FACTORY_TEST` + `IDENTIFY` + ให้คนดูหน้าจอปกติ แทน (fallback ใน profile) |
+| debug mode: `mcold/v1/<sn>/debug/ctl` (client 1) → stream บน debug broker (client 2), `dbg/*` ใน NVS | **0.7.0-dev.66** (power, sys, net, log; accel, gnss, temp ยังไม่มี) | ปุ่ม debug ขึ้นว่ากล่องไม่ตอบ |
 
 กล่องที่ firmware ไม่มีคำสั่งที่ต้องใช้จะ**ไม่ผ่าน** ไม่ถูกปล่อยผ่านโดยไม่ได้ทดสอบ
 เดโมจำลองทั้งหมดไว้ให้ลองครบวงจร (รวมกล่องที่ยังไม่มี `DIAG_RUN`)

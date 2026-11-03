@@ -98,6 +98,10 @@ class SimBox:
         self.factory_mode = False
         self.server_rev = 0
         self.factory_rev = 0          # the factory line's documents, counted apart
+        self.factory_off_at = 0.0     # FACTORY_DONE, this boot: factory documents 10 min more
+        self.trip_active = False      # no logtest during a trip (dev.65)
+        self.dbg: dict = {}           # the debug broker in NVS (dbg/*, dev.66)
+        self.booted_at = time.time()
         self.net: SimNet | None = None    # its Wi-Fi side, when the bus has a broker
         self.sent: list[str] = []
 
@@ -111,7 +115,9 @@ class SimBox:
         return Port(f"COM{4 + 2 * self.slot}", 0x303A, 0x4003, serial, loc + ":1.2", "mCOLD console")
 
     def boot(self) -> None:
+        self.booted_at, self.factory_off_at = time.time(), 0.0
         if self.net:
+            self.net.debug(False)
             self.net.drop()
         if not (self.flash.get(0x20000) or self.flash.get(0x10000)):
             self.state = "rom"
@@ -141,12 +147,14 @@ class SimBox:
         self.mqtt = bool(nvs.get("mqtt", {}).get("host"))
         self.config = {k: v for k, v in nvs.get("cfg", {}).items() if k != "schema"}
         self.factory_mode = bool(nvs.get("factory", {}).get("on"))
+        self.dbg = dict(nvs.get("dbg", {}))
 
     def erase(self) -> None:
         """What an erase of the whole chip takes with it: NVS and everything in it."""
         self.flash, self.sn, self.pending_sn, self.config = {}, "", "", {}
         self.wifi, self.wifi_ip, self.mqtt, self.factory_mode = [], {}, False, False
         self.server_rev = self.factory_rev = 0
+        self.dbg = {}
 
     # its console
     def reply(self, line: str) -> str:
@@ -398,7 +406,8 @@ class SimNet:
             self._ota(text)
         elif leaf == "debug/ctl" and not retained:      # a retained one is ignored
             d = json.loads(text)
-            self.debug(bool(d.get("on")), float(d.get("min", 60)), d.get("channels"))
+            self.debug(bool(d.get("on")), float(d.get("min", 60)), d.get("channels"),
+                       d.get("period_ms", 100))
 
     def _ota(self, name: str) -> None:
         """The box fetches the named image from its OTA base and restarts into it."""
@@ -437,22 +446,29 @@ class SimNet:
             r.update(i2c={"ok": True, "found": 8, "expected": 8},
                      temp={"ok": b.probe, "c": 23.5},
                      gnss={"ok": gnss_ok, "good": 0 if b.gnss_dead else 14, "bad": 0},
-                     logtest={"ok": True, "passed": 14})
+                     logtest=self._logtest())
             r["ok"] = all(r[k]["ok"] for k in ("i2c", "temp", "gnss", "logtest"))
         elif cmd == "IDENTIFY":
             r.update(s=req.get("s", 10))
         elif cmd == "GET_DEBUG":
             r.update(reset="POWERON", boot=1, coredump=False, heap=180000, min_heap=150000,
-                     uptime_s=60, rssi=-52, ip=self.status()["net"].get("ip", ""),
-                     fw=b.version, elf=b.elf16)
+                     internal=39500, min_internal=24600, largest_internal=20480,    # dev.66
+                     uptime_s=int(time.time() - b.booted_at),                         # since this reset
+                     rssi=-52, ip=self.status()["net"].get("ip", ""), fw=b.version, elf=b.elf16)
         elif cmd == "FACTORY_DONE":
             b.factory_mode = False
+            b.factory_off_at = time.time()
         elif cmd == "DIAG_RUN" and getattr(b, "diag", True):
             r.update(self._diag(req.get("items") or []))
             r["ok"] = all(v.get("ok") for v in r.values() if isinstance(v, dict))
         else:
             r = {"id": req.get("id"), "ok": False, "err": "UNKNOWN_CMD"}
         return r
+
+    def _logtest(self) -> dict:
+        if self.box.trip_active:      # its samples would be lost (dev.65)
+            return {"err": "a trip is running", "ok": False}
+        return {"ok": True, "failures": 0}
 
     def _diag(self, items: list[str]) -> dict:
         """DIAG_RUN: the bench checks, by name; the visual ones only show something."""
@@ -464,7 +480,7 @@ class SimNet:
                "nfc": {"ok": True},
                "charger": {"ok": True, "ma": 280},
                "rails": {"ok": True},
-               "logtest": {"ok": True, "failures": 0},
+               "logtest": self._logtest(),
                "leds": {"ok": True, "shown": "walk 4 x RGBW"},
                "buzzer": {"ok": True, "shown": "beep 3 x 200 ms"},
                "epd": {"ok": True, "shown": "test pattern"}}
@@ -472,48 +488,88 @@ class SimNet:
 
     # ---- the debug stream (docs: notes/firmware.md, PROPOSAL debug over MQTT) ----
 
-    def debug(self, on: bool, minutes: float = 60, channels=None) -> None:
+    DEBUG_BUILT = ("power", "sys", "net", "log")       # dev.66: accel, gnss, temp not yet
+
+    def _debug_state(self, **kw) -> None:
+        self._pub("debug/state", kw)                         # on client 1, retained
+
+    def debug(self, on: bool, minutes: float = 60, channels=None, period_ms: int = 100) -> None:
+        """Debug mode (dev.66): switched by `debug/ctl` on broker 1; client 2 connects to
+        the debug broker from NVS (dbg/*) and streams one message a second per channel."""
         b = self.box
         if self.debug_timer:
             self.debug_timer.cancel()
             self.debug_timer = None
-        if not on or not self.debug_broker:
+        if not on:
             if self.debug_link:
                 self.debug_link.close()
             self.debug_link, self.debug_until = None, 0.0
-            # the state goes out on client 1, the production broker
-            self._pub("debug/state", {"on": False, "broker": "connected" if self.debug_broker else "not set"})
+            if self.link:
+                self._debug_state(on=False, broker="off")
             return
+        self.debug_until = time.time() + minutes * 60
+        want = list(channels or self.DEBUG_BUILT)
+        self.debug_channels = [c for c in want if c in self.DEBUG_BUILT]
+        self.debug_period = max(100, min(1000, int(period_ms or 100)))
+        state = dict(on=True, until=int(self.debug_until), min_left=int(minutes),
+                     channels=self.debug_channels, period_ms=self.debug_period)
+        if not b.dbg.get("host"):
+            return self._debug_state(**state, broker="not set")
+        if not self.debug_broker:
+            return self._debug_state(**state, broker="unreachable")
+        self._debug_state(**state, broker="connecting")
         if not self.debug_link:
             self.debug_link = self.debug_broker.connect(b.sn + "-debug")
-        self.debug_until = time.time() + minutes * 60
-        self.debug_channels = list(channels or ["power", "temp", "net", "sys", "log"])
-        self._pub("debug/state", {"on": True, "until": int(self.debug_until), "channels": self.debug_channels,
-                                  "period_ms": 100, "broker": "connected"})
+            self.debug_link.subscribe(f"mcold/v1/{b.sn}/debug/cmd", self._debug_cmd)
+        self._debug_state(**state, broker="connected")
         self._debug_tick()
 
+    def _debug_cmd(self, topic: str, payload: bytes, retained: bool) -> None:
+        """`debug/cmd` on broker 2: DEBUG_SET or any rpc; changes only in factory mode."""
+        try:
+            req = json.loads(payload.decode() or "{}")
+        except ValueError:
+            return
+        if req.get("cmd") == "DEBUG_SET":
+            if not self.box.factory_mode:
+                r = {"id": req.get("id"), "ok": False, "err": "NOT_FACTORY"}
+            else:
+                left = max(1.0, (self.debug_until - time.time()) / 60)
+                self.debug(True, left, req.get("channels") or self.debug_channels,
+                           req.get("period_ms", self.debug_period))
+                r = {"id": req.get("id"), "ok": True, "channels": self.debug_channels,
+                     "period_ms": self.debug_period}
+        else:
+            r = self._rpc(req)
+        if self.debug_link:
+            self.debug_link.publish(f"mcold/{self.box.sn}/debug/reply", json.dumps(r))
+
     def _debug_tick(self) -> None:
-        """One message a second per channel, ten points each (the 100 ms limit)."""
+        """One message a second per channel (QoS 0), rows every period_ms, in dev.66's shapes."""
         import random
         b = self.box
-        if not self.debug_link or time.time() > self.debug_until:
+        if not self.debug_link:
+            return
+        if time.time() > self.debug_until:
             return self.debug(False)
         now = int(time.time() * 1000)
-        for ch in [c for c in self.debug_channels if c != "log"]:
-            rows = []
-            for i in range(10):
-                if ch == "power":
-                    rows.append({"mv": 4010 + random.randint(-6, 6), "ma": 280 + random.randint(-15, 15)})
-                elif ch == "temp":
-                    rows.append({"c": round(23.5 + random.uniform(-0.1, 0.1), 2)})
-                elif ch == "net":
-                    rows.append({"rssi": -52 + random.randint(-3, 3)})
-                else:
-                    rows.append({"heap": 180000 - random.randint(0, 900)})
-            self.debug_link.publish(f"mcold/{b.sn}/debug/{ch}", json.dumps(
-                {"from": now - 1000, "period_ms": 100, "rows": rows}))
-        self.debug_link.publish(f"mcold/{b.sn}/debug/log", json.dumps(
-            {"lines": [f"[uplink] status sent ({b.version})"]}))
+        n = max(1, 1000 // self.debug_period)
+        up = int(time.time() - b.booted_at)
+        head = {"from": now - 1000, "mono": up * 1000, "period_ms": self.debug_period}
+        for ch in self.debug_channels:
+            if ch == "power":
+                msg = {**head, "mv": 4010 + random.randint(-6, 6), "soc": 80, "charge": "fast", "pg": True,
+                       "fault": "none", "rows": [{"ma": 280 + random.randint(-15, 15)} for _ in range(n)]}
+            elif ch == "sys":
+                msg = {**head, "rows": [{"heap": 180000 - random.randint(0, 900), "min_heap": 150000,
+                                         "internal": 24600 + random.randint(0, 400), "psram": 7900000,
+                                         "up_s": up, "factory": b.factory_mode} for _ in range(n)]}
+            elif ch == "net":
+                msg = {**head, "rows": [{"wifi": self.ssid, "rssi": -52 + random.randint(-3, 3),
+                                         "broker1": "connected" if self.link else "off"} for _ in range(n)]}
+            else:
+                msg = {"lines": [f"[uplink] status sent ({b.version})"]}
+            self.debug_link.publish(f"mcold/{b.sn}/debug/{ch}", json.dumps(msg))
         self.debug_timer = threading.Timer(1.0, self._debug_tick)
         self.debug_timer.daemon = True
         self.debug_timer.start()
@@ -526,6 +582,10 @@ class SimNet:
         fac = bool(doc.get("factory"))
         if rev <= (b.factory_rev if fac else b.server_rev):
             return                    # seen before (a retained document comes at every connection)
+        window = b.factory_off_at and time.time() - b.factory_off_at <= 600
+        if fac and not (b.factory_mode or window):      # dev.65: 856f5e5
+            return self._pub("config/state", {"rev": rev, "factory": True, "state": "refused",
+                                              "why": "factory mode is off"})
         applied, leave = [], False
         for k, v in (doc.get("config") or {}).items():
             b.config[k] = int(v)

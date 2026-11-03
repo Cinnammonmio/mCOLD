@@ -379,3 +379,32 @@ def test_factory_documents_leave_the_server_rev_alone(line):
         assert time.monotonic() < deadline
         time.sleep(0.01)
     assert box.server_rev == 1
+
+
+
+def test_dev65_rules_logtest_and_factory_documents():
+    """notes/firmware.md 15:40/15:55: no logtest during a trip; a factory document is
+    taken in factory mode or for 10 minutes after it goes off (this boot), refused after."""
+    broker = SimBroker(in_range={LINE})
+    b = SimBox(mac="28:84:85:00:00:65", version="0.7.0-dev.65")
+    b.state, b.sn, b.mqtt, b.factory_mode = "app", f"{LOT}-065", True, True
+    b.wifi, b.wifi_ip = [LINE], {LINE: "10.20.0.165"}
+    SimNet(b, broker).check()
+    fleet = Fleet(broker.connect("station"))
+    nb = fleet.box(b.sn)
+    assert fleet.wait(lambda: nb.online, 5)
+    b.trip_active = True
+    r = fleet.rpc(b.sn, "FACTORY_TEST", {"items": ["logtest"]}, timeout=5)
+    assert r["logtest"] == {"err": "a trip is running", "ok": False} and r["ok"] is False
+    b.trip_active = False
+    assert fleet.rpc(b.sn, "FACTORY_DONE", None, timeout=5)["ok"]
+    fleet.send_config(b.sn, {"rev": 1, "factory": True, "config": {"sample_period_s": 600}})
+    st = fleet.wait(lambda: nb.config_state if nb.config_state.get("rev") == 1 else None, 5)
+    assert st["state"] == "ok"                                                         # in the window
+    b.factory_off_at -= 601
+    fleet.send_config(b.sn, {"rev": 2, "factory": True, "config": {"sample_period_s": 900}})
+    st = fleet.wait(lambda: nb.config_state if nb.config_state.get("rev") == 2 else None, 5)
+    assert st["state"] == "refused" and st["why"] == "factory mode is off"
+    assert b.config["sample_period_s"] == 600
+    d = fleet.rpc(b.sn, "GET_DEBUG", None, timeout=5)
+    assert {"internal", "min_internal", "largest_internal"} <= set(d) and d["uptime_s"] < 60

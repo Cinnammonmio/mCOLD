@@ -130,8 +130,10 @@ def test_debug_stream(web):
     assert c.post(f"/api/devices/{prep['sn']}/debug", json={"on": True, "minutes": 1}).json()["on"] is True
     d = wait(lambda: (lambda d: d if d["on"] and d["messages"] else None)(
         c.get(f"/api/devices/{prep['sn']}/debug").json()), 10)
-    assert {m["ch"] for m in d["messages"]} >= {"power", "temp"}
-    assert len(d["messages"][0]["data"]["rows"]) == 10       # ten points a message (100 ms)
+    assert {m["ch"] for m in d["messages"]} >= {"power", "sys", "net"}   # dev.66 channels
+    power = [m for m in d["messages"] if m["ch"] == "power"][0]["data"]
+    assert len(power["rows"]) == 10 and "ma" in power["rows"][0]           # ten points a message (100 ms)
+    assert {"mv", "soc", "charge", "mono", "period_ms"} <= set(power)
     with c.websocket_connect(f"/api/devices/{prep['sn']}/debug/ws") as ws:
         assert ws.receive_json()["messages"]
     c.post(f"/api/devices/{prep['sn']}/debug", json={"on": False})
@@ -191,3 +193,21 @@ def test_firmware_without_diag_run_uses_the_fallbacks(web):
     steps = c.get(f"/api/devices/{prep['mac']}/log").json()[-1]["steps"]
     auto = [s for s in steps if s["name"].startswith("ทดสอบโมดูลอัตโนมัติ")][0]
     assert auto["result"] == "PASS"
+
+
+
+def test_nvs_carries_the_debug_broker(web):
+    c, line, usb = web
+    prep, files, _ = add(c)
+    dbg = nvsimage.read(files["nvs.bin"])["dbg"]
+    assert dbg == {"host": "debug.example", "port": 1883, "user": "demo", "pass": "debug-secret"}
+    assert "tls" not in dbg                                   # dev.66 does not read it yet
+
+
+def test_debug_without_a_debug_broker_says_why(web):
+    c, line, usb = web
+    prep, _, _ = add(c)
+    wait(lambda: [x for x in c.get("/api/devices").json()["rows"] if x["online"]])
+    usb.boxes[prep["mac"]].dbg = {}                            # flashed before the debug broker was set
+    r = c.post(f"/api/devices/{prep['sn']}/debug", json={"on": True, "minutes": 1})
+    assert r.status_code == 409 and "ไม่มี debug broker" in r.json()["error"]

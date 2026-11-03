@@ -19,6 +19,9 @@ the firmware side, and `read()` here lets a test check what was written.
     ota/base          str     ota.cpp get_str("base")
     cfg/<key>         i32     config.cpp load(); cfg/schema u32 = 3
     factory/on        u8      factory.cpp (docs/firmware-mqtt-rpc.patch)
+    dbg/host,user,pass str    the debug broker, client 2 (dev.66; notes/firmware.md 17:10)
+    dbg/port          u16     a key left out falls back: host to the build's, port and login to mqtt/*
+                              (dbg/tls is not read yet: not written)
 
 Built with Espressif's own generator (esp-idf-nvs-partition-gen), NVS
 format version 2, the one ESP-IDF 5 reads.
@@ -60,6 +63,7 @@ class BoxSettings:
     ota_base: str = ""
     config: dict[str, int] = field(default_factory=dict)
     factory: bool = False
+    debug: dict = field(default_factory=dict)      # the debug broker: host, port, username, password
 
 
 def _ip_blob(n: Net) -> bytes:
@@ -114,6 +118,13 @@ def build(s: BoxSettings, size: int = NVS_SIZE) -> bytes:
         put("schema", "u32", str(CONFIG_SCHEMA))
         for k, v in s.config.items():
             put(k, "i32", str(int(v)))
+    if s.debug.get("host"):
+        ns("dbg")
+        put("host", "string", s.debug["host"])
+        put("port", "u16", str(int(s.debug.get("port") or 1883)))
+        if s.debug.get("username"):
+            put("user", "string", s.debug["username"])
+            put("pass", "string", s.debug.get("password", ""))
     if s.factory:
         ns("factory")
         put("on", "u8", "1")
@@ -199,4 +210,5 @@ def from_site(site, sn: str, wifi: list[str] | None = None, factory: bool = Fals
             nets.append(Net(w.ssid, w.password, "" if w.dhcp else w.ip, "" if w.dhcp else w.gateway,
                             "" if w.dhcp else w.subnet, "" if w.dhcp else w.dns))
     return BoxSettings(sn=sn, wifi=nets[:NET_MAX], mqtt=dict(site.mqtt), ota_base=site.ota_base,
-                       config=dict(site.config), factory=factory)
+                       config=dict(site.config), factory=factory,
+                       debug=dict(getattr(site, "debug_mqtt", {}) or {}))

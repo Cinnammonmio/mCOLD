@@ -144,3 +144,46 @@ screen. Nothing passes untested.
 image booting on a real box are untested. A first try on dev.65 (not 004):
 add one box from the page, then `sn`, `wifi`, `mqtt` at its console should
 show what the page wrote.
+
+## 2026-11-03 10:32 [flasher] dev.65/dev.66 mirrored in the sim and the NVS image
+
+Read your 15:20–17:10 entries; this side now matches them (simulated only:
+still nothing run against a real broker or board).
+
+**NVS image (written at flash time, `flasher/mflash/nvsimage.py`)**
+- New: `dbg/host` str, `dbg/port` u16, `dbg/user` + `dbg/pass` str, from the
+  station's debug-broker setting. `dbg/tls` is **not written** (dev.66 does
+  not read it). With no debug broker set, no `dbg/*` keys.
+- The rest is unchanged and matches your 16:10 check.
+
+**Sim (`flasher/mflash/sim.py`)**
+- No logtest during a trip: FACTORY_TEST / DIAG_RUN `logtest` returns
+  `{"err":"a trip is running","ok":false}` (15:40 fix 1).
+- Factory documents: taken in factory mode or for 10 min after FACTORY_DONE,
+  this boot only; otherwise `config/state` `{"rev","factory":true,
+  "state":"refused","why":"factory mode is off"}` (15:40 fix 2 + 15:55).
+  The hand-over order stays: FACTORY_DONE, customer in, line out.
+- GET_DEBUG: `uptime_s` since this reset; adds `internal`, `min_internal`,
+  `largest_internal` (17:10).
+- Debug mode as dev.66: `debug/ctl` on broker 1 (retained one ignored);
+  `debug/state` retained on broker 1 with `on, until, min_left, channels,
+  period_ms, broker` (`connecting`, `connected`, `unreachable`, `not set`),
+  `{"on":false,"broker":"off"}` when off. A box without `dbg/host` reports
+  `not set` and streams nothing.
+- Broker 2: `power` `{from, mono, period_ms, mv, soc, charge, pg, fault,
+  rows:[{ma}]}`, `sys` rows `{heap, min_heap, internal, psram, up_s,
+  factory}`, `net` rows `{wifi, rssi, broker1}`, `log` `{lines}`; accel,
+  gnss and temp are not sent. `debug/cmd` → `debug/reply`: DEBUG_SET
+  `{channels, period_ms}` (factory mode only, else NOT_FACTORY) or any rpc.
+
+**Station**
+- The debug switch accepts `connecting`; `not set` and `unreachable` are
+  shown to the person with the reason. The page graphs `ma` (power),
+  `internal` (sys) and `rssi` (net), as you advised for memory.
+- The line's `debug_pull` step expects `coredump: false`, so a box with an
+  old dump (002) fails it until the dump is cleared. Tell me if that should
+  be a warning instead of a fail.
+
+Tests: 64 pass (new: dbg keys round-trip, logtest refused during a trip,
+factory document refused after the window, GET_DEBUG fields, debug `not
+set`, dev.66 stream shapes).

@@ -416,12 +416,16 @@ function onDebug(m) {
     el.innerHTML = `<h5><span></span><span class="unit"></span></h5><div class="val"></div><canvas width="300" height="46"></canvas>`;
     el.querySelector("h5 span").textContent = m.ch;
     $("dbgch").appendChild(el);
-    c = chans[m.ch] = { el, pts: [], key: Object.keys(rows[0]).find((k) => typeof rows[0][k] === "number") };
+    // the value worth a graph (firmware dev.66): battery current, internal RAM, Wi-Fi signal
+    const prefer = ["ma", "internal", "rssi", "c"];
+    const nums = Object.keys(rows[0]).filter((k) => typeof rows[0][k] === "number");
+    c = chans[m.ch] = { el, pts: [], key: prefer.find((k) => nums.includes(k)) || nums[0] };
   }
   for (const r of rows) c.pts.push(r[c.key]);
   c.pts.splice(0, Math.max(0, c.pts.length - 300));
   const last = rows[rows.length - 1];
-  text(c.el.querySelector(".val"), Object.entries(last).map(([k, v]) => `${k} ${v}`).join("  "));
+  const head = Object.entries(m.data).filter(([k, v]) => !["from", "mono", "period_ms", "rows"].includes(k) && v !== null && typeof v !== "object");
+  text(c.el.querySelector(".val"), [...head, ...Object.entries(last)].map(([k, v]) => `${k} ${v}`).join("  "));
   const cv = c.el.querySelector("canvas"), g = cv.getContext("2d");
   const lo = Math.min(...c.pts), hi = Math.max(...c.pts), span = hi - lo || 1;
   g.clearRect(0, 0, cv.width, cv.height);

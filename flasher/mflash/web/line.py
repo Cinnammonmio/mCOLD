@@ -535,8 +535,10 @@ class Line(LineCore):
                              and b.seen_at >= sent else None, 10)
         if not st:
             raise RuntimeError(f"{sn} ไม่ตอบ debug/ctl (offline หรือ firmware ยังไม่มี debug mode)")
-        if on and st.get("broker") not in (None, "connected"):
-            raise RuntimeError(f"{sn}: debug broker {st.get('broker')}")
+        why = {"not set": "กล่องไม่มี debug broker (dbg/* ใน NVS: เพิ่มเครื่องใหม่หลังตั้ง debug broker)",
+               "unreachable": "กล่องต่อ debug broker ไม่ได้"}
+        if on and st.get("broker") not in (None, "connected", "connecting"):
+            raise RuntimeError(f"{sn}: {why.get(st.get('broker'), 'debug broker ' + str(st.get('broker')))}")
         return dict(st)
 
     def debug_since(self, sn: str, seq: int) -> dict:
