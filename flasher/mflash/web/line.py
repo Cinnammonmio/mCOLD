@@ -111,6 +111,10 @@ class Line(LineCore):
         debug_dir = debug_dir or os.environ.get("MFLASH_DEBUG_DIR")
         self.rack = Rack(self, fleet, time_scale=time_scale, debug_dir=debug_dir, entry_stage="usb",
                          auto=self._auto, stage="line") if fleet else None
+        # shipping: a box that passed `line:` stays on the line's Wi-Fi (tested and debugged at
+        # the company) until "ส่งมอบ" runs `ship:` -- the customer's Wi-Fi in, the line's out
+        self.shipper = Rack(self, fleet, time_scale=time_scale, debug_dir=debug_dir, entry_stage="line",
+                            auto=False, stage="ship") if fleet and self.profile.ship else None
 
     # ---- what the station remembers between restarts --------------------------
 
@@ -334,6 +338,8 @@ class Line(LineCore):
                 raise RuntimeError(f"ไม่มี Wi-Fi {', '.join(bad)} ในหน้าตั้งค่า")
             if not wifi:
                 raise RuntimeError("เลือก Wi-Fi อย่างน้อย 1 เครือข่าย (กล่องต้องต่อ broker ได้เพื่อทดสอบ)")
+            if len(wifi) > nvsimage.NET_MAX:
+                raise RuntimeError(f"กล่องจำ Wi-Fi ได้ {nvsimage.NET_MAX} เครือข่าย เลือกไว้ {len(wifi)}")
             if not self.site.mqtt.get("host"):
                 raise RuntimeError("ยังไม่ได้ตั้ง MQTT broker ในหน้าตั้งค่า")
             settings = nvsimage.from_site(self.site, sn, wifi=wifi,
@@ -416,9 +422,12 @@ class Line(LineCore):
         lot = self.lot if lot is None else lot
         p = self.profile
         rack = self.rack.state(log_sn=log_sn) if self.rack else {"boxes": [], "questions": []}
-        if self.rack:
-            self.rack.refresh()
+        ship = self.shipper.state(log_sn=log_sn) if self.shipper else {"boxes": []}
+        for r in (self.rack, self.shipper):
+            if r:
+                r.refresh()
         by_sn = {b["sn"]: b for b in rack["boxes"]}
+        ship_sn = {b["sn"]: b for b in ship["boxes"]}
         rows = []
         if lot:
             devs = self.db.q("SELECT * FROM device WHERE product=? AND sn LIKE ? ORDER BY sn",
@@ -430,10 +439,18 @@ class Line(LineCore):
             vals = self.db.values(d["mac"])
             usb = self._last(d["mac"], "usb")
             line = self._last(d["mac"], "line")
+            shipped = self._last(d["mac"], "ship")
             b = by_sn.get(d["sn"]) or {}
+            sb = ship_sn.get(d["sn"]) or {}
             nb = self.fleet.boxes.get(d["sn"]) if self.fleet else None
             if b.get("state") in ("running", "ask"):
                 state = b["state"]
+            elif sb.get("state") in ("running", "ask"):
+                state, b = "shipping", sb
+            elif line and line["result"] == "PASS" and shipped and shipped["id"] > line["id"]:
+                state = "shipped" if shipped["result"] == "PASS" else "ship_fail"
+                if state == "ship_fail":
+                    b = sb or b
             elif line and line["result"]:
                 state = "pass" if line["result"] == "PASS" else "fail"
                 if b.get("state") == "stopped":
@@ -444,10 +461,10 @@ class Line(LineCore):
                 state = "online" if nb and nb.online else "waiting"
             else:
                 state = "other"           # made by the dock, not by this page
-            fail = b.get("fail")
-            if not fail and state == "fail" and line:
+            fail = b.get("fail") if state not in ("pass", "shipped") else None
+            if not fail and state in ("fail", "ship_fail") and line:
                 bad = self.db.q("SELECT name, detail FROM step WHERE run_id=? AND result='FAIL' "
-                                "ORDER BY idx DESC LIMIT 1", (line["id"],))
+                                "ORDER BY idx DESC LIMIT 1", ((shipped if state == "ship_fail" else line)["id"],))
                 fail = {"step": bad[0]["name"], "detail": bad[0]["detail"]} if bad else None
             if not fail and state == "usb_fail":
                 bad = self.db.q("SELECT name, detail FROM step WHERE run_id=? ORDER BY idx DESC LIMIT 1",
@@ -458,12 +475,13 @@ class Line(LineCore):
                 "state": state, "online": bool(nb and nb.online),
                 "ip": (nb.ip() if nb else "") or b.get("ip") or vals.get("factory_ip", ""),
                 "fw": (nb.fw() if nb else "") or vals.get(f"firmware_{self.kind}", "").split("+", 1)[0],
-                "progress": b.get("progress", 1.0 if state == "pass" else 0.0),
+                "progress": 1.0 if state in ("pass", "shipped") else b.get("progress", 0.0),
                 "step_name": b.get("step_name", ""), "step_idx": b.get("step_idx", 0),
                 "fail": fail, "waiting": b.get("waiting", False),
                 "elapsed": b.get("elapsed", 0), "log": b.get("log"),
                 "debug": self.debug_on(d["sn"]),
                 "usb_at": usb["finished"] if usb else "", "line_at": line["finished"] if line else "",
+                "ship_at": shipped["finished"] if shipped and state == "shipped" else "",
                 "handover": vals.get("handover", ""), "debug_file": bool(vals.get("debug_file")),
             })
         with self.lock:
@@ -513,6 +531,23 @@ class Line(LineCore):
 
     def stop(self, sn: str) -> None:
         self._need_rack().stop(sn)
+        if self.shipper:
+            self.shipper.stop(sn)
+
+    def ship(self, sns: list[str] | None = None, operator: str = "") -> int:
+        """Hand boxes that passed over to the customer's Wi-Fi: those named, or every one
+        that passed, is online and is not shipped yet."""
+        if not self.shipper:
+            raise RuntimeError(self.link_error or "ยังไม่ได้ต่อ MQTT broker หรือ profile ไม่มีขั้น ship:")
+        self.shipper.refresh()
+        if not sns:
+            return self.shipper.start_all(operator)
+        for sn in sns:
+            rb = self.shipper.boxes.get(sn)
+            if not rb:
+                raise RuntimeError(f"{sn} ยังไม่ผ่านการทดสอบ ส่งมอบไม่ได้")
+            self.shipper.start(sn, operator)
+        return len(sns)
 
     def answer(self, qid: int, value) -> None:
         self._need_rack().answer(qid, value)

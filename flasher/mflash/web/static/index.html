@@ -10,8 +10,6 @@
 <header class="top">
   <div class="brand"><div class="mark" data-icon="snow"></div>
     <div><b>mCOLD Line</b><span id="subtitle">เพิ่มเครื่อง · ทดสอบ · firmware จริง</span></div></div>
-  <div class="ctl lot" id="lotctl" title="SN ส่วนที่เหมือนกันทั้งล็อต"><label for="lot">ล็อต</label>
-    <input id="lot" autocomplete="off" spellcheck="false"></div>
   <div class="ctl"><label for="operator">ผู้ทำ</label><input id="operator" placeholder="ชื่อ"></div>
   <div class="linkchip" id="link"><i></i><span>broker</span></div>
   <div class="spacer"></div>
@@ -37,26 +35,31 @@
       <div class="kpi k-online" data-f="online"><span>พร้อมทดสอบ</span><b>0</b></div>
       <div class="kpi k-run" data-f="running"><span>กำลังทดสอบ</span><b>0</b></div>
       <div class="kpi k-ask" data-f="ask"><span>รอคนดู</span><b>0</b></div>
-      <div class="kpi k-pass" data-f="pass"><span>ผ่าน ส่งมอบแล้ว</span><b>0</b></div>
+      <div class="kpi k-pass" data-f="pass"><span>ผ่าน รอส่งมอบ</span><b>0</b></div>
+      <div class="kpi k-ship" data-f="shipped"><span>ส่งมอบแล้ว</span><b>0</b></div>
       <div class="kpi k-fail" data-f="fail"><span>ไม่ผ่าน</span><b>0</b></div>
     </div>
     <div class="toolbar">
+      <span class="lotchip" id="lotchip" title="แก้ล็อตได้ที่แผง เพิ่มเครื่อง"></span>
       <button class="btn" id="testall" title="เริ่มทดสอบทุกเครื่องที่ online และยังไม่ผ่าน"><span data-icon="play"></span>ทดสอบเครื่องที่พร้อม</button>
       <label class="switch" title="เครื่องที่ขึ้น online แล้วเริ่มทดสอบเอง"><input type="checkbox" id="auto">ทดสอบเองเมื่อ online</label>
+      <button class="btn" id="shipall" title="ปิดโหมดโรงงาน ใส่ Wi-Fi ลูกค้า ทุกเครื่องที่ผ่านและยังไม่ส่งมอบ"><span data-icon="truck"></span>ส่งมอบเครื่องที่ผ่าน</button>
       <span class="note" id="hint">กดตัวเลขด้านบนเพื่อกรอง · ตอบคำถามด้วยคีย์ Y / N / R</span>
     </div>
-    <div class="rq" id="rq" hidden></div>
     <div class="grid" id="grid"></div>
     <div class="empty" id="empty" hidden>ยังไม่มีเครื่องในล็อตนี้ · กด <b>เพิ่มเครื่อง</b> เสียบสาย USB ที่กล่อง แล้วกด <b>เพิ่ม</b></div>
+    <div class="rq" id="rq" hidden></div>
   </main>
 
   <aside class="add" id="add" hidden>
     <h2><span data-icon="plug"></span>เพิ่มเครื่อง <button class="btn sm icon ghost" id="closeadd" title="ปิด" data-icon="x"></button></h2>
     <div class="banner warn" id="noserial" hidden>เบราว์เซอร์นี้ต่อ USB ไม่ได้: ใช้ Chrome หรือ Edge และเปิดผ่าน https</div>
+    <label class="fld lot" id="lotctl"><span>ล็อต SN (เหมือนกันทั้งล็อต)</span>
+      <input id="lot" class="mono" autocomplete="off" spellcheck="false"></label>
     <label class="fld"><span>เลขเครื่อง (เลขว่างถัดไป แก้ได้)</span>
       <div class="unitrow"><button class="btn" id="udn">−</button><input id="unit" inputmode="numeric" autocomplete="off"><button class="btn" id="uup">+</button></div></label>
     <div class="snprev" id="snprev"></div>
-    <div class="fld"><span>Wi-Fi ที่ใส่ให้กล่อง</span><div class="chks" id="wifis"></div></div>
+    <div class="fld"><span>Wi-Fi ที่ใส่ให้กล่อง <small id="wcount"></small> · กล่องเจอเครือข่ายไหนก็ต่อตัวนั้น</span><div class="chks" id="wifis"></div></div>
     <label class="chk"><input type="checkbox" id="erase">ลบทั้งชิปก่อนเขียน <small>(กล่องใหม่, ~30 วินาที)</small></label>
     <div class="note" id="fwnote"></div>
     <button class="btn go big" id="addbtn"><span data-icon="flash"></span>เสียบสายแล้ว — เพิ่ม <small>(Enter)</small></button>

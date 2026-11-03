@@ -14,6 +14,7 @@ const ICONS = {
   plus: '<path d="M12 5v14M5 12h14"/>', trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
   flash: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>', code: '<path d="M8 6l-6 6 6 6M16 6l6 6-6 6"/>',
+  truck: '<path d="M2 6h11v10H2zM13 9h4l4 4v3h-8z"/><circle cx="6" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
   bug: '<rect x="7" y="7" width="10" height="13" rx="5"/><path d="M12 7V4M9 4l1.5 3M15 4l-1.5 3M3 11h4M17 11h4M3 17h4M17 17h4"/>',
 };
 const icon = (n) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
@@ -25,7 +26,9 @@ const store = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* pri
 const load = (k) => { try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } };
 
 const BADGE = { flashing: "กำลัง flash", waiting: "รอ online", online: "พร้อมทดสอบ", running: "กำลังทดสอบ", ask: "รอคนดู",
-                pass: "ผ่าน", fail: "ไม่ผ่าน", usb_fail: "flash ไม่ผ่าน", stopped: "หยุดแล้ว", other: "ทำจาก Dock" };
+                pass: "ผ่าน รอส่งมอบ", fail: "ไม่ผ่าน", usb_fail: "flash ไม่ผ่าน", stopped: "หยุดแล้ว", other: "ทำจาก Dock",
+                shipping: "กำลังส่งมอบ", shipped: "ส่งมอบแล้ว", ship_fail: "ส่งมอบไม่ผ่าน" };
+const NET_MAX = 5;      // the box keeps five networks and joins whichever it finds
 let cfg = null, devs = null, filter = load("line.filter"), lastQ = 0, audio = null, busy = false;
 
 function toast(msg, ok) {
@@ -76,6 +79,13 @@ lotIn.onblur = saveLot;
 lotIn.onkeydown = (e) => { if (e.key === "Enter") lotIn.blur(); if (e.key === "Escape") { lotIn.value = cfg.lot; lotIn.blur(); } };
 lotIn.oninput = () => { lotIn.value = lotIn.value.replace(/\s/g, ""); };
 $("auto").onchange = (e) => post("/api/line/auto", { on: e.target.checked, operator: op.value });
+$("shipall").onclick = async () => {
+  const n = devs ? devs.rows.filter((r) => r.state === "pass" && r.online).length : 0;
+  if (!n) { toast("ไม่มีเครื่องที่ผ่านและรอส่งมอบ"); return; }
+  if (!confirm(`ส่งมอบ ${n} เครื่อง: ปิดโหมดโรงงาน ใส่ Wi-Fi ลูกค้า (Wi-Fi โรงงานยังอยู่ เป็น DHCP)?`)) return;
+  const j = await post("/api/ship/start", { operator: op.value });
+  if (!j.error) toast(`เริ่มส่งมอบ ${j.started} เครื่อง`, true);
+};
 $("testall").onclick = async () => {
   beep(); const j = await post("/api/line/start", { operator: op.value });
   if (!j.error) toast(j.started ? `เริ่มทดสอบ ${j.started} เครื่อง` : "ไม่มีเครื่องที่พร้อมทดสอบ", !!j.started);
@@ -86,6 +96,7 @@ async function loadConfig() {
   if (document.activeElement !== lotIn) lotIn.value = cfg.lot;
   lotIn.placeholder = cfg.lot_example;
   $("lotctl").classList.toggle("empty", !cfg.lot);
+  text($("lotchip"), cfg.lot ? "ล็อต " + cfg.lot : "ยังไม่ได้กรอกล็อต");
   text($("subtitle"), (cfg.product_name || "") + (cfg.station ? " · " + cfg.station : ""));
   $("demo").hidden = !cfg.demo;
   $("auto").checked = cfg.auto;
@@ -107,6 +118,7 @@ function tile(d) {
       <div class="bar"><i></i></div><div class="st"></div>
       <div class="acts"><button class="btn sm a-go">${icon("play")}<span>ทดสอบ</span></button>
         <button class="btn sm a-stop">${icon("stop")}หยุด</button>
+        <button class="btn sm a-ship" title="ปิดโหมดโรงงาน ใส่ Wi-Fi ลูกค้า (Wi-Fi โรงงานยังอยู่ เป็น DHCP)">${icon("truck")}ส่งมอบ</button>
         <label class="switch a-dbg" title="debug stream (client ตัวที่สองของกล่อง)"><input type="checkbox">debug</label>
         <button class="btn sm icon a-view" title="ดู stream">${icon("bug")}</button>
         <button class="btn sm icon a-log" title="ประวัติ">${icon("log")}</button></div>`;
@@ -122,6 +134,8 @@ function tile(d) {
     };
     t.view.onclick = () => openDebug(t.d);
     t.log.onclick = () => openLog(t.d);
+    t.ship = el.querySelector(".a-ship");
+    t.ship.onclick = () => { beep(); post("/api/ship/start", { sns: [t.d.sn], operator: op.value }); };
     tiles.set(d.sn, t);
   }
   t.d = d;
@@ -130,14 +144,16 @@ function tile(d) {
   text(t.sn, d.sn || "—"); text(t.mac, d.mac || "—"); text(t.ip, d.ip || "—"); text(t.fw, d.fw || "—");
   t.bar.style.width = Math.round((d.progress || 0) * 100) + "%";
   const f = d.fail || {};
-  text(t.st, d.state === "fail" || d.state === "usb_fail" ? `${f.step || ""}${f.detail ? " · " + f.detail : ""}`
-           : d.state === "running" || d.state === "ask" ? (d.step_name || "")
-           : d.state === "pass" ? "ส่งมอบแล้ว ถอดเก็บได้" : d.state === "waiting" ? "รอกล่องต่อ Wi-Fi + broker"
+  text(t.st, ["fail", "usb_fail", "ship_fail"].includes(d.state) ? `${f.step || ""}${f.detail ? " · " + f.detail : ""}`
+           : ["running", "ask", "shipping"].includes(d.state) ? (d.step_name || "")
+           : d.state === "pass" ? "ผ่านทุกข้อ · อยู่ Wi-Fi โรงงาน ทดสอบ/debug ต่อได้ จนกว่าจะส่งมอบ"
+           : d.state === "shipped" ? "ส่งมอบแล้ว · โหมดโรงงานปิด · มี Wi-Fi ลูกค้า (Wi-Fi โรงงานยังอยู่)"
+           : d.state === "waiting" ? "รอกล่องต่อ Wi-Fi + broker"
            : d.state === "online" ? "พร้อมทดสอบ" : d.state === "flashing" ? "กำลังเขียนผ่าน USB" : "");
   t.st.title = f.help || "";
-  const active = d.state === "running" || d.state === "ask";
-  // a passed box has left the line's Wi-Fi: nothing more to run on it from here
+  const active = ["running", "ask", "shipping"].includes(d.state);
   t.go.hidden = active || !["online", "fail", "stopped"].includes(d.state);
+  t.ship.hidden = !["pass", "ship_fail"].includes(d.state) || !d.online;
   text(t.golbl, d.state === "online" ? "ทดสอบ" : "ทำซ้ำ");
   t.stop.hidden = !active;
   t.dbg.hidden = t.view.hidden = !cfg.debug_available || !d.online;
@@ -146,7 +162,7 @@ function tile(d) {
   return t;
 }
 
-const bucket = (s) => s === "usb_fail" || s === "stopped" ? "fail" : s;
+const bucket = (s) => ["usb_fail", "stopped", "ship_fail"].includes(s) ? "fail" : s === "shipping" ? "running" : s;
 function render() {
   const d = devs;
   const rows = [...d.flashing.map((x) => ({ ...x, mac: x.mac, progress: 0 })), ...d.rows];
@@ -242,7 +258,7 @@ function saveForm() { store("line.addform", JSON.stringify(form)); }
 function setUnit(u) { if (u != null) { unitIn.value = pad(u); updatePreview(); } }
 function updatePreview() {
   const u = parseInt(unitIn.value, 10);
-  text($("snprev"), cfg && cfg.lot && Number.isFinite(u) ? `SN: ${cfg.lot}-${pad(u)}` : "กรอกล็อตด้านบนก่อน");
+  text($("snprev"), cfg && cfg.lot && Number.isFinite(u) ? `SN: ${cfg.lot}-${pad(u)}` : "กรอกล็อตก่อน");
 }
 unitIn.oninput = () => { unitIn.value = unitIn.value.replace(/\D/g, "").slice(0, cfg ? cfg.unit_digits : 3); updatePreview(); };
 async function stepUnit(dir) {
@@ -256,22 +272,32 @@ function renderWifiChoices() {
   const box = $("wifis"), key = JSON.stringify(cfg.wifi);
   if (box.dataset.k === key) return;
   box.dataset.k = key; box.innerHTML = "";
-  if (!form.wifi) form.wifi = cfg.wifi.filter((w) => w.kind === "line").map((w) => w.ssid);
+  // the line's network and the customer's together: the box joins whichever it finds
+  if (!form.wifi) form.wifi = cfg.wifi.slice(0, NET_MAX).map((w) => w.ssid);
   if (!cfg.wifi.length) box.innerHTML = '<div class="note">ยังไม่มี Wi-Fi ในหน้าตั้งค่า</div>';
   for (const w of cfg.wifi) {
     const l = document.createElement("label"); l.className = "chk";
     const c = document.createElement("input"); c.type = "checkbox"; c.checked = form.wifi.includes(w.ssid);
-    c.onchange = () => { form.wifi = [...box.querySelectorAll("input")].map((x, i) => x.checked ? cfg.wifi[i].ssid : null).filter(Boolean); saveForm(); };
+    c.onchange = () => {
+      form.wifi = [...box.querySelectorAll("input")].map((x, i) => x.checked ? cfg.wifi[i].ssid : null).filter(Boolean);
+      saveForm(); limitWifi();
+    };
     l.append(c, document.createTextNode(" " + w.ssid + " "));
     const s = document.createElement("small"); s.textContent = w.label; l.appendChild(s);
     box.appendChild(l);
   }
   $("erase").checked = form.erase_all ?? cfg.erase_all;
+  limitWifi();
+}
+function limitWifi() {
+  const ins = [...$("wifis").querySelectorAll("input")], n = ins.filter((x) => x.checked).length;
+  ins.forEach((x) => { x.disabled = !x.checked && n >= NET_MAX; });
+  text($("wcount"), `(${n}/${NET_MAX})`);
 }
 $("erase").onchange = (e) => { form.erase_all = e.target.checked; saveForm(); };
 function openAdd(open) {
   $("add").hidden = !open; store("line.addopen", open ? "1" : "");
-  if (open) { if (!unitIn.value) setUnit(cfg.next_unit); updatePreview(); $("addbtn").focus(); }
+  if (open) { if (!unitIn.value) setUnit(cfg.next_unit); updatePreview(); (cfg.lot ? $("addbtn") : lotIn).focus(); }
 }
 $("openadd").onclick = () => openAdd(true);
 $("closeadd").onclick = () => openAdd(false);
@@ -309,7 +335,7 @@ function renderRecent() {
 renderRecent();
 async function add() {
   if (busy || !cfg) return;
-  if (!cfg.lot) { toast("กรอกล็อตด้านบนก่อน"); lotIn.focus(); return; }
+  if (!cfg.lot) { toast("กรอกล็อต SN ก่อน"); lotIn.focus(); return; }
   busy = true; $("addbtn").disabled = true;
   const ui = makeUi();
   const unit = parseInt(unitIn.value, 10);

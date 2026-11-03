@@ -103,6 +103,7 @@ routes:
   - [test, production, setup, verify]
   - [quick, rack]
   - [usb, line]          # the line's web app (mflash/web): USB in the browser, the rest by MQTT
+  - [usb, line, ship]    # ... and handed over to the customer's Wi-Fi when it leaves the company
 
 # Done in the browser by the web app (Web Serial + esptool-js), recorded here.
 external_stages: [usb]
@@ -426,6 +427,21 @@ line:
     type: ota
     firmware: production
     timeout: 600
-  - name: ส่งมอบ Wi-Fi -- ข้อสุดท้าย
+
+# ---- shipping: the box leaves the company --------------------------------
+# A box that passed `line:` stays on the line's Wi-Fi, at its address and in
+# factory mode, so it can be tested and debugged at the company until it is
+# shipped. The box keeps up to five networks and joins whichever it finds, so
+# the line's network is one slot and the customer's the others (given at the
+# USB flash, or added here). "ส่งมอบ" on the page runs this: FACTORY_DONE,
+# the customer's networks it lacks, the line's network kept but on DHCP.
+ship:
+  - name: กล่องต่อ broker, firmware เป็นรุ่นจริง
+    type: online
+    timeout: 120
+    ip: true
+    firmware: production
+  - name: ส่งมอบ (ปิดโหมดโรงงาน, Wi-Fi ลูกค้า, Wi-Fi โรงงานเป็น DHCP)
     type: wifi_handover
+    line_wifi: keep
     timeout: 120

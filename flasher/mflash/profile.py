@@ -60,6 +60,7 @@ class Profile:
     modes: list[dict] = field(default_factory=list)
     rack: list[dict] = field(default_factory=list)    # the rack's steps, by MQTT
     line: list[dict] = field(default_factory=list)    # the web app's tests, by MQTT, same step types
+    ship: list[dict] = field(default_factory=list)    # the web app's hand-over when a box is shipped
     external_stages: list[str] = field(default_factory=list)   # recorded, run elsewhere (the browser)
     web: dict = field(default_factory=dict)          # the line's web app: its flash and its tests
     # the ways a new box goes through the line; a box that has passed all the
@@ -154,6 +155,7 @@ def load(product: str) -> Profile:
             chip_expect=d.get("chip_expect", {}), incomplete=d.get("incomplete", []) or [],
             rack=list(d.get("rack") or []),
             line=list(d.get("line") or []),
+            ship=list(d.get("ship") or []),
             external_stages=list(d.get("external_stages") or []),
             web=dict(d.get("web") or {}),
             routes=[list(r) for r in (d.get("routes") or [])],
@@ -180,10 +182,10 @@ def validate(p: Profile) -> list[str]:
     for r in p.routes:
         for s in r:
             # `usb` is done in the browser (the line's web app), `rack` by remote.py
-            if s not in p.stages and not (s == "rack" and p.rack) and not (s == "line" and p.line) \
+            if s not in p.stages and not (s in ("rack", "line", "ship") and getattr(p, s)) \
                     and s not in p.external_stages:
                 out.append(f"route {r} names stage '{s}', which is not defined")
-    for where, steps in (("rack", p.rack), ("line", p.line)):
+    for where, steps in (("rack", p.rack), ("line", p.line), ("ship", p.ship)):
         for i, st in enumerate(steps):
             if st.get("type") not in RACK_STEP_TYPES:
                 out.append(f"{where} step {i + 1}: unknown type {st.get('type')!r}")

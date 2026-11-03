@@ -99,13 +99,29 @@ def test_line_tests_confirm_ota_and_handover(web):
     for r in rows:
         b = usb.boxes[r["mac"]]
         assert b.version == "0.7.0-demo"                     # OTA'd to the final firmware
-        assert b.wifi == ["Customer-WiFi"] and not b.factory_mode   # handed over
+        # tested, still at the company: on the line's Wi-Fi, online, debug possible
+        assert b.wifi == ["mCOLD-Line"] and b.factory_mode
+    assert all(r["online"] for r in rows)
+    sn = rows[0]["sn"]
+    assert c.post(f"/api/devices/{sn}/debug", json={"on": True, "minutes": 1}).json()["on"] is True
+    c.post(f"/api/devices/{sn}/debug", json={"on": False})
     sm = c.get("/api/summary", params={"lot": LOT}).json()
     assert sm["counts"]["PASS"] == 2
     row = sm["rows"][0]
-    assert row["stages"]["usb"] == "PASS" and row["stages"]["line"] == "PASS"
+    assert row["stages"]["usb"] == "PASS" and row["stages"]["line"] == "PASS" and row["stages"]["ship"] == ""
+    # shipping: the customer's Wi-Fi in, the line's out, factory mode off
+    assert c.post("/api/ship/start", json={"operator": "somchai"}).json()["started"] == 2
+    rows = wait(lambda: (lambda d: d["rows"] if all(r["state"] == "shipped" for r in d["rows"]) else None)(
+        c.get("/api/devices").json()), 30)
+    for r in rows:
+        b = usb.boxes[r["mac"]]
+        # five slots: the line's network stays (on DHCP now), the customer's is added
+        assert b.wifi == ["mCOLD-Line", "Customer-WiFi"] and b.wifi_ip["mCOLD-Line"] == ""
+        assert not b.factory_mode and r["online"]          # still reachable at the company
+    assert "factory_ip" not in line.db.values(rows[0]["mac"])   # its fixed address is free again
     log = c.get(f"/api/devices/{rows[0]['mac']}/log").json()
-    assert [x["stage"] for x in log] == ["usb", "line"]
+    assert [x["stage"] for x in log] == ["usb", "line", "ship"]
+
 
 
 def test_a_no_fails_the_box(web):
@@ -211,3 +227,16 @@ def test_debug_without_a_debug_broker_says_why(web):
     usb.boxes[prep["mac"]].dbg = {}                            # flashed before the debug broker was set
     r = c.post(f"/api/devices/{prep['sn']}/debug", json={"on": True, "minutes": 1})
     assert r.status_code == 409 and "ไม่มี debug broker" in r.json()["error"]
+
+
+
+def test_line_and_customer_wifi_from_the_start(web):
+    """Both networks written at the USB flash: shipping only turns factory mode off."""
+    c, line, usb = web
+    prep, files, _ = add(c, wifi=("mCOLD-Line", "Customer-WiFi"))
+    net = nvsimage.read(files["nvs.bin"])["net"]
+    assert (net["s0"], net["s1"]) == ("mCOLD-Line", "Customer-WiFi")
+    port = c.post("/api/demo/usb/connect").json()
+    r = c.post("/api/usb/prepare", json={"mac": port["mac"], "lot": LOT,
+                                         "wifi": ["mCOLD-Line", "Customer-WiFi"] * 3})
+    assert r.status_code == 409 and "5" in r.json()["error"]

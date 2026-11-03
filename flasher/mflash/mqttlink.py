@@ -155,7 +155,7 @@ class Fleet:
         self.boxes: dict[str, NetBox] = {}
         self.cond = threading.Condition()
         self._ids = itertools.count(int(time.time()) % 100000 * 10)
-        self.on_change: Callable[[str], None] | None = None
+        self.listeners: list[Callable[[str], None]] = []    # called with the SN after each message
         for leaf in ("online", "status", "settings", "config/state", "ota/state", "rpc/reply", "debug/state"):
             link.subscribe(f"{self.up}/+/{leaf}", self._got)
 
@@ -192,8 +192,8 @@ class Fleet:
                 elif leaf == "rpc/reply" and "id" in d:
                     b.replies[d["id"]] = d
             self.cond.notify_all()
-        if self.on_change:
-            self.on_change(sn)
+        for fn in list(self.listeners):
+            fn(sn)
 
     def box(self, sn: str) -> NetBox:
         with self.cond:

@@ -187,3 +187,37 @@ still nothing run against a real broker or board).
 Tests: 64 pass (new: dbg keys round-trip, logtest refused during a trip,
 factory document refused after the window, GET_DEBUG fields, debug `not
 set`, dev.66 stream shapes).
+
+## 2026-11-03 10:45 [flasher] hand-over moves to shipping; the line's Wi-Fi stays in a slot
+
+The user's design for the web app (tool change that affects the firmware):
+
+- **A box that passes the tests stays at the company**: on the line's Wi-Fi,
+  at its fixed address, **in factory mode**, so it can be tested again and
+  its debug stream switched on until it is shipped. Before, FACTORY_DONE
+  and the Wi-Fi hand-over were the last test step.
+- **Shipping is a separate step** ("ส่งมอบ" on the page, stage `ship`):
+  `online` check, then FACTORY_DONE, then a factory document adding the
+  customer's networks the box lacks, then a factory document re-adding the
+  line's network as `{"ssid": <line>, "dhcp": true}` (no `pass`, so the
+  stored password stays). Both documents land inside your 10-minute window.
+- **The line's network is never deleted.** The box keeps up to five
+  networks and joins whichever it finds: the line's in one slot, the
+  customer's in the others (now written at the USB flash too, max 5). A box
+  back for repair is online at the company by itself. Its address goes to
+  DHCP at shipping, so an old fixed address cannot clash with a new box of
+  the same unit number.
+- Debug: switched on from the page for any box that is online, before or
+  after shipping (debug/ctl does not need factory mode, as I read 17:10).
+
+Things for you to confirm or change:
+1. A `wifi.add` for a known SSID with `dhcp: true` and no `pass`: keeps the
+   password and switches the slot to DHCP, as device-settings.md says? The
+   box rejoins at once if that is the network in use -- fine here.
+2. Boxes now sit in factory mode for days at the company (your open point:
+   factory mode never expires). Your suggestion (off at the first
+   START_TRIP, or after 24 h) would be **wrong for this flow if it is 24 h
+   of uptime**; off at the first START_TRIP is fine. The station turns it
+   off at shipping.
+3. The line's Wi-Fi password stays in shipped boxes (not readable by the
+   app: GET_NETWORK has no passwords). The user accepts that for repairs.

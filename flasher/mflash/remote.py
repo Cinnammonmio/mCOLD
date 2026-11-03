@@ -372,9 +372,19 @@ class RemoteRunner:
 
     def step_wifi_handover(self, st: dict, run_id: int) -> StepResult:
         """The customer's networks on, then the line's off. Once the second document is
-        applied the box leaves the line's Wi-Fi, so it is always the last step."""
+        applied the box leaves the line's Wi-Fi, so it is always the last step.
+
+        `line_wifi: keep` (the web app's `ship:`): the line's network stays in one of the
+        box's five slots -- it joins whichever it finds, so a box back for repair is online
+        again by itself -- but on DHCP, so its old fixed address cannot clash with a new box
+        of the same unit number."""
         f = self.site.factory
         out = []
+        if not self.rb.rpc_ok:
+            try:                      # run on its own (shipping): does the box take commands by MQTT?
+                self._rpc("GET_INFO", None, self._t(st, 10))
+            except StepFailed:
+                pass
         if self.rb.rpc_ok and st.get("factory_done", True):
             r = self._rpc("FACTORY_DONE", None, self._t(st, 15))
             out.append(json.dumps(r))
@@ -394,7 +404,13 @@ class RemoteRunner:
             stt, _ = self._send_doc({"wifi": {"add": add}}, self._t(st, 120))
             out.append(json.dumps(stt, ensure_ascii=False))
         how = "ไม่มี Wi-Fi โรงงานให้ลบ"
-        if f.ssid and (given is None or f.ssid in given):
+        keep = st.get("line_wifi") == "keep"
+        if keep and f.ssid and (given is None or f.ssid in given):
+            # the same network again: its password kept, its address back to DHCP
+            stt, _ = self._send_doc({"wifi": {"add": [{"ssid": f.ssid, "dhcp": True}]}}, self._t(st, 120))
+            out.append(json.dumps(stt, ensure_ascii=False))
+            how = "Wi-Fi โรงงานยังอยู่ (DHCP) กลับมาซ่อมก็ต่อได้เอง"
+        elif f.ssid and (given is None or f.ssid in given):
             stt, gone = self._send_doc({"wifi": {"del": [f.ssid]}}, self._t(st, 120), gone_ok=True)
             out.append(json.dumps(stt, ensure_ascii=False) if stt else "(left the broker)")
             how = "ออกจาก Wi-Fi โรงงานแล้ว" + (" (ยืนยันจาก offline)" if gone else "")
@@ -426,7 +442,7 @@ class Rack:
         self.operator = ""
         self.last_rev: dict[str, int] = {}
         self.counts = {"pass": 0, "fail": 0}
-        fleet.on_change = lambda sn: self._seen(sn)
+        fleet.listeners.append(self._seen)
 
     # what the station knows, read each time (it may change product, lot or settings)
     @property

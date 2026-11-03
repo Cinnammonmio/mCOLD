@@ -167,6 +167,11 @@ def create_app(line: Line, demo_usb=None) -> FastAPI:
     def start(b: Start):
         return {"started": call(line.start, b.sns or None, b.operator)}
 
+    @app.post("/api/ship/start")
+    def ship(b: Start):
+        """The customer's Wi-Fi in, the line's out, factory mode off: the box leaves the company."""
+        return {"started": call(line.ship, b.sns or None, b.operator)}
+
     @app.post("/api/line/stop/{sn}")
     def stop(sn: str):
         call(line.stop, sn)

@@ -216,7 +216,7 @@ def test_sn_summary(station):
     r = with_sn[0]
     assert r["result"] == "PASS" and r["firmware"] == "0.7.0-demo" and r["operator"] == "somchai"
     assert r["stages"] == {"test": "PASS", "production": "PASS", "setup": "PASS", "verify": "PASS",
-                           "quick": "", "rack": "", "usb": "", "line": ""}
+                           "quick": "", "rack": "", "usb": "", "line": "", "ship": ""}
     bad = [r for r in sm["rows"] if r["result"] == "FAIL"][0]
     assert bad["sn"] == "" and bad["fail"]["stage"] == "test" and bad["fail"]["step"].startswith("GNSS")
     assert sm["missing"] == []

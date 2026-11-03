@@ -11,7 +11,8 @@ from .site import Factory, Site, Wifi
 
 STAGE_LABELS = {"test": "ทดสอบโมดูล", "production": "ลง firmware จริง", "setup": "ตั้งค่า",
                 "verify": "ตรวจก่อนส่ง", "update": "Flash ใหม่", "quick": "USB เร็ว",
-                "rack": "ชั้นวาง (MQTT)", "usb": "Flash ผ่าน USB", "line": "ทดสอบ + firmware จริง"}
+                "rack": "ชั้นวาง (MQTT)", "usb": "Flash ผ่าน USB", "line": "ทดสอบ + firmware จริง",
+                "ship": "ส่งมอบ Wi-Fi ลูกค้า"}
 
 
 def stage_label(s: str) -> str:
