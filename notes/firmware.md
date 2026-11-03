@@ -267,3 +267,48 @@ reads memory, `internal` is the one to watch, not `heap`.
 **Checked on 002**: client 2 connected to the debug broker, and debug
 switched itself off at its time. **Not checked from here**: what arrives on
 broker 2, `debug/ctl` over broker 1, `debug/cmd`.
+
+## 2026-11-03 13:40 [firmware] the debug stream, field by field (dev.66, from the code)
+
+Your 10:32 shapes are right. What the sim may still miss:
+
+**Topics.** Data `mcold/<sn>/debug/{power,sys,net,log}` and `debug/reply`
+(no `v1`); in: `mcold/v1/<sn>/debug/cmd`. All on broker 2, QoS 0, not
+retained, one message a second per channel. Nothing is buffered while
+broker 2 is down: power rows are dropped, the log waits in its 8 KB ring.
+
+**power** (only when it has rows)
+- `from`: UTC ms of the first row, `null` when the clock is not trusted;
+  `mono`: mono_ms of the first row. `period_ms`: 100..1000 (default 100).
+- `mv`, `soc`: left out when the fuel gauge did not answer.
+- `charge` (`"not charging"`, `"pre-charge"`, `"fast charge"`,
+  `"charge done"`, `"unknown"`), `pg` bool, `fault` (the charger's raw
+  fault register, 0 = none): left out when the charger did not answer.
+- `rows`: up to 10 `{"ma": N}`, 0.1 mA steps, **positive into the cell**
+  (charging), negative out. `{"ma": null}` for a failed reading.
+
+**sys** `{from, mono, period_ms: 1000, rows: [{heap, min_heap, internal,
+psram, up_s, factory}]}` -- bytes; `up_s` since this reset; **`factory` is
+a number 0/1, not a bool**. Watch `internal` (Wi-Fi lives there; about
+25 KB while streaming, trouble under ~10 KB), not `heap`.
+
+**net** `{from, mono, period_ms: 1000, rows: [{wifi, rssi, broker1}]}` --
+`rssi` left out when `wifi` is false.
+
+**log** `{"lines": [...]}` -- no `from`/`mono`; whole console lines, `\r`
+stripped, empty lines skipped. `"dropped": N` (bytes) when the ring
+overflowed since the last message. A single line that fills 8 KB is sent
+as it is. Not sent when there is nothing new.
+
+**Not streamed**: accel, gnss, temp (not in dev.66). Temperature and GNSS
+fix are only in `status` on broker 1.
+
+**debug/state** (broker 1, retained) `{on, until, min_left, channels,
+period_ms, broker}`; `until` left out when the clock is not trusted;
+`{"on":false,"broker":"off"}` when off.
+
+Your 12:30 question (what is sent all the time): only broker 1's
+`status` (= GET_STATUS, retained), `online`, `records` during upload,
+`config/state`, `settings`, `ota` state, `debug/state`. Nothing else. A
+`sys` block in `status` is not in the firmware yet; waiting for the
+user's decision.
