@@ -146,3 +146,36 @@ async function addDemo(cfg, form, ui) {
     throw e;
   }
 }
+
+/**
+ * Factory mode back on, on a box shipped already: its console over the USB cable (the
+ * product firmware's own port, 303A:4003), `factory on`, wait for `factory mode on`.
+ * Only the cable can do it: over MQTT the box takes no write command outside factory mode.
+ */
+export async function factoryOn(cfg, sn) {
+  if (cfg.demo) return api("/api/demo/usb/factory_on", { sn });
+  if (!("serial" in navigator)) throw new Error("เบราว์เซอร์นี้ต่อ USB ไม่ได้: ใช้ Chrome/Edge ผ่าน https");
+  const port = await navigator.serial.requestPort({ filters: [{ usbVendorId: cfg.usb.vid }] });
+  if (!cfg.usb.app_pids.includes(port.getInfo().usbProductId))
+    throw new Error("เลือกพอร์ต console ของกล่อง (mCOLD) ไม่ใช่ USB JTAG: กล่องต้องรัน firmware อยู่");
+  await port.open({ baudRate: cfg.usb.baud });
+  const w = port.writable.getWriter();
+  const r = port.readable.getReader();
+  let seen = "";
+  try {
+    await w.write(new TextEncoder().encode("factory on\r\n"));
+    const until = Date.now() + 4000;
+    const dec = new TextDecoder();
+    while (Date.now() < until && !/factory mode on/.test(seen)) {
+      const chunk = await Promise.race([r.read(), sleep(until - Date.now()).then(() => ({ done: true }))]);
+      if (chunk.done) break;
+      seen += dec.decode(chunk.value);
+    }
+  } finally {
+    try { await r.cancel(); } catch (e) { /* closing */ }
+    r.releaseLock(); w.releaseLock();
+    try { await port.close(); } catch (e) { /* gone */ }
+  }
+  if (!/factory mode on/.test(seen)) throw new Error("กล่องไม่ตอบ factory mode on: " + (seen.trim().slice(-120) || "(เงียบ)"));
+  return { ok: true, reply: "factory mode on" };
+}

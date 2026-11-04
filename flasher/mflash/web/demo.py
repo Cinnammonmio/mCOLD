@@ -38,6 +38,14 @@ class DemoUsb:
             self.boxes[mac] = box
         return {"mac": mac, "chip": "ESP32-S3 (QFN56) (revision v0.2)", "flash_size": "16MB"}
 
+    def factory_on(self, sn: str) -> dict:
+        """`factory on` at the console of a box on the cable (the demo: any box it made)."""
+        box = next((b for b in self.boxes.values() if b.sn == sn), None)
+        if not box:
+            raise RuntimeError(f"ไม่มีกล่อง {sn} เสียบอยู่")
+        box.factory_mode = True
+        return {"ok": True, "reply": "  factory mode on"}
+
     def write(self, token: str) -> dict:
         with self.line.lock:
             pr = self.line.prepared.get(token)
@@ -77,7 +85,8 @@ def setup(product: str = "mcold", speed: float = 0.3) -> tuple[Line, DemoUsb]:
                 fleet=Fleet(broker.connect("mflash-web-demo")),
                 debug=DebugHub(debug_broker.connect("mflash-web-debug")),
                 state_path=os.path.join(root, "web.json"), time_scale=max(speed, 0.05),
-                debug_dir=os.path.join(root, "debug"), demo=True)
+                debug_dir=os.path.join(root, "debug"), demo=True,
+                soak_interval=3.0)                       # the demo reads every 3 s, not every minute
     line.set_lot("mCDV1-L0169-1069")
     # the USB flash writes the older build; the line ends on the newer one by OTA
     older = [m for m in fwlib.list_firmware(product, "production") if m["version"] == "0.7.0-dev.61"][0]

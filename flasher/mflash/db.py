@@ -35,6 +35,11 @@ CREATE TABLE IF NOT EXISTS step (
 CREATE TABLE IF NOT EXISTS deleted (
   mac TEXT NOT NULL, sn TEXT, product TEXT, runs INTEGER, by TEXT, reason TEXT, at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS soak_sample (
+  run_id INTEGER NOT NULL REFERENCES run(id), at REAL NOT NULL, online INTEGER,
+  status TEXT, debug TEXT
+);
+CREATE INDEX IF NOT EXISTS soak_sample_run ON soak_sample(run_id, at);
 CREATE TABLE IF NOT EXISTS value (
   mac TEXT NOT NULL, key TEXT NOT NULL, val TEXT, run_id INTEGER, at TEXT NOT NULL,
   PRIMARY KEY (mac, key)
@@ -117,6 +122,15 @@ class Db:
     def del_value(self, mac: str, key: str) -> None:
         self._x("DELETE FROM value WHERE mac=? AND key=?", (mac, key))
 
+    def add_sample(self, run_id: int, at: float, online: bool, status: dict, debug: dict | None) -> None:
+        self._x("INSERT INTO soak_sample VALUES (?,?,?,?,?)",
+                (run_id, at, int(online), json.dumps(status), json.dumps(debug) if debug else None))
+
+    def samples(self, run_id: int) -> list[dict]:
+        return [{"at": r["at"], "online": bool(r["online"]), "status": json.loads(r["status"] or "{}"),
+                 "debug": json.loads(r["debug"]) if r["debug"] else None}
+                for r in self.q("SELECT * FROM soak_sample WHERE run_id=? ORDER BY at", (run_id,))]
+
     def history(self, mac_or_sn: str = "", limit: int = 50) -> list[sqlite3.Row]:
         if mac_or_sn:
             return self.q("SELECT * FROM run WHERE mac=? OR sn=? ORDER BY id DESC LIMIT ?",
@@ -193,6 +207,7 @@ class Db:
         with self._lock:
             n = self._c.execute("SELECT COUNT(*) FROM run WHERE mac=?", (mac,)).fetchone()[0]
             self._c.execute("DELETE FROM step WHERE run_id IN (SELECT id FROM run WHERE mac=?)", (mac,))
+            self._c.execute("DELETE FROM soak_sample WHERE run_id IN (SELECT id FROM run WHERE mac=?)", (mac,))
             self._c.execute("DELETE FROM run WHERE mac=?", (mac,))
             self._c.execute("DELETE FROM value WHERE mac=?", (mac,))
             self._c.execute("DELETE FROM device WHERE mac=?", (mac,))

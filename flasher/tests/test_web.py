@@ -250,3 +250,114 @@ def test_debug_view_has_the_status_and_get_debug(web):
     assert d["on"] is False and d["status_at"] and d["status"]["net"]["ip"] == "10.20.0.101"
     r = c.post(f"/api/devices/{prep['sn']}/get_debug").json()
     assert {"internal", "coredump", "uptime_s", "reset"} <= set(r)
+
+
+def _answer_until(c, done, timeout=60, value=True):
+    def step():
+        d = c.get("/api/devices").json()
+        for q in d["questions"]:
+            c.post("/api/line/answer", json={"qid": q["id"], "value": value})
+        return done(d["rows"]) and d["rows"]
+    return wait(step, timeout)
+
+
+def test_retest_before_and_after_shipping(web):
+    c, line, usb = web
+    prep, _, _ = add(c)
+    sn = prep["sn"]
+    wait(lambda: [x for x in c.get("/api/devices").json()["rows"] if x["online"]])
+    c.post("/api/line/start", json={})
+    _answer_until(c, lambda rows: rows[0]["state"] == "pass")
+    # before shipping: still in factory mode, the full set again
+    assert c.post("/api/retest/start", json={"sns": [sn]}).json()["started"] == 1
+    rows = _answer_until(c, lambda rows: rows[0]["state"] in ("pass", "fail") and rows[0]["phase"] == "retest"
+                         and not line.retester.boxes[sn].busy)
+    assert rows[0]["state"] == "pass" and rows[0]["retested"]
+    # ship, then a retest without factory mode stops at its check
+    c.post("/api/ship/start", json={})
+    rows = wait(lambda: (lambda r: r if r[0]["state"] == "shipped" else None)(c.get("/api/devices").json()["rows"]), 30)
+    assert rows[0]["factory_off"]
+    c.post("/api/retest/start", json={"sns": [sn]})
+    rows = _answer_until(c, lambda rows: rows[0]["state"] == "fail")
+    assert rows[0]["fail"]["step"].startswith("อยู่ในโหมดโรงงาน")
+    # USB: factory on, then the full set passes and the box waits to be shipped again
+    assert c.post("/api/demo/usb/factory_on", json={"sn": sn}).json()["ok"]
+    c.post("/api/retest/start", json={"sns": [sn]})
+    rows = _answer_until(c, lambda rows: rows[0]["state"] == "pass" and not line.retester.boxes[sn].busy)
+    assert not rows[0]["factory_off"]
+    assert c.post("/api/ship/start", json={}).json()["started"] == 1
+    wait(lambda: c.get("/api/devices").json()["rows"][0]["state"] == "shipped", 30)
+    stages = [x["stage"] for x in c.get(f"/api/devices/{prep['mac']}/log").json()]
+    assert stages == ["usb", "line", "retest", "ship", "retest", "retest", "ship"]
+
+
+def test_long_test_summary(web, monkeypatch):
+    from mflash.web import soak as soakmod
+    c, line, usb = web
+    line.soak.interval = 0.05
+    prep, _, _ = add(c)
+    sn = prep["sn"]
+    wait(lambda: [x for x in c.get("/api/devices").json()["rows"] if x["online"]])
+    assert c.post("/api/soak/start", json={"sns": [sn], "operator": "somchai"}).json()["started"] == 1
+    wait(lambda: line.soak.runs[sn].samples >= 5)
+    row = c.get("/api/devices").json()["rows"][0]
+    assert row["soak"]["running"] and row["soak"]["last"]["internal"]
+    r = c.post("/api/soak/stop", json={"sns": [sn]}).json()["stopped"][0]
+    assert r["result"] == "PASS", r
+    names = [f["name"] for f in r["findings"]]
+    assert names[:3] == ["ระยะเวลา", "online", "รีสตาร์ท"] and "RAM ภายใน" in names
+    assert c.get(f"/api/soak/{sn}").json()["samples"]
+    # a box that drops off for a while and restarts: both are findings
+    monkeypatch.setattr(soakmod, "OFFLINE_MAX_S", 0.1)
+    usb.boxes[prep["mac"]].booted_at -= 3600          # up an hour, as a box on the rack would be
+    c.post("/api/soak/start", json={"sns": [sn]})
+    wait(lambda: line.soak.runs[sn].samples >= 3)
+    box = usb.boxes[prep["mac"]]
+    box.net.drop()
+    wait(lambda: line.soak.runs[sn].samples >= 8)
+    box.booted_at = time.time()
+    box.net.check()
+    wait(lambda: c.get("/api/devices").json()["rows"][0]["online"])
+    n = line.soak.runs[sn].samples
+    wait(lambda: line.soak.runs[sn].samples >= n + 3)
+    r = c.post("/api/soak/stop", json={"sns": [sn]}).json()["stopped"][0]
+    bad = {f["name"] for f in r["findings"] if f["result"] == "FAIL"}
+    assert r["result"] == "FAIL" and {"online", "รีสตาร์ท"} <= bad, r
+    assert c.get("/api/devices").json()["rows"][0]["soak"]["result"] == "FAIL"
+    stages = [x["stage"] for x in c.get(f"/api/devices/{prep['mac']}/log").json()]
+    assert stages.count("soak") == 2
+
+
+def test_long_test_carries_on_after_a_restart(web):
+    from mflash.web.soak import Soak
+    c, line, usb = web
+    line.soak.interval = 0.05
+    prep, _, _ = add(c)
+    wait(lambda: [x for x in c.get("/api/devices").json()["rows"] if x["online"]])
+    c.post("/api/soak/start", json={"sns": [prep["sn"]]})
+    wait(lambda: line.soak.runs[prep["sn"]].samples >= 2)
+    old = line.soak.runs[prep["sn"]]
+    old.stop.set()                                  # the web app went away mid-test
+    again = Soak(line, 0.05)
+    assert prep["sn"] in again.runs and again.runs[prep["sn"]].run_id == old.run_id
+    wait(lambda: again.runs[prep["sn"]].samples >= old.samples + 2)
+    assert again.stop(prep["sn"])["result"] == "PASS"
+
+
+def test_per_device_settings(web):
+    c, line, usb = web
+    prep, _, _ = add(c)
+    sn = prep["sn"]
+    wait(lambda: [x for x in c.get("/api/devices").json()["rows"] if x["online"]])
+    wait(lambda: c.get(f"/api/devices/{sn}/config").json()["reported"])
+    cfg = c.get(f"/api/devices/{sn}/config").json()
+    assert cfg["config"]["sample_period_s"] == 300 and "sample_period_s" in cfg["keys"]
+    assert "tz_offset_min" not in cfg["keys"]                 # the box does not take it this way
+    assert cfg["factory"] is True
+    r = c.post(f"/api/devices/{sn}/config", json={"config": {"sample_period_s": 600, "buzzer_volume": 100}})
+    assert r.json()["state"] == "ok" and r.json()["applied"] == ["sample_period_s"]   # only what changed
+    box = usb.boxes[prep["mac"]]
+    assert box.config["sample_period_s"] == 600 and box.factory_rev >= 1 and box.server_rev == 0
+    bad = c.post(f"/api/devices/{sn}/config", json={"config": {"sample_period_s": 5, "tz_offset_min": 0}})
+    assert bad.status_code == 409 and "นอกช่วง" in bad.json()["error"] and "ไม่ให้แก้" in bad.json()["error"]
+    assert "config" in [x["stage"] for x in c.get(f"/api/devices/{prep['mac']}/log").json()]

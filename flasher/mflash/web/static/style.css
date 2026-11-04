@@ -116,27 +116,40 @@ a.btn { text-decoration: none; }
 .linkchip i { width: 9px; height: 9px; border-radius: 50%; background: var(--fail); }
 .linkchip.up i { background: var(--pass); box-shadow: 0 0 0 4px color-mix(in srgb, var(--pass) 20%, transparent); }
 
-/* the question at the head of the queue */
-/* at the bottom of the list, and kept on screen while the list scrolls */
-.rq { position: sticky; bottom: 12px; z-index: 5; border-radius: var(--radius); padding: 14px 18px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap;
-  background: color-mix(in srgb, var(--ask) 10%, var(--surface-solid)); border: 2px solid var(--ask); animation: askpulse 1.6s ease-in-out infinite; }
-@keyframes askpulse { 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--ask) 25%, transparent); } }
-.rq .who { display: flex; flex-direction: column; align-items: center; min-width: 96px; }
-.rq .who small { font-size: 12px; color: var(--muted); }
-.rq .who b { font: 700 48px/1 var(--mono); color: var(--ask); letter-spacing: -2px; }
-.rq .what { flex: 1 1 300px; min-width: 0; }
-.rq .what p { margin: 0 0 4px; font-size: 19px; font-weight: 600; line-height: 1.4; }
-.rq .what .meta { font: 12.5px var(--mono); color: var(--muted); }
-.rq .btns { display: flex; gap: 10px; flex-wrap: wrap; }
-.rq .btns button { height: 52px; min-width: 116px; padding: 0 16px; border-radius: 14px; font-size: 16px; font-weight: 700; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent; }
-.rq .btns kbd { font: 600 11px var(--mono); padding: 1px 6px; border-radius: 6px; background: rgba(0,0,0,.18); }
-.rq .yes { background: var(--pass); color: #04150d; }
-.rq .no { background: transparent; color: var(--fail); border-color: color-mix(in srgb, var(--fail) 60%, transparent) !important; }
-.rq .again { background: transparent; color: var(--ink-2); border-color: var(--line-2) !important; min-width: 0 !important; }
-.rq .next { flex-basis: 100%; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--muted); }
-.rq .next span { font-family: var(--mono); padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--ask) 16%, transparent); color: var(--ink-2); }
-
+/* the question, inside its box's tile */
+.tq { border-radius: 11px; padding: 8px 10px; background: color-mix(in srgb, var(--ask) 14%, var(--surface-solid));
+  border: 1.5px solid color-mix(in srgb, var(--ask) 60%, transparent); }
+.tq.first { border: 2px solid var(--ask); animation: askpulse 1.6s ease-in-out infinite; }
+@keyframes askpulse { 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--ask) 25%, transparent); } }
+.tq p { margin: 0 0 8px; font-size: 14.5px; font-weight: 600; line-height: 1.4; }
+.tq .qb { display: flex; gap: 6px; flex-wrap: wrap; }
+.tq .qb button { flex: 1 1 auto; height: 38px; padding: 0 10px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; border: 1px solid transparent; }
+.tq .qb kbd { font: 600 10px var(--mono); padding: 1px 5px; border-radius: 5px; background: rgba(0,0,0,.18); display: none; }
+.tq.first .qb kbd { display: inline; }
+.tq .yes { background: var(--pass); color: #04150d; }
+.tq .no { background: transparent; color: var(--fail); border-color: color-mix(in srgb, var(--fail) 60%, transparent) !important; }
+.tq .again { background: transparent; color: var(--ink-2); border-color: var(--line-2) !important; flex: 0 0 auto !important; }
+/* the long test strip */
+.soak { border-radius: 10px; padding: 6px 8px 6px 10px; font-size: 12px; background: var(--surface-2); border-left: 3px solid var(--accent); }
+.soak.run.bad, .soak.done.FAIL { border-left-color: var(--fail); }
+.soak.done.PASS { border-left-color: var(--pass); }
+.soak .sh { display: flex; align-items: center; gap: 6px; }
+.soak .sl { font-weight: 600; color: var(--ink-2); flex: 1; min-width: 0; }
+.soak.run .sl::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+  margin-right: 6px; animation: blink 1.6s infinite; vertical-align: 1px; }
+.soak.done .s-stop { display: none; }
+.soak .btn.sm { height: 26px; font-size: 12px; padding: 0 8px; }
+.soak .btn.sm.icon { width: 26px; padding: 0; }
+.soak .sv { font-family: var(--mono); color: var(--muted); font-size: 11.5px; }
+.soak .sv:empty, .soak .sp:empty { display: none; }
+.soak .sp { color: var(--fail); font-weight: 500; }
+.tile .acts .tools { margin-left: auto; display: inline-flex; gap: 6px; }
+.k-soak { --c: var(--accent); }
+.findings td { white-space: normal; } .findings td:first-child { width: 70px; }
+h4.sres { display: flex; gap: 10px; align-items: center; margin: 14px 0 4px; }
+.cfg tr.chg td { background: color-mix(in srgb, var(--ask) 12%, transparent); }
+.cfg td.cur { color: var(--ink-2); }
 /* device tiles */
 .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
 .tile { --c: var(--faint); position: relative; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 10px; border-radius: 14px;
@@ -280,5 +293,4 @@ td.PASS, .PASS { color: var(--pass); font-weight: 600; } td.FAIL, .FAIL { color:
 @media (max-width: 640px) {
   .top, .page { padding-left: 16px; padding-right: 16px; }
   .grid { grid-template-columns: 1fr; }
-  .rq .btns button { min-width: 90px; }
 }

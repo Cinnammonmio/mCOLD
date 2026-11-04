@@ -191,6 +191,35 @@ def create_app(line: Line, demo_usb=None) -> FastAPI:
         """The customer's Wi-Fi in, the line's out, factory mode off: the box leaves the company."""
         return {"started": call(line.ship, b.sns or None, b.operator)}
 
+    @app.post("/api/retest/start")
+    def retest(b: Start):
+        """The full set again, before or after shipping (after: factory mode on over USB first)."""
+        return {"started": call(line.retest, b.sns, b.operator)}
+
+    @app.get("/api/devices/{sn}/config")
+    def device_config(sn: str):
+        """The box's current values and which ones may be changed on it."""
+        return call(line.device_config, sn)
+
+    @app.post("/api/devices/{sn}/config")
+    def set_device_config(sn: str, b: dict):
+        """{"config": {key: value}, "operator"}: changed values, as a settings document."""
+        return call(line.set_device_config, sn, dict(b.get("config") or {}), str(b.get("operator", "")))
+
+    @app.post("/api/soak/start")
+    def soak_start(b: Start):
+        """The long test: read the box every minute (status + GET_DEBUG) until it is stopped."""
+        return {"started": call(line.soak_start, b.sns, b.operator)}
+
+    @app.post("/api/soak/stop")
+    def soak_stop(b: Start):
+        """Stop and summarize: each finding a step of the run (stage soak)."""
+        return {"stopped": call(line.soak_stop, b.sns)}
+
+    @app.get("/api/soak/{sn}")
+    def soak_series(sn: str):
+        return line.soak.series(sn) if line.soak else {"samples": []}
+
     @app.post("/api/line/stop/{sn}")
     def stop(sn: str):
         call(line.stop, sn)
@@ -256,6 +285,10 @@ def create_app(line: Line, demo_usb=None) -> FastAPI:
         @app.post("/api/demo/usb/connect")
         def demo_connect():
             return demo_usb.connect()
+
+        @app.post("/api/demo/usb/factory_on")
+        def demo_factory_on(b: dict):
+            return call(demo_usb.factory_on, str(b.get("sn", "")))
 
         @app.post("/api/demo/usb/write")
         def demo_write(b: Done):

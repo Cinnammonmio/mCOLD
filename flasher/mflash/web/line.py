@@ -94,7 +94,7 @@ class Line(LineCore):
     def __init__(self, product: str, db: Db, site: Site, fleet: Fleet | None = None,
                  debug: DebugHub | None = None, state_path: str | None = None,
                  time_scale: float = 1.0, debug_dir: str | None = None, demo: bool = False,
-                 link_error: str = ""):
+                 link_error: str = "", soak_interval: float = 60.0):
         self.db, self.site = db, site
         self.profile = proflib.load(product)
         self.state_path = (state_path or os.environ.get("MFLASH_WEB_STATE")
@@ -115,6 +115,11 @@ class Line(LineCore):
         # the company) until "ส่งมอบ" runs `ship:` -- the customer's Wi-Fi in, the line's out
         self.shipper = Rack(self, fleet, time_scale=time_scale, debug_dir=debug_dir, entry_stage="line",
                             auto=False, stage="ship") if fleet and self.profile.ship else None
+        # tested again, before or after shipping (after: factory mode back on over USB first)
+        self.retester = Rack(self, fleet, time_scale=time_scale, debug_dir=debug_dir, entry_stage="line",
+                             auto=False, stage="retest") if fleet and self.profile.retest else None
+        from .soak import Soak
+        self.soak = Soak(self, soak_interval) if fleet else None
 
     # ---- what the station remembers between restarts --------------------------
 
@@ -418,16 +423,18 @@ class Line(LineCore):
 
     # ---- the devices page ---------------------------------------------------------
 
+    def runners(self) -> dict[str, Rack]:
+        return {k: r for k, r in (("line", self.rack), ("retest", self.retester), ("ship", self.shipper)) if r}
+
     def devices(self, lot: str | None = None, log_sn: str = "") -> dict:
         lot = self.lot if lot is None else lot
         p = self.profile
-        rack = self.rack.state(log_sn=log_sn) if self.rack else {"boxes": [], "questions": []}
-        ship = self.shipper.state(log_sn=log_sn) if self.shipper else {"boxes": []}
-        for r in (self.rack, self.shipper):
-            if r:
-                r.refresh()
-        by_sn = {b["sn"]: b for b in rack["boxes"]}
-        ship_sn = {b["sn"]: b for b in ship["boxes"]}
+        runners = self.runners()
+        states = {k: r.state(log_sn=log_sn) for k, r in runners.items()}
+        for r in runners.values():
+            r.refresh()
+        boxes = {k: {b["sn"]: b for b in st["boxes"]} for k, st in states.items()}
+        questions = sorted((q for st in states.values() for q in st["questions"]), key=lambda q: q["id"])
         rows = []
         if lot:
             devs = self.db.q("SELECT * FROM device WHERE product=? AND sn LIKE ? ORDER BY sn",
@@ -436,23 +443,23 @@ class Line(LineCore):
             devs = self.db.q("SELECT * FROM device WHERE product=? AND sn IS NOT NULL ORDER BY sn",
                              (p.product,))
         for d in devs:
-            vals = self.db.values(d["mac"])
-            usb = self._last(d["mac"], "usb")
-            line = self._last(d["mac"], "line")
-            shipped = self._last(d["mac"], "ship")
-            b = by_sn.get(d["sn"]) or {}
-            sb = ship_sn.get(d["sn"]) or {}
-            nb = self.fleet.boxes.get(d["sn"]) if self.fleet else None
-            if b.get("state") in ("running", "ask"):
-                state = b["state"]
-            elif sb.get("state") in ("running", "ask"):
-                state, b = "shipping", sb
-            elif line and line["result"] == "PASS" and shipped and shipped["id"] > line["id"]:
-                state = "shipped" if shipped["result"] == "PASS" else "ship_fail"
-                if state == "ship_fail":
-                    b = sb or b
-            elif line and line["result"]:
-                state = "pass" if line["result"] == "PASS" else "fail"
+            sn, mac = d["sn"], d["mac"]
+            vals = self.db.values(mac)
+            usb = self._last(mac, "usb")
+            runs = {k: self._last(mac, k) for k in ("line", "retest", "ship")}
+            nb = self.fleet.boxes.get(sn) if self.fleet else None
+            # what runs now on it, if anything; else the newest of its tests and its shipping
+            active = next((k for k in ("line", "retest", "ship")
+                           if (boxes.get(k, {}).get(sn) or {}).get("state") in ("running", "ask")), None)
+            last = max((r for r in runs.values() if r), key=lambda r: r["id"], default=None)
+            phase = active or (last["stage"] if last else "")
+            b = boxes.get(phase, {}).get(sn) or {}
+            if active:
+                state = "shipping" if active == "ship" else b["state"]
+            elif last and last["stage"] == "ship":
+                state = "shipped" if last["result"] == "PASS" else "ship_fail"
+            elif last:
+                state = "pass" if last["result"] == "PASS" else "fail"
                 if b.get("state") == "stopped":
                     state = "stopped"
             elif usb and usb["result"] == "FAIL":
@@ -461,27 +468,31 @@ class Line(LineCore):
                 state = "online" if nb and nb.online else "waiting"
             else:
                 state = "other"           # made by the dock, not by this page
-            fail = b.get("fail") if state not in ("pass", "shipped") else None
-            if not fail and state in ("fail", "ship_fail") and line:
+            fail = b.get("fail") if state in ("fail", "ship_fail", "stopped") else None
+            if not fail and state in ("fail", "ship_fail") and last:
                 bad = self.db.q("SELECT name, detail FROM step WHERE run_id=? AND result='FAIL' "
-                                "ORDER BY idx DESC LIMIT 1", ((shipped if state == "ship_fail" else line)["id"],))
+                                "ORDER BY idx DESC LIMIT 1", (last["id"],))
                 fail = {"step": bad[0]["name"], "detail": bad[0]["detail"]} if bad else None
             if not fail and state == "usb_fail":
                 bad = self.db.q("SELECT name, detail FROM step WHERE run_id=? ORDER BY idx DESC LIMIT 1",
                                 (usb["id"],))
                 fail = {"step": "Flash ผ่าน USB", "detail": bad[0]["detail"] if bad else ""}
+            shipped_ok = bool(runs["ship"] and runs["ship"]["result"] == "PASS")
             rows.append({
-                "sn": d["sn"], "mac": d["mac"], "unit": p.unit_from_sn(d["sn"] or ""),
-                "state": state, "online": bool(nb and nb.online),
+                "sn": sn, "mac": mac, "unit": p.unit_from_sn(sn or ""),
+                "state": state, "phase": phase, "online": bool(nb and nb.online),
                 "ip": (nb.ip() if nb else "") or b.get("ip") or vals.get("factory_ip", ""),
                 "fw": (nb.fw() if nb else "") or vals.get(f"firmware_{self.kind}", "").split("+", 1)[0],
                 "progress": 1.0 if state in ("pass", "shipped") else b.get("progress", 0.0),
                 "step_name": b.get("step_name", ""), "step_idx": b.get("step_idx", 0),
-                "fail": fail, "waiting": b.get("waiting", False),
+                "fail": fail, "waiting": any(q["sn"] == sn for q in questions),
                 "elapsed": b.get("elapsed", 0), "log": b.get("log"),
-                "debug": self.debug_on(d["sn"]),
-                "usb_at": usb["finished"] if usb else "", "line_at": line["finished"] if line else "",
-                "ship_at": shipped["finished"] if shipped and state == "shipped" else "",
+                "debug": self.debug_on(sn),
+                # shipped last: factory mode is off, a retest needs `factory on` over USB first
+                "factory_off": bool(last and last["stage"] == "ship" and last["result"] == "PASS"),
+                "shipped_once": shipped_ok, "retested": bool(runs["retest"]),
+                "soak": self.soak.state(sn) if self.soak else None,
+                "usb_at": usb["finished"] if usb else "",
                 "handover": vals.get("handover", ""), "debug_file": bool(vals.get("debug_file")),
             })
         with self.lock:
@@ -491,9 +502,10 @@ class Line(LineCore):
         counts = {}
         for r in rows:
             counts[r["state"]] = counts.get(r["state"], 0) + 1
-        return {"lot": lot, "rows": rows, "flashing": flashing, "questions": rack["questions"],
+        st0 = states.get("line", {})
+        return {"lot": lot, "rows": rows, "flashing": flashing, "questions": questions,
                 "counts": counts, "steps": [s["name"] for s in p.line],
-                "broker": {"connected": rack.get("connected", False), "error": rack.get("link_error", "")
+                "broker": {"connected": st0.get("connected", False), "error": st0.get("link_error", "")
                            or self.link_error},
                 "auto": bool(self.rack and self.rack.auto),
                 "now": dt.datetime.now().strftime("%H:%M:%S")}
@@ -530,9 +542,26 @@ class Line(LineCore):
         return len(sns)
 
     def stop(self, sn: str) -> None:
-        self._need_rack().stop(sn)
-        if self.shipper:
-            self.shipper.stop(sn)
+        self._need_rack()
+        for r in self.runners().values():
+            r.stop(sn)
+
+    def retest(self, sns: list[str], operator: str = "") -> int:
+        """The full set again on boxes that passed once, shipped or not (shipped: in factory
+        mode again first, which only the USB console can do)."""
+        if not self.retester:
+            raise RuntimeError(self.link_error or "ยังไม่ได้ต่อ MQTT broker หรือ profile ไม่มีขั้น retest:")
+        self.retester.refresh()
+        for sn in sns:
+            for k, r in self.runners().items():
+                rb = r.boxes.get(sn)
+                if rb and rb.busy:
+                    raise RuntimeError(f"{sn} กำลังทำ {stage_label(k)} อยู่")
+            if sn not in self.retester.boxes:
+                raise RuntimeError(f"{sn} ยังไม่เคยผ่านการทดสอบ ใช้ ทำซ้ำ แทน")
+            self.retester.boxes[sn].state = "ready"
+            self.retester.start(sn, operator)
+        return len(sns)
 
     def ship(self, sns: list[str] | None = None, operator: str = "") -> int:
         """Hand boxes that passed over to the customer's Wi-Fi: those named, or every one
@@ -541,7 +570,15 @@ class Line(LineCore):
             raise RuntimeError(self.link_error or "ยังไม่ได้ต่อ MQTT broker หรือ profile ไม่มีขั้น ship:")
         self.shipper.refresh()
         if not sns:
-            return self.shipper.start_all(operator)
+            # every box whose newest result is a passed test (first time, or after a retest), online
+            sns = []
+            for sn, rb in self.shipper.boxes.items():
+                runs = [r for r in (self._last(rb.mac, k) for k in ("line", "retest", "ship")) if r]
+                last = max(runs, key=lambda r: r["id"], default=None)
+                nb = self.fleet.boxes.get(sn)
+                if last and last["stage"] != "ship" and last["result"] == "PASS" and nb and nb.online \
+                        and not rb.busy:
+                    sns.append(sn)
         for sn in sns:
             rb = self.shipper.boxes.get(sn)
             if not rb:
@@ -549,8 +586,103 @@ class Line(LineCore):
             self.shipper.start(sn, operator)
         return len(sns)
 
+    # ---- one box's settings -----------------------------------------------------
+
+    def _factory_on(self, mac: str) -> bool:
+        """Whether the box is in factory mode now, from its record: on from the USB flash
+        until it is shipped, on again after a retest."""
+        runs = [r for r in (self._last(mac, k) for k in ("line", "retest", "ship")) if r]
+        last = max(runs, key=lambda r: r["id"], default=None)
+        return not (last and last["stage"] == "ship" and last["result"] == "PASS")
+
+    def device_config(self, sn: str) -> dict:
+        """The box's values as it last reported them (`settings`), with the profile's labels and
+        ranges, for the keys a settings document may change on it."""
+        if not self.fleet:
+            raise RuntimeError(self.link_error or "ยังไม่ได้ต่อ MQTT broker")
+        nb = self.fleet.box(sn)
+        with self.fleet.cond:
+            st = dict(nb.settings)
+        d = self.db.q("SELECT mac FROM device WHERE sn=?", (sn,))
+        editable = st.get("editable") or list(self.profile.config_keys)
+        keys = {k: v for k, v in self.profile.config_keys.items() if k in editable}
+        for k in editable:
+            keys.setdefault(k, {"label": k})
+        return {"sn": sn, "online": bool(nb.online), "reported": bool(st),
+                "config": st.get("config", {}), "keys": keys,
+                "factory": self._factory_on(d[0]["mac"]) if d else True,
+                "server_rev": st.get("server_rev", 0), "factory_rev": st.get("factory_rev", 0),
+                "network": [w.get("ssid") for w in ((st.get("network") or {}).get("wifi") or [])]}
+
+    def set_device_config(self, sn: str, changes: dict, operator: str = "", timeout: float = 30) -> dict:
+        """Changed values to one box, as a settings document; waits for its config/state.
+        In factory mode the document is the line's (`factory`, its own rev); after shipping
+        it is a plain one and moves the box's server_rev."""
+        cur = self.device_config(sn)
+        if not cur["online"]:
+            raise RuntimeError(f"{sn} offline: ส่งค่าไม่ได้")
+        bad, doc = [], {}
+        for k, v in changes.items():
+            if k not in cur["keys"]:
+                bad.append(f"{k}: เครื่องไม่ให้แก้ทางนี้")
+                continue
+            try:
+                n = int(str(v).strip(), 0)
+            except ValueError:
+                bad.append(f"{k}: '{v}' ไม่ใช่ตัวเลข")
+                continue
+            r = cur["keys"][k]
+            if "min" in r and not r["min"] <= n <= r["max"]:
+                bad.append(f"{k}: {n} อยู่นอกช่วง {r['min']}–{r['max']}")
+                continue
+            if cur["config"].get(k) != n:
+                doc[k] = n
+        if bad:
+            raise RuntimeError("\n".join(bad))
+        if not doc:
+            return {"state": "ok", "applied": [], "note": "ไม่มีค่าที่เปลี่ยน"}
+        nb = self.fleet.box(sn)
+        with self.fleet.cond:
+            revs = [nb.settings.get("server_rev"), nb.settings.get("factory_rev"), nb.config_state.get("rev")]
+        rev = max([r for r in revs if isinstance(r, int)] + [0]) + 1
+        body = {"rev": rev, "config": doc, **({"factory": True} if cur["factory"] else {})}
+        self.fleet.send_config(sn, body)
+        st = self.fleet.wait(lambda: dict(nb.config_state) if nb.config_state.get("rev") == rev else None, timeout)
+        self.fleet.clear(sn, "config")
+        if not st:
+            raise RuntimeError(f"{sn} ไม่ตอบ config/state ใน {timeout:.0f} วินาที")
+        d = self.db.q("SELECT mac FROM device WHERE sn=?", (sn,))
+        if d:
+            run_id = self.db.start_run(self.profile.product, "config", d[0]["mac"], sn,
+                                       self.site.station or "web", operator or "web")
+            detail = ", ".join(f"{k}={v}" for k, v in doc.items())
+            self.db.add_step(run_id, 0, "ตั้งค่าเครื่อง", "config_doc", "PASS" if st.get("state") == "ok" else "FAIL",
+                             detail + ("" if st.get("state") == "ok" else f" · {st.get('errors')}"), "")
+            self.db.finish_run(run_id, "PASS" if st.get("state") == "ok" else "FAIL", d[0]["mac"], sn)
+        return st
+
+    def soak_start(self, sns: list[str], operator: str = "") -> int:
+        """The long test on these boxes (or every online one): read every minute until stopped."""
+        if not self.soak:
+            raise RuntimeError(self.link_error or "ยังไม่ได้ต่อ MQTT broker")
+        if not sns:
+            sns = [sn for sn, b in self.fleet.boxes.items() if b.online and sn not in self.soak.runs
+                   and (not self.lot or sn.startswith(self._prefix(self.lot)))]
+        for sn in sns:
+            self.soak.start(sn, operator)
+        return len(sns)
+
+    def soak_stop(self, sns: list[str]) -> list[dict]:
+        if not self.soak:
+            raise RuntimeError(self.link_error or "ยังไม่ได้ต่อ MQTT broker")
+        return [self.soak.stop(sn) for sn in (sns or list(self.soak.runs))]
+
     def answer(self, qid: int, value) -> None:
-        self._need_rack().answer(qid, value)
+        self._need_rack()
+        for r in self.runners().values():
+            if any(q.id == qid for q in r.questions):
+                return r.answer(qid, value)
+        raise RuntimeError("คำถามนี้ตอบไปแล้ว")
 
     def debug_on(self, sn: str) -> bool:
         b = self.fleet.boxes.get(sn) if self.fleet else None

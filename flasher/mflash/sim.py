@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import queue
+import random
 import struct
 import threading
 import time
@@ -295,7 +296,9 @@ class SimBroker:
 
     def later(self, s: float, fn) -> None:
         if self.speed and s > 0:
-            threading.Timer(s * self.speed, fn).start()
+            t = threading.Timer(s * self.speed, fn)
+            t.daemon = True
+            t.start()
         else:
             self.q.put((lambda *a: fn(), "", b"", False))
 
@@ -362,6 +365,14 @@ class SimNet:
         self.link.publish(f"mcold/{sn}/online", "1", retain=True)
         self.publish_status()
         self.publish_settings()
+        if self.broker.speed:          # then every 30 s in factory mode, 5 min after (timed runs only)
+            self.broker.later(30.0, lambda link=self.link: self._status_loop(link))
+
+    def _status_loop(self, link) -> None:
+        if self.link is not link or not link.connected:
+            return
+        self.publish_status()
+        self.broker.later(30.0 if self.box.factory_mode else 300.0, lambda: self._status_loop(link))
 
     def drop(self) -> None:
         if self.link:
@@ -376,10 +387,12 @@ class SimNet:
         b = self.box
         net = {"connected": bool(self.link), "mac": b.mac}
         if self.link:
-            net.update(ssid=self.ssid, rssi=-52, ip=b.wifi_ip.get(self.ssid) or "10.0.0.250")
+            net.update(ssid=self.ssid, rssi=-52 + random.randint(-4, 4), ip=b.wifi_ip.get(self.ssid) or "10.0.0.250")
+        # a little movement, so the long test's charts show something
         return {"time": {"utc": int(time.time()), "quality": "ntp", "boot": 1},
-                "temp": {"ok": b.probe, "c": 23.5 if b.probe else None},
-                "power": {"soc": 80, "mv": 4010, "ma": 120, "charge": "fast", "external": True},
+                "temp": {"ok": b.probe, "c": round(23.5 + random.uniform(-0.3, 0.3), 2) if b.probe else None},
+                "power": {"soc": 80, "mv": 4010 + random.randint(-8, 8), "ma": 120 + random.randint(-10, 10),
+                          "charge": "fast", "external": True},
                 "gnss": {"fix": False, "age_s": None}, "storage": {"used_pct": 0},
                 "fw": {"ver": b.version, "slot": "ota_0"}, "net": net}
 
@@ -387,9 +400,12 @@ class SimNet:
         self._pub("status", {"id": 0, "ok": True, **self.status()})
 
     def publish_settings(self) -> None:
+        """`settings` as settings.cpp sends it: every value, which ones the server may change."""
         b = self.box
-        self._pub("settings", {"config": dict(b.config), "server_rev": b.server_rev,
-                               "factory_rev": b.factory_rev})
+        self._pub("settings", {"config": {**CONFIG_DEFAULTS, **b.config}, "editable": list(REMOTE_KEYS),
+                               "server_rev": b.server_rev, "factory_rev": b.factory_rev,
+                               "network": {"wifi": [{"ssid": w, "dhcp": not b.wifi_ip.get(w)}
+                                                    for w in b.wifi]}})
 
     def _got(self, topic: str, payload: bytes, retained: bool) -> None:
         leaf = topic.split("/", 3)[3]
@@ -557,17 +573,21 @@ class SimNet:
         n = max(1, 1000 // self.debug_period)
         up = int(time.time() - b.booted_at)
         head = {"from": now - 1000, "mono": up * 1000, "period_ms": self.debug_period}
+        slow = {**head, "period_ms": 1000}       # sys and net: one row a second
         for ch in self.debug_channels:
             if ch == "power":
-                msg = {**head, "mv": 4010 + random.randint(-6, 6), "soc": 80, "charge": "fast", "pg": True,
-                       "fault": "none", "rows": [{"ma": 280 + random.randint(-15, 15)} for _ in range(n)]}
+                # ma in 0.1 mA steps, positive into the cell; fault is the charger's raw register
+                msg = {**head, "mv": 4010 + random.randint(-6, 6), "soc": 80, "charge": "fast charge", "pg": True,
+                       "fault": 0, "rows": [{"ma": round(280 + random.uniform(-15, 15), 1)} for _ in range(n)]}
             elif ch == "sys":
-                msg = {**head, "rows": [{"heap": 180000 - random.randint(0, 900), "min_heap": 150000,
+                msg = {**slow, "rows": [{"heap": 180000 - random.randint(0, 900), "min_heap": 150000,
                                          "internal": 24600 + random.randint(0, 400), "psram": 7900000,
-                                         "up_s": up, "factory": b.factory_mode} for _ in range(n)]}
+                                         "up_s": up, "factory": int(b.factory_mode)}]}
             elif ch == "net":
-                msg = {**head, "rows": [{"wifi": self.ssid, "rssi": -52 + random.randint(-3, 3),
-                                         "broker1": "connected" if self.link else "off"} for _ in range(n)]}
+                row = {"wifi": bool(self.ssid), "broker1": bool(self.link)}
+                if row["wifi"]:
+                    row["rssi"] = -52 + random.randint(-3, 3)      # left out without Wi-Fi
+                msg = {**slow, "rows": [row]}
             else:
                 msg = {"lines": [f"[uplink] status sent ({b.version})"]}
             self.debug_link.publish(f"mcold/{b.sn}/debug/{ch}", json.dumps(msg))
@@ -614,6 +634,15 @@ class SimNet:
         if leave:                     # its network is gone: off the line's Wi-Fi
             self.broker.later(0.5, self.check)
 
+
+# config.cpp defaults, and the keys a settings document may change (docs/app/device-settings.md)
+CONFIG_DEFAULTS = {"sample_period_s": 300, "upload_period_s": 300, "gnss_period_s": 1800, "tz_offset_min": 420,
+                   "temp_adj_c100": 0, "alarm_dwell_s": 300, "alarm_hyst_c10": 5, "buzzer_enabled": 1,
+                   "buzzer_volume": 100, "led_bright_pct": 20, "led_front_pct": 2, "led_status_s": 900,
+                   "accel_wake_ths": 2, "batt_trip_mv": 3550, "batt_off_mv": 3400, "idle_wake_s": 3600,
+                   "sleep_en": 1, "usb_drive": 1}
+REMOTE_KEYS = ("sample_period_s", "temp_adj_c100", "alarm_dwell_s", "alarm_hyst_c10", "buzzer_enabled",
+               "buzzer_volume", "idle_wake_s", "accel_wake_ths", "upload_period_s", "usb_drive")
 
 # seconds a command over MQTT takes on the real box (scaled by the broker's speed)
 DURATION_RPC = {"FACTORY_TEST": 20.0, "IDENTIFY": 0.3, "GET_DEBUG": 0.3}

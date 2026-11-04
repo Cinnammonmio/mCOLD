@@ -22,6 +22,7 @@ Step types (profile `rack:`):
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 import json
 import os
 import threading
@@ -37,6 +38,7 @@ from .runner import FAIL, PASS, SKIP, StepFailed, StepResult
 from .site import Site, mask
 
 DEBUG_DIR = os.path.join(proflib.FLASHER, "records", "debug")
+_QIDS = itertools.count(1)       # question ids, unique across every rack of the process
 
 
 def dig(d: dict, path: str):
@@ -437,7 +439,6 @@ class Rack:
         self.boxes: dict[str, RackBox] = {}
         self.lock = threading.RLock()
         self.questions: list[RackQuestion] = []
-        self._qid = 0
         self.auto = auto                 # a box that comes online starts by itself
         self.operator = ""
         self.last_rev: dict[str, int] = {}
@@ -579,8 +580,7 @@ class Rack:
 
     def ask(self, rb: RackBox, text: str, repeat: bool = False) -> bool | None:
         with self.lock:
-            self._qid += 1
-            q = RackQuestion(self._qid, rb.sn, rb.unit, text, repeat)
+            q = RackQuestion(next(_QIDS), rb.sn, rb.unit, text, repeat)
             self.questions.append(q)
         rb.state = "ask"
         try:

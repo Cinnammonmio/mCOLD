@@ -256,3 +256,42 @@ not know of (another topic, or more fields in `status`)? If not, and the
 user wants memory and reset in the always part, the cheapest place is
 `status`: e.g. `"sys":{"internal":N,"min_internal":N,"up_s":N,"reset":"..."}`
 -- please say what you'd add and I'll show it.
+
+## 2026-11-04 10:30 [flasher] retest, long test, per-device settings on the web line
+New on the web line (user asked for all three, before and after shipping):
+
+1. **Retest** (stage `retest`): the full line set again -- online, GET_DEBUG
+   must say `factory_mode: true`, status, DIAG_RUN (FACTORY_TEST fallback),
+   identify / LEDs / buzzer / EPD confirms, debug pull. No OTA, no config doc,
+   no hand-over. Before shipping the box is still in factory mode. **After
+   shipping** the page asks for the USB cable, opens the product firmware's
+   own console port (303A:4003, not the JTAG one), writes `factory on\r\n` and
+   waits up to 4 s for the text `factory mode on`. Then the retest runs; a
+   pass puts it back to "passed, waiting to ship" and the ship button sends
+   FACTORY_DONE again.
+   **Question**: is `factory on` -> `factory mode on` exactly the console
+   command and reply in dev.66, and does it persist (`factory/on`=1) over a
+   reboot? If the words differ, tell me and I change one regex.
+2. **Long test** (stage `soak`): read-only, so it runs with factory mode on
+   or off. Every 60 s: the latest retained `status` plus one `GET_DEBUG` on the
+   rpc channel when the box is online. Stops when the person presses stop,
+   then writes findings as steps: online share and longest gap (> 5 min =
+   FAIL), restarts (boot count up or uptime back to zero, with reset reasons),
+   a core dump that appeared during the run, temperature read failures,
+   battery/charge ranges, RSSI, lowest internal RAM (< 10 KB = FAIL, per your
+   13:40). **Please confirm GET_DEBUG is answered outside factory mode** (your
+   15:20 entry lists it as read-only; I rely on that after shipping).
+3. **Per-device settings**: the dialog shows `config` from
+   `mcold/<sn>/settings` and only keys in its `editable` list, with the
+   profile's ranges. Save sends a settings doc with only the changed keys and
+   waits for `config/state`. In factory mode the doc carries `"factory":true`
+   (moves factory_rev). After shipping it is a plain doc with
+   rev = max(server_rev, factory_rev, last config/state rev) + 1, so it moves
+   the box's **server_rev**: the real server's next document must use a
+   higher rev. I tell the server team in docs/web.md; say if you would rather
+   the line never send plain docs.
+
+Simulator: `status` now repeats every 30 s in factory mode and 5 min after
+(I assumed your cadence from 13:40; correct me if not). Stream fields shown
+per 13:40: fault 0 = none, factory 0/1, wifi/broker1 booleans, rssi missing
+without Wi-Fi, ma in 0.1 mA, null/missing -> "—".

@@ -37,6 +37,7 @@
       <div class="kpi k-ask" data-f="ask"><span>รอคนดู</span><b>0</b></div>
       <div class="kpi k-pass" data-f="pass"><span>ผ่าน รอส่งมอบ</span><b>0</b></div>
       <div class="kpi k-ship" data-f="shipped"><span>ส่งมอบแล้ว</span><b>0</b></div>
+      <div class="kpi k-soak" data-f="soak"><span>ทดสอบนาน</span><b>0</b></div>
       <div class="kpi k-fail" data-f="fail"><span>ไม่ผ่าน</span><b>0</b></div>
     </div>
     <div class="toolbar">
@@ -44,11 +45,12 @@
       <button class="btn" id="testall" title="เริ่มทดสอบทุกเครื่องที่ online และยังไม่ผ่าน"><span data-icon="play"></span>ทดสอบเครื่องที่พร้อม</button>
       <label class="switch" title="เครื่องที่ขึ้น online แล้วเริ่มทดสอบเอง"><input type="checkbox" id="auto">ทดสอบเองเมื่อ online</label>
       <button class="btn" id="shipall" title="ปิดโหมดโรงงาน ใส่ Wi-Fi ลูกค้า ทุกเครื่องที่ผ่านและยังไม่ส่งมอบ"><span data-icon="truck"></span>ส่งมอบเครื่องที่ผ่าน</button>
-      <span class="note" id="hint">กดตัวเลขด้านบนเพื่อกรอง · ตอบคำถามด้วยคีย์ Y / N / R</span>
+      <button class="btn" id="soakall" title="อ่านค่าทุกนาทีจนกว่าจะกดจบ: ทุกเครื่อง online ในล็อตที่ยังไม่ได้ทดสอบนาน"><span data-icon="clock"></span>ทดสอบนานทุกเครื่อง</button>
+      <button class="btn" id="soakstop" hidden title="จบทดสอบนานทุกเครื่องแล้วสรุปผล"><span data-icon="stop"></span>จบทดสอบนานทั้งหมด</button>
+      <span class="note" id="hint">กดตัวเลขด้านบนเพื่อกรอง · คำถามอยู่ในช่องของเครื่อง: คีย์ Y / N / R ตอบข้อที่รอนานสุด (กรอบหนา)</span>
     </div>
     <div class="grid" id="grid"></div>
     <div class="empty" id="empty" hidden>ยังไม่มีเครื่องในล็อตนี้ · กด <b>เพิ่มเครื่อง</b> เสียบสาย USB ที่กล่อง แล้วกด <b>เพิ่ม</b></div>
-    <div class="rq" id="rq" hidden></div>
   </main>
 
   <aside class="add" id="add" hidden>
@@ -84,6 +86,30 @@
       <label class="switch"><input type="checkbox" id="dbgon">เปิด stream</label></h4>
       <div class="dbg" id="dbgch"></div><pre class="dlog" id="dbglog" hidden></pre></div>
   </div></dialog>
+
+<dialog id="facdlg" style="width:min(560px,calc(100vw - 32px))"><header><span data-icon="plug"></span><b id="factitle">ทดสอบซ้ำ</b>
+  <button class="btn sm" data-close>ยกเลิก</button></header>
+  <div class="dbody"><p style="margin-top:0">เครื่องนี้ส่งมอบแล้ว <b>โหมดโรงงานปิดอยู่</b> กล่องไม่รับคำสั่งทดสอบทาง MQTT
+    ต้องเปิดโหมดโรงงานทางสาย USB ก่อน</p>
+    <ol class="note" style="font-size:13px;padding-left:18px"><li>เสียบสาย USB ที่กล่อง (กล่องเปิดอยู่ ใช้ firmware ปกติ)</li>
+      <li>กดปุ่มด้านล่าง เลือกพอร์ต <b>mCOLD</b> (console) ไม่ใช่ USB JTAG</li><li>เห็น "เปิดโหมดโรงงานแล้ว" ถอดสายได้ ทดสอบซ้ำเริ่มเอง</li></ol>
+    <div class="formerr" id="facerr" hidden></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap">
+      <button class="btn" id="facskip" title="กล่องเปิดโหมดโรงงานไว้แล้ว (เช่น ทาง console เอง)">เปิดไว้แล้ว ทดสอบเลย</button>
+      <button class="btn go" id="facgo"><span data-icon="plug"></span>เปิดโหมดโรงงาน (เลือกพอร์ต)</button></div></div></dialog>
+
+<dialog id="soakdlg"><header><span data-icon="clock"></span><b id="soaktitle">ทดสอบนาน</b><button class="btn sm" data-close>ปิด</button></header>
+  <div class="dbody"><div id="soakbody"></div><div class="dbg" id="soakcharts" style="margin-top:12px"></div>
+    <div class="note" style="margin-top:10px">อ่าน status ที่กล่องส่งตลอด + GET_DEBUG ทุกนาที · ไม่ปกติเมื่อ: หลุด online นานกว่า 5 นาที,
+      รีสตาร์ท, มี core dump ใหม่, อ่านอุณหภูมิไม่ได้, RAM ภายในต่ำกว่า 10 KB · ผลสรุปเก็บในประวัติของเครื่อง</div></div></dialog>
+
+<dialog id="cfgdlg" style="width:min(820px,calc(100vw - 32px))"><header><span data-icon="gear"></span><b id="cfgtitle">ตั้งค่าเครื่อง</b>
+  <button class="btn sm go" id="cfgsave"><span data-icon="check"></span>ส่งไปที่กล่อง</button><button class="btn sm" data-close>ปิด</button></header>
+  <div class="dbody form"><div class="banner info" id="cfgnote"></div>
+    <table class="cfg"><thead><tr><th>ค่า</th><th>key</th><th>ช่วง</th><th>ในกล่องตอนนี้</th><th>ค่าใหม่</th></tr></thead><tbody id="cfgbody"></tbody></table>
+    <div class="note" id="cfgnet" style="margin-top:8px"></div>
+    <div class="formerr" id="cfgerr" hidden></div><div class="banner" id="cfgres" hidden style="margin-top:12px"></div>
+    <div class="note" style="margin-top:12px">ส่งเฉพาะค่าที่เปลี่ยน (แถวสีเหลือง) ผ่าน MQTT แล้วรอกล่องตอบ config/state · ค่าตั้งต้นของเครื่องใหม่อยู่ที่หน้า ตั้งค่า</div></div></dialog>
 
 <dialog id="sumdlg"><header><span data-icon="list"></span><b id="sumtitle">สรุป SN</b>
   <a class="btn sm" id="sumcsv" href="#" download><span data-icon="download"></span>CSV</a><button class="btn sm" data-close>ปิด</button></header>

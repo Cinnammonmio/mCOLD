@@ -1,5 +1,5 @@
 // mCOLD Line: the devices of a lot, adding one over USB, the tests, the debug stream.
-import { addBox, NeedRom, STEPS } from "./usb.js";
+import { addBox, factoryOn, NeedRom, STEPS } from "./usb.js";
 
 const ICONS = {
   snow: '<path d="M12 2v20M4.9 4.9l14.2 14.2M2 12h20M4.9 19.1L19.1 4.9M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5M3.5 9l2.5 3-2.5 3M20.5 9L18 12l2.5 3"/>',
@@ -108,6 +108,7 @@ async function loadConfig() {
 
 /* ---- the devices ---- */
 const tiles = new Map();
+const ACTIVE = ["running", "ask", "shipping"];
 function tile(d) {
   let t = tiles.get(d.sn);
   if (!t) {
@@ -116,17 +117,28 @@ function tile(d) {
       <div class="ids"><span class="k">SN</span><span class="v sn"></span><span class="k">MAC</span><span class="v mac"></span>
         <span class="k">IP</span><span class="v ip"></span><span class="k">FW</span><span class="v fw"></span></div>
       <div class="bar"><i></i></div><div class="st"></div>
+      <div class="tq" hidden><p></p><div class="qb">
+        <button class="yes">${icon("check")}ผ่าน<kbd>Y</kbd></button><button class="no">${icon("x")}ไม่ผ่าน<kbd>N</kbd></button>
+        <button class="again" title="สั่งกล่องทำอีกครั้ง (R)">${icon("reset")}<kbd>R</kbd></button></div></div>
+      <div class="soak" hidden><div class="sh"><span class="sl"></span><button class="btn sm icon s-view" title="กราฟและสรุป">${icon("list")}</button>
+        <button class="btn sm s-stop" title="จบทดสอบนานแล้วสรุปผล">${icon("stop")}จบ</button></div><div class="sv"></div><div class="sp"></div></div>
       <div class="acts"><button class="btn sm a-go">${icon("play")}<span>ทดสอบ</span></button>
+        <button class="btn sm a-retest" title="ทดสอบเต็มชุดอีกครั้ง (ส่งมอบแล้ว: เปิดโหมดโรงงานผ่าน USB ก่อน)">${icon("reset")}<span>ทดสอบซ้ำ</span></button>
         <button class="btn sm a-stop">${icon("stop")}หยุด</button>
         <button class="btn sm a-ship" title="ปิดโหมดโรงงาน ใส่ Wi-Fi ลูกค้า (Wi-Fi โรงงานยังอยู่ เป็น DHCP)">${icon("truck")}ส่งมอบ</button>
+        <button class="btn sm a-soak" title="อ่านค่ากล่องทุกนาทีจนกว่าจะกดจบ แล้วสรุปผล">${icon("clock")}ทดสอบนาน</button>
         <label class="switch a-dbg" title="เปิด/ปิด stream (client ตัวที่สองของกล่อง → debug broker)"><input type="checkbox">stream</label>
-        <button class="btn sm icon a-view" title="ดู debug: ข้อมูลปกติ, GET_DEBUG, stream">${icon("bug")}</button>
-        <button class="btn sm icon a-log" title="ประวัติ">${icon("log")}</button></div>`;
+        <span class="tools"><button class="btn sm icon a-view" title="ดู debug: ข้อมูลปกติ, GET_DEBUG, stream">${icon("bug")}</button>
+        <button class="btn sm icon a-cfg" title="ตั้งค่าเครื่องนี้">${icon("gear")}</button>
+        <button class="btn sm icon a-log" title="ประวัติ">${icon("log")}</button></span></div>`;
     const q = (s) => el.querySelector(s);
     t = { el, u: q(".u"), badge: q(".badge"), sn: q(".sn"), mac: q(".mac"), ip: q(".ip"), fw: q(".fw"), bar: q(".bar i"),
           st: q(".st"), go: q(".a-go"), golbl: q(".a-go span"), stop: q(".a-stop"), dbg: q(".a-dbg"), dbgin: q(".a-dbg input"),
-          view: q(".a-view"), log: q(".a-log") };
+          view: q(".a-view"), log: q(".a-log"), ship: q(".a-ship"), retest: q(".a-retest"), soakb: q(".a-soak"), cfg: q(".a-cfg"),
+          tq: q(".tq"), tqp: q(".tq p"), again: q(".tq .again"), soak: q(".soak"), sl: q(".soak .sl"), sv: q(".soak .sv"),
+          sp: q(".soak .sp") };
     t.go.onclick = () => { beep(); post("/api/line/start", { sns: [t.d.sn], operator: op.value }); };
+    t.retest.onclick = () => retest(t.d);
     t.stop.onclick = () => post(`/api/line/stop/${encodeURIComponent(t.d.sn)}`);
     t.dbgin.onchange = async () => {
       const j = await post(`/api/devices/${encodeURIComponent(t.d.sn)}/debug`, { on: t.dbgin.checked, minutes: 60 });
@@ -134,47 +146,95 @@ function tile(d) {
     };
     t.view.onclick = () => openDebug(t.d);
     t.log.onclick = () => openLog(t.d);
-    t.ship = el.querySelector(".a-ship");
+    t.cfg.onclick = () => openCfg(t.d);
     t.ship.onclick = () => { beep(); post("/api/ship/start", { sns: [t.d.sn], operator: op.value }); };
+    t.soakb.onclick = async () => {
+      const j = await post("/api/soak/start", { sns: [t.d.sn], operator: op.value });
+      if (!j.error) toast(`เริ่มทดสอบนาน ${t.d.sn}`, true);
+    };
+    q(".s-stop").onclick = () => stopSoak([t.d.sn]);
+    q(".s-view").onclick = () => openSoak(t.d);
+    q(".tq .yes").onclick = () => t.q && answer(t.q, true);
+    q(".tq .no").onclick = () => t.q && answer(t.q, false);
+    t.again.onclick = () => t.q && answer(t.q, "again");
     tiles.set(d.sn, t);
   }
   t.d = d;
-  if (t.el.dataset.state !== d.state) t.el.dataset.state = d.state;
-  text(t.u, pad(d.unit)); text(t.badge, BADGE[d.state] || d.state);
+  const q = (devs.questions || []).find((x) => x.sn === d.sn && !answered.has(x.id));
+  const state = d.state === "ask" && !q ? "running" : d.state;      // answered: the box carries on
+  if (t.el.dataset.state !== state) t.el.dataset.state = state;
+  text(t.u, pad(d.unit)); text(t.badge, (BADGE[state] || state) + (d.phase === "retest" && ACTIVE.includes(state) ? " (ซ้ำ)" : ""));
   text(t.sn, d.sn || "—"); text(t.mac, d.mac || "—"); text(t.ip, d.ip || "—"); text(t.fw, d.fw || "—");
   t.bar.style.width = Math.round((d.progress || 0) * 100) + "%";
   const f = d.fail || {};
-  text(t.st, ["fail", "usb_fail", "ship_fail"].includes(d.state) ? `${f.step || ""}${f.detail ? " · " + f.detail : ""}`
-           : ["running", "ask", "shipping"].includes(d.state) ? (d.step_name || "")
-           : d.state === "pass" ? "ผ่านทุกข้อ · อยู่ Wi-Fi โรงงาน ทดสอบ/debug ต่อได้ จนกว่าจะส่งมอบ"
+  text(t.st, ["fail", "usb_fail", "ship_fail"].includes(d.state) ? `${d.phase === "retest" ? "ทดสอบซ้ำ: " : ""}${f.step || ""}${f.detail ? " · " + f.detail : ""}`
+           : ACTIVE.includes(d.state) ? (d.step_name || "")
+           : d.state === "pass" ? (d.phase === "retest" ? "ทดสอบซ้ำผ่าน" : "ผ่านทุกข้อ") + " · อยู่ Wi-Fi โรงงาน ทดสอบ/debug ต่อได้ จนกว่าจะส่งมอบ"
            : d.state === "shipped" ? "ส่งมอบแล้ว · โหมดโรงงานปิด · มี Wi-Fi ลูกค้า (Wi-Fi โรงงานยังอยู่)"
            : d.state === "waiting" ? "รอกล่องต่อ Wi-Fi + broker"
            : d.state === "online" ? "พร้อมทดสอบ" : d.state === "flashing" ? "กำลังเขียนผ่าน USB" : "");
   t.st.title = f.help || "";
-  const active = ["running", "ask", "shipping"].includes(d.state);
-  t.go.hidden = active || !["online", "fail", "stopped"].includes(d.state);
-  t.ship.hidden = !["pass", "ship_fail"].includes(d.state) || !d.online;
+  // the question waiting on this box, answered right here
+  t.q = q || null;
+  t.tq.hidden = !q;
+  if (q) {
+    text(t.tqp, q.text);
+    t.again.hidden = !q.repeat;
+    t.tq.classList.toggle("first", q.id === firstQ());
+  }
+  // the long test: what it read last and what is not normal so far
+  const sk = d.soak;
+  t.soak.hidden = !sk || (!sk.running && !sk.result);
+  if (sk && sk.running) {
+    t.soak.className = "soak run" + (sk.problems.length ? " bad" : "");
+    const l = sk.last || {};
+    text(t.sl, `ทดสอบนาน ${hm(sk.elapsed)}`);
+    t.sl.title = `อ่านแล้ว ${sk.samples} ครั้ง`;
+    text(t.sv, [l.online === false ? "offline" : null, l.temp != null ? `${l.temp} °C` : null, l.rssi != null ? `${l.rssi} dBm` : null,
+                l.soc != null ? `แบต ${l.soc}%` : null, l.internal != null ? `RAM ${kb(l.internal)}` : null].filter(Boolean).join(" · "));
+    text(t.sp, sk.problems.join(" · "));
+  } else if (sk && sk.result) {
+    t.soak.className = "soak done " + sk.result;
+    text(t.sl, `ทดสอบนานล่าสุด: ${sk.result === "PASS" ? "ปกติ" : "ไม่ปกติ"}`);
+    text(t.sv, ""); text(t.sp, sk.problems.join(" · "));
+  }
+  const active = ACTIVE.includes(d.state);
+  const retestPhase = d.phase === "retest";
+  t.go.hidden = active || !(d.state === "online" || (["fail", "stopped"].includes(d.state) && !retestPhase));
   text(t.golbl, d.state === "online" ? "ทดสอบ" : "ทำซ้ำ");
+  t.retest.hidden = active || !d.online || !(["pass", "shipped", "ship_fail"].includes(d.state)
+                                              || (["fail", "stopped"].includes(d.state) && retestPhase));
+  t.retest.querySelector("span").textContent = ["fail", "stopped"].includes(d.state) ? "ทำซ้ำ" : "ทดสอบซ้ำ";
+  t.ship.hidden = !["pass", "ship_fail"].includes(d.state) || !d.online;
   t.stop.hidden = !active;
+  t.soakb.hidden = !d.online || !!(sk && sk.running) || d.state === "flashing";
   t.dbg.hidden = !cfg.debug_available || !d.online;      // the stream: a debug broker and the box online
   t.view.hidden = !d.sn || d.state === "flashing";         // the status it sends all the time: any box
+  t.cfg.hidden = !d.sn || !["online", "pass", "fail", "stopped", "shipped", "ship_fail"].includes(d.state);
   if (document.activeElement !== t.dbgin) t.dbgin.checked = !!d.debug;
   t.log.hidden = !d.mac;
   return t;
 }
+const hm = (s) => { s = Math.max(0, s | 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  return h >= 24 ? `${Math.floor(h / 24)} วัน ${h % 24} ชม.` : h ? `${h} ชม. ${m} นาที` : m ? `${m} นาที` : `${s} วินาที`; };
 
 const bucket = (s) => ["usb_fail", "stopped", "ship_fail"].includes(s) ? "fail" : s === "shipping" ? "running" : s;
+const pending = () => (devs ? devs.questions : []).filter((x) => !answered.has(x.id));
+const firstQ = () => (pending()[0] || {}).id;
 function render() {
   const d = devs;
   const rows = [...d.flashing.map((x) => ({ ...x, mac: x.mac, progress: 0 })), ...d.rows];
   const counts = {};
   for (const r of rows) { const b = bucket(r.state); counts[b] = (counts[b] || 0) + 1; }
-  counts.ask = d.questions.length;
+  const qs = pending();
+  counts.ask = new Set(qs.map((q) => q.sn)).size;
+  counts.soak = rows.filter((r) => r.soak && r.soak.running).length;
   document.querySelectorAll("#kpis .kpi").forEach((k) => {
     text(k.querySelector("b"), String(counts[k.dataset.f] || 0));
     k.classList.toggle("sel", k.dataset.f === filter);
-    if (k.dataset.f === "ask") k.classList.toggle("hot", d.questions.length > 0);
+    if (k.dataset.f === "ask") k.classList.toggle("hot", qs.length > 0);
   });
+  $("soakstop").hidden = !counts.soak;
   const link = $("link");
   link.classList.toggle("up", d.broker.connected);
   text(link.querySelector("span"), d.broker.connected ? "broker ต่อแล้ว" : "broker ไม่ได้ต่อ");
@@ -183,57 +243,26 @@ function render() {
   const err = $("err"); const msg = !d.broker.connected && d.broker.error ? "MQTT: " + d.broker.error : "";
   err.hidden = !msg; text(err, msg);
 
-  renderQuestion(d.questions, rows);
+  if (qs.length && qs[qs.length - 1].id > lastQ) { lastQ = qs[qs.length - 1].id; beep(); }
   const grid = $("grid");
-  const want = rows.filter((r) => !filter || bucket(r.state) === filter || (filter === "ask" && r.waiting));
+  const asked = new Set(qs.map((q) => q.sn));
+  const want = rows.filter((r) => !filter || (filter === "ask" ? asked.has(r.sn) : filter === "soak" ? r.soak && r.soak.running
+                                                                                 : bucket(r.state) === filter));
   const keep = new Set(want.map((r) => r.sn));
   for (const [sn, t] of tiles) if (!keep.has(sn)) { t.el.remove(); if (!rows.some((r) => r.sn === sn)) tiles.delete(sn); }
   want.sort((a, b) => (a.unit ?? 1e9) - (b.unit ?? 1e9) || String(a.sn).localeCompare(b.sn));
   want.forEach((r, i) => { const t = tile(r); if (grid.children[i] !== t.el) grid.insertBefore(t.el, grid.children[i] || null); });
   $("empty").hidden = rows.length > 0;
-  document.title = (d.questions.length ? `(${d.questions.length}) ` : "") + "mCOLD Line";
-  if (logMac && devs) { /* the log dialog refreshes itself */ }
+  document.title = (qs.length ? `(${qs.length}) ` : "") + "mCOLD Line";
 }
 
-let rqId = 0;
 const answered = new Set();
-function answer(q, v) { answered.add(q.id); renderQuestion(devs.questions, []); post("/api/line/answer", { qid: q.id, value: v }, true); }
-function renderQuestion(all, rows) {
-  const qs = all.filter((x) => !answered.has(x.id));
-  const rq = $("rq"), q = qs[0];
-  rq.hidden = !q;
-  if (!q) { rqId = 0; return; }
-  if (q.id !== rqId) {
-    rqId = q.id;
-    if (q.id > lastQ) { lastQ = q.id; beep(); }
-    const box = rows.find((r) => r.sn === q.sn) || {};
-    rq.innerHTML = `<div class="who"><small>เครื่อง</small><b></b></div><div class="what"><p></p><div class="meta"></div></div>
-      <div class="btns"><button class="yes">${icon("check")}ใช่ / ผ่าน <kbd>Y</kbd></button>
-        <button class="no">${icon("x")}ไม่ผ่าน <kbd>N</kbd></button>
-        ${q.repeat ? `<button class="again" title="สั่งกล่องทำอีกครั้ง">${icon("reset")}ทำซ้ำ <kbd>R</kbd></button>` : ""}</div>
-      <div class="next"></div>`;
-    rq.querySelector(".who b").textContent = pad(q.unit);
-    rq.querySelector(".what p").textContent = q.text;
-    rq.querySelector(".meta").textContent = q.sn + (box.ip ? " · " + box.ip : "");
-    const send = (v) => answer(q, v);
-    rq.querySelector(".yes").onclick = () => send(true);
-    rq.querySelector(".no").onclick = () => send(false);
-    if (q.repeat) rq.querySelector(".again").onclick = () => send("again");
-  }
-  const nx = rq.querySelector(".next"), more = qs.slice(1);
-  const key = more.map((x) => x.id).join(",");
-  if (nx.dataset.k !== key) {
-    nx.dataset.k = key; nx.innerHTML = "";
-    if (more.length) {
-      nx.appendChild(document.createTextNode(`รอคิวอีก ${more.length} ข้อ:`));
-      for (const x of more.slice(0, 30)) { const s = document.createElement("span"); s.textContent = pad(x.unit); nx.appendChild(s); }
-    }
-  }
-}
+function answer(q, v) { answered.add(q.id); if (devs) render(); post("/api/line/answer", { qid: q.id, value: v }, true); }
+// Y / N / R: the oldest question waiting (marked in its tile)
 document.addEventListener("keydown", (e) => {
-  if (!devs || !devs.questions.length || e.key === "Enter" || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (!devs || e.key === "Enter" || e.ctrlKey || e.metaKey || e.altKey) return;
   if (document.querySelector("dialog[open]") || ["INPUT", "SELECT", "TEXTAREA"].includes((document.activeElement || {}).tagName)) return;
-  const q = devs.questions.find((x) => !answered.has(x.id));
+  const q = pending()[0];
   if (!q) return;
   const k = e.key.toLowerCase();
   const v = k === "y" ? true : k === "n" ? false : (k === "r" && q.repeat) ? "again" : undefined;
@@ -243,6 +272,180 @@ document.addEventListener("keydown", (e) => {
 document.querySelectorAll("#kpis .kpi").forEach((k) => {
   k.onclick = () => { filter = filter === k.dataset.f ? "" : k.dataset.f; store("line.filter", filter); render(); };
 });
+
+/* ---- retest: before shipping straight away; after, factory mode back on over the USB cable first ---- */
+let facDev = null;
+async function startRetest(sn) {
+  beep();
+  const j = await post("/api/retest/start", { sns: [sn], operator: op.value });
+  if (!j.error) toast(`เริ่มทดสอบซ้ำ ${sn}`, true);
+}
+function retest(d) {
+  if (!d.factory_off) { startRetest(d.sn); return; }
+  facDev = d;
+  text($("factitle"), `ทดสอบซ้ำ · เครื่อง ${pad(d.unit)} · ${d.sn}`);
+  $("facerr").hidden = true; $("facgo").disabled = false;
+  $("facdlg").showModal();
+}
+$("facgo").onclick = async () => {        // the click itself opens the port picker (Web Serial needs it)
+  $("facgo").disabled = true; $("facerr").hidden = true;
+  try {
+    await factoryOn(cfg, facDev.sn);
+    $("facdlg").close(); toast("เปิดโหมดโรงงานแล้ว · ถอดสายได้", true);
+    await startRetest(facDev.sn);
+  } catch (e) {
+    if (!(e && e.name === "NotFoundError")) { const x = $("facerr"); x.textContent = String(e && e.message || e); x.hidden = false; }
+  } finally { $("facgo").disabled = false; }
+}
+$("facskip").onclick = () => { $("facdlg").close(); startRetest(facDev.sn); };
+
+/* ---- the long test ---- */
+async function stopSoak(sns) {
+  const n = sns.length || (devs ? devs.rows.filter((r) => r.soak && r.soak.running).length : 0);
+  if (!confirm(`จบทดสอบนาน ${n} เครื่อง แล้วสรุปผล?`)) return;
+  const j = await post("/api/soak/stop", { sns });
+  if (j.error) return;
+  poll();
+  if (j.stopped.length === 1) openSoak(devs.rows.find((r) => r.sn === j.stopped[0].sn) || { sn: j.stopped[0].sn }, j.stopped[0]);
+  else showSoakResults(j.stopped);
+}
+$("soakall").onclick = async () => {
+  const j = await post("/api/soak/start", { sns: [], operator: op.value });
+  if (!j.error) toast(j.started ? `เริ่มทดสอบนาน ${j.started} เครื่อง` : "ไม่มีเครื่อง online ที่ยังไม่ได้ทดสอบนาน", !!j.started);
+};
+$("soakstop").onclick = () => stopSoak([]);
+function findingsTable(box, findings) {
+  const tb = document.createElement("table"); tb.className = "findings";
+  for (const f of findings) {
+    const tr = document.createElement("tr");
+    for (const [v, c] of [[f.result === "PASS" ? "ปกติ" : "ไม่ปกติ", f.result], [f.name, ""], [f.detail, "wrap"]]) {
+      const td = document.createElement("td"); td.textContent = v; if (c) td.className = c; tr.appendChild(td);
+    }
+    tb.appendChild(tr);
+  }
+  box.appendChild(tb);
+}
+function showSoakResults(list) {
+  soakSn = "";
+  text($("soaktitle"), `สรุปทดสอบนาน · ${list.length} เครื่อง`);
+  const box = $("soakbody"); box.innerHTML = "";
+  for (const r of list) {
+    const h = document.createElement("h4"); h.className = "sres";
+    h.innerHTML = '<span class="pill"></span><span class="mono"></span>';
+    h.firstChild.className = "pill " + r.result; h.firstChild.textContent = r.result === "PASS" ? "ปกติ" : "ไม่ปกติ";
+    h.lastChild.textContent = r.sn; box.appendChild(h); findingsTable(box, r.findings);
+  }
+  $("soakcharts").innerHTML = ""; $("soakspan")?.remove();
+  if (!$("soakdlg").open) $("soakdlg").showModal();
+}
+let soakSn = "", soakTimer = null;
+const SERIES = [["temp", "อุณหภูมิ (°C)"], ["rssi", "สัญญาณ Wi-Fi (dBm)"], ["soc", "แบต (%)"], ["ma", "กระแสแบต (mA)"],
+                ["internal", "RAM ภายใน (KB)", 1 / 1024], ["online", "online (1) / offline (0)"]];
+async function openSoak(d, stopped) {
+  soakSn = d.sn;
+  text($("soaktitle"), `ทดสอบนาน · เครื่อง ${pad(d.unit)} · ${d.sn}`);
+  const box = $("soakbody"); box.innerHTML = "";
+  const running = d.soak && d.soak.running && !stopped;
+  if (stopped) findingsTable(box, stopped.findings);
+  else if (running) {
+    const n = document.createElement("div"); n.className = "note";
+    n.textContent = `กำลังทดสอบ ${hm(d.soak.elapsed)} · อ่านแล้ว ${d.soak.samples} ครั้ง · กด จบ ที่ช่องของเครื่องเพื่อสรุปผล`
+      + (d.soak.problems.length ? " · ไม่ปกติ: " + d.soak.problems.join(" · ") : " · ยังปกติทุกข้อ");
+    box.appendChild(n);
+  } else {
+    const runs = await get(`/api/devices/${encodeURIComponent(d.mac)}/log`);
+    const r = runs.find((x) => x.stage === "soak" && x.result);
+    if (r) findingsTable(box, r.steps.map((s) => ({ name: s.name, result: s.result, detail: s.detail })));
+  }
+  if (!$("soakdlg").open) $("soakdlg").showModal();
+  drawSoak();
+}
+async function drawSoak() {
+  clearTimeout(soakTimer);
+  if (!soakSn || !$("soakdlg").open) return;
+  const j = await get(`/api/soak/${encodeURIComponent(soakSn)}`);
+  const host = $("soakcharts"); host.innerHTML = ""; $("soakspan")?.remove();
+  const sm = j.samples || [];
+  if (!sm.length) { host.innerHTML = '<div class="note">ยังไม่มีค่าที่อ่าน</div>'; }
+  for (const [k, label, scale] of SERIES) {
+    const pts = sm.map((s) => k === "online" ? (s.online ? 1 : 0) : typeof s[k] === "number" ? s[k] * (scale || 1) : null);
+    const nums = pts.filter((v) => v != null);
+    if (!nums.length) continue;
+    const el = document.createElement("div"); el.className = "ch";
+    el.innerHTML = `<h5><span></span><b></b></h5><canvas width="320" height="60"></canvas>`;
+    el.querySelector("span").textContent = label;
+    const lo = Math.min(...nums), hi = Math.max(...nums);
+    el.querySelector("b").textContent = k === "online" ? `${Math.round(100 * nums.filter((v) => v).length / nums.length)} %`
+      : `${+lo.toFixed(1)} – ${+hi.toFixed(1)}`;
+    host.appendChild(el); spark(el.querySelector("canvas"), pts);
+  }
+  if (sm.length) {
+    const n = document.createElement("div"); n.className = "note";
+    n.textContent = `${new Date(sm[0].at * 1000).toLocaleString("th-TH")} – ${new Date(sm[sm.length - 1].at * 1000).toLocaleString("th-TH")} · ${sm.length} ครั้ง ทุก ${j.interval} วินาที`;
+    n.id = "soakspan"; n.style.marginTop = "6px"; host.after(n);
+  }
+  soakTimer = setTimeout(drawSoak, 5000);
+}
+function spark(cv, pts) {
+  const nums = pts.filter((v) => v != null); const g = cv.getContext("2d");
+  const lo = Math.min(...nums), hi = Math.max(...nums), span = hi - lo || 1, n = Math.max(pts.length - 1, 1);
+  g.clearRect(0, 0, cv.width, cv.height);
+  g.strokeStyle = getComputedStyle(root).getPropertyValue("--accent"); g.lineWidth = 1.5; g.beginPath();
+  let pen = false;
+  pts.forEach((v, i) => {
+    if (v == null) { pen = false; return; }
+    const x = i * cv.width / n, y = cv.height - 3 - (v - lo) / span * (cv.height - 6);
+    if (pen) g.lineTo(x, y); else g.moveTo(x, y); pen = true;
+  });
+  g.stroke();
+}
+
+/* ---- one box's settings (its config values, over MQTT) ---- */
+let cfgDev = null, cfgCur = null;
+async function openCfg(d) {
+  cfgDev = d;
+  text($("cfgtitle"), `ตั้งค่าเครื่อง ${pad(d.unit)} · ${d.sn}`);
+  $("cfgerr").hidden = true; $("cfgres").hidden = true; $("cfgbody").innerHTML = ""; text($("cfgnote"), "กำลังอ่าน…");
+  if (!$("cfgdlg").open) $("cfgdlg").showModal();
+  const j = await post(`/api/devices/${encodeURIComponent(d.sn)}/config`, null, false, "GET");
+  if (j.error) { text($("cfgnote"), String(j.error)); return; }
+  cfgCur = j;
+  const nb = $("cfgnote");
+  nb.className = "banner " + (j.factory ? "info" : "warn");
+  text(nb, (j.factory ? "โหมดโรงงาน: ส่งเป็นเอกสารของสายผลิต (factory) ไม่กระทบ rev ของ server"
+                      : "ส่งมอบแล้ว: ส่งเป็นเอกสารตั้งค่าปกติ ขยับ server_rev ของกล่อง · ถ้า server ส่งเอกสารใหม่ทีหลัง ค่าจะถูกแทน")
+       + (j.reported ? "" : " · กล่องยังไม่ส่งค่าปัจจุบันมา") + (j.online ? "" : " · กล่อง offline: ส่งไม่ได้"));
+  const tb = $("cfgbody");
+  for (const [k, r] of Object.entries(j.keys)) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td></td><td class='k'></td><td class='note'></td><td class='mono cur'></td><td><input inputmode='numeric'></td>";
+    tr.children[0].textContent = r.label || k; tr.children[1].textContent = k;
+    tr.children[2].textContent = r.min != null ? `${r.min}–${r.max}` : "";
+    const v = j.config[k];
+    tr.children[3].textContent = v ?? "—";
+    const inp = tr.querySelector("input"); inp.dataset.key = k; inp.value = v ?? ""; inp.placeholder = r.default != null ? String(r.default) : "";
+    inp.oninput = () => tr.classList.toggle("chg", inp.value.trim() !== String(v ?? ""));
+    tb.appendChild(tr);
+  }
+  text($("cfgnet"), j.network.length ? "Wi-Fi ในกล่อง: " + j.network.join(", ") : "");
+  $("cfgsave").disabled = !j.online;
+}
+$("cfgsave").onclick = async () => {
+  const changes = {};
+  document.querySelectorAll("#cfgbody input").forEach((i) => {
+    const v = i.value.trim(); if (v !== "" && v !== String(cfgCur.config[i.dataset.key] ?? "")) changes[i.dataset.key] = v; });
+  if (!Object.keys(changes).length) { toast("ไม่มีค่าที่เปลี่ยน"); return; }
+  $("cfgsave").disabled = true; $("cfgerr").hidden = true; $("cfgres").hidden = true;
+  const j = await post(`/api/devices/${encodeURIComponent(cfgDev.sn)}/config`, { config: changes, operator: op.value }, true);
+  $("cfgsave").disabled = false;
+  if (j.error) { const e = $("cfgerr"); e.textContent = String(j.error); e.hidden = false; return; }
+  const res = $("cfgres"); res.hidden = false;
+  const ok = j.state === "ok";
+  res.className = "banner " + (ok ? "info" : "err");
+  res.textContent = ok ? (j.applied && j.applied.length ? "กล่องรับค่าแล้ว: " + j.applied.join(", ") : j.note || "กล่องรับแล้ว")
+                       : `กล่องไม่รับ (${j.state}): ${JSON.stringify(j.errors || j.why || "")}`;
+  if (ok) openCfg(cfgDev).then(() => { $("cfgres").hidden = false; });
+};
 
 let pollTimer = null;
 async function poll() {
@@ -416,17 +619,25 @@ const dur = (s) => { if (s == null) return "—"; s = Math.floor(s); const d = M
 const rssi = (v) => v == null ? ["—", ""] : [`${v} dBm · ${v >= -60 ? "ดีมาก" : v >= -70 ? "ดี" : v >= -80 ? "พอใช้" : "อ่อน"}`,
   v >= -70 ? "good" : v >= -80 ? "warn" : "bad"];
 const yes = (v, on = "เปิด", off = "ปิด") => v == null ? "—" : v ? on : off;
-// what each stream channel's fields mean (firmware dev.66, notes/firmware.md 17:10)
+// what each stream channel's fields mean (firmware dev.66, notes/firmware.md 13:40 / 17:10):
+// a value the box could not read comes as null or is left out -> "—"
+const num = (v, f) => typeof v === "number" ? f(v) : "—";
+const signed = (v, dp) => num(v, (x) => `${x > 0 ? "+" : ""}${x.toFixed(dp)}`);
+const RAM_LOW = 10240;     // internal RAM under ~10 KB: trouble (13:40)
 const CH = {
-  power: { title: "ไฟ / แบต", graph: ["ma", "กระแสแบต (mA)"], fields: (d, r) => [
-    ["กระแสแบต", `${r.ma > 0 ? "+" : ""}${r.ma} mA`, r.ma > 0 ? "good" : ""], ["แรงดัน", d.mv != null ? (d.mv / 1000).toFixed(3) + " V" : "—"],
-    ["แบต", d.soc != null ? d.soc + " %" : "—"], ["ชาร์จ", d.charge ?? "—"], ["ไฟเข้า (PG)", yes(d.pg, "มี", "ไม่มี")],
-    ["fault", d.fault ?? "—", d.fault && d.fault !== "none" ? "bad" : ""]] },
+  power: { title: "ไฟ / แบต", graph: ["ma", "กระแสแบต (mA, + = เข้าแบต)"], fields: (d, r) => [
+    ["กระแสแบต", typeof r.ma === "number" ? signed(r.ma, 1) + " mA" : "อ่านไม่ได้", typeof r.ma !== "number" ? "warn" : r.ma > 0 ? "good" : ""],
+    ["แรงดัน", num(d.mv, (v) => (v / 1000).toFixed(3) + " V")], ["แบต", num(d.soc, (v) => v + " %")],
+    ["ชาร์จ", d.charge ?? "—"], ["ไฟเข้า (PG)", yes(d.pg, "มี", "ไม่มี")],
+    ["fault", d.fault == null ? "—" : d.fault === 0 ? "ไม่มี" : "0x" + Number(d.fault).toString(16).padStart(2, "0"), d.fault ? "bad" : d.fault === 0 ? "good" : ""]] },
   sys: { title: "ระบบ / หน่วยความจำ", graph: ["internal", "RAM ภายใน (KB)"], fields: (d, r) => [
-    ["RAM ภายใน", kb(r.internal), r.internal < 8192 ? "bad" : r.internal < 16384 ? "warn" : "good"], ["heap", kb(r.heap)],
-    ["heap ต่ำสุด", kb(r.min_heap)], ["PSRAM ว่าง", kb(r.psram)], ["เปิดเครื่องมา", dur(r.up_s)], ["โหมดโรงงาน", yes(r.factory)]] },
+    ["RAM ภายใน", kb(r.internal), r.internal == null ? "" : r.internal < RAM_LOW ? "bad" : r.internal < 2 * RAM_LOW ? "warn" : "good"],
+    ["heap", kb(r.heap)], ["heap ต่ำสุด", kb(r.min_heap)], ["PSRAM ว่าง", kb(r.psram)], ["เปิดเครื่องมา", dur(r.up_s)],
+    ["โหมดโรงงาน", yes(r.factory)]] },
   net: { title: "เครือข่าย", graph: ["rssi", "สัญญาณ (dBm)"], fields: (d, r) => [
-    ["Wi-Fi", r.wifi || "—"], ["สัญญาณ", ...rssi(r.rssi)], ["broker หลัก", r.broker1 || "—", r.broker1 === "connected" ? "good" : "bad"]] },
+    ["Wi-Fi", yes(r.wifi, "ต่อแล้ว", "ไม่ได้ต่อ"), r.wifi ? "good" : r.wifi === false ? "bad" : ""],
+    ["สัญญาณ", ...(r.wifi === false ? ["—", ""] : rssi(r.rssi))],
+    ["broker หลัก", yes(r.broker1, "ต่อแล้ว", "ไม่ได้ต่อ"), r.broker1 ? "good" : r.broker1 === false ? "bad" : ""]] },
 };
 function kvs(box, list) {
   box.innerHTML = "";
@@ -442,8 +653,8 @@ function renderBase(m) {
   kvs($("dbgbase"), [
     ["สถานะ", m.online ? "online" : "offline", m.online ? "good" : "bad"],
     ["อุณหภูมิ", t.ok ? `${t.c} °C` : "อ่านไม่ได้", t.ok ? "" : "bad"],
-    ["แบต", p.soc != null ? `${p.soc} % · ${(p.mv / 1000).toFixed(2)} V` : "—"],
-    ["กระแส", p.ma != null ? `${p.ma > 0 ? "+" : ""}${p.ma} mA` : "—"], ["ชาร์จ", p.charge ?? "—"],
+    ["แบต", [num(p.soc, (v) => v + " %"), num(p.mv, (v) => (v / 1000).toFixed(2) + " V")].filter((x) => x !== "—").join(" · ") || "—"],
+    ["กระแส", num(p.ma, (v) => signed(v, Number.isInteger(v) ? 0 : 1) + " mA")], ["ชาร์จ", p.charge ?? "—"],
     ["ไฟเลี้ยงภายนอก", yes(p.external, "มี", "ไม่มี")], ["Wi-Fi", n.ssid || (n.connected ? "?" : "ไม่ได้ต่อ")],
     ["สัญญาณ", ...rssi(n.rssi)], ["IP", n.ip || "—"], ["firmware", `${fw.ver || "—"}${fw.slot ? " · " + fw.slot : ""}`],
     ["trip", tr.active ? `กำลังทำ #${tr.id}` : "ไม่มี", tr.active ? "warn" : ""], ["GNSS", g.fix ? "fix" : "ไม่มี fix"],
@@ -458,7 +669,7 @@ $("dbgget").onclick = async () => {
   const box = $("dbginfo"); box.hidden = false;
   kvs(box, [["GET_DEBUG", new Date().toLocaleTimeString("th-TH")], ["reset ล่าสุด", r.reset ?? "—"], ["boot ครั้งที่", r.boot ?? "—"],
     ["เปิดเครื่องมา", dur(r.uptime_s)], ["core dump", r.coredump ? "มี" : "ไม่มี", r.coredump ? "bad" : "good"],
-    ["RAM ภายใน", kb(r.internal), r.internal < 8192 ? "bad" : ""], ["RAM ภายในต่ำสุด", kb(r.min_internal)],
+    ["RAM ภายใน", kb(r.internal), r.internal < RAM_LOW ? "bad" : ""], ["RAM ภายในต่ำสุด", kb(r.min_internal)],
     ["ก้อนใหญ่สุด", kb(r.largest_internal)], ["heap", kb(r.heap)], ["heap ต่ำสุด", kb(r.min_heap)], ["PSRAM ว่าง", kb(r.psram)],
     ["โหมดโรงงาน", yes(r.factory_mode)], ["firmware", r.fw ?? "—"], ["ELF", r.elf ?? "—"]]);
 };
@@ -503,11 +714,11 @@ function onDebug(m) {
     el.querySelector("h5 span").textContent = spec ? spec.title : m.ch;
     $("dbgch").appendChild(el);
     const nums = Object.keys(rows[0]).filter((k) => typeof rows[0][k] === "number");
-    const key = spec && nums.includes(spec.graph[0]) ? spec.graph[0] : nums[0];
+    const key = spec ? spec.graph[0] : nums[0];      // a first row may lack it (unread)
     c = chans[m.ch] = { el, pts: [], key };
     text(el.querySelector(".gl"), spec ? spec.graph[1] : key || "");
   }
-  for (const r of rows) if (c.key) c.pts.push(c.key === "internal" ? r[c.key] / 1024 : r[c.key]);
+  for (const r of rows) if (c.key) { const v = r[c.key]; c.pts.push(typeof v !== "number" ? null : c.key === "internal" ? v / 1024 : v); }
   c.pts.splice(0, Math.max(0, c.pts.length - 300));
   const last = rows[rows.length - 1];
   const list = spec ? spec.fields(m.data, last)
@@ -518,13 +729,7 @@ function onDebug(m) {
     const b = document.createElement("b"); b.textContent = v ?? "—"; if (cls) b.className = cls;
     box.append(a, b);
   }
-  if (!c.pts.length) return;
-  const cv = c.el.querySelector("canvas"), g = cv.getContext("2d");
-  const lo = Math.min(...c.pts), hi = Math.max(...c.pts), span = hi - lo || 1;
-  g.clearRect(0, 0, cv.width, cv.height);
-  g.strokeStyle = getComputedStyle(root).getPropertyValue("--accent"); g.lineWidth = 1.5; g.beginPath();
-  c.pts.forEach((v, i) => { const x = i * cv.width / 300, y = cv.height - 3 - (v - lo) / span * (cv.height - 6); i ? g.lineTo(x, y) : g.moveTo(x, y); });
-  g.stroke();
+  if (c.pts.some((v) => v != null)) spark(c.el.querySelector("canvas"), c.pts);
 }
 
 /* ---- SN summary ---- */

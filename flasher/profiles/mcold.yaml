@@ -54,7 +54,10 @@ config_keys:
   gnss_period_s: {min: 300, max: 86400, default: 1800, label: "หาตำแหน่ง GNSS ทุก (วินาที, ระหว่าง trip)"}
   tz_offset_min: {min: -720, max: 840, default: 420, label: "เขตเวลาบนจอ (นาที จาก UTC)"}
   temp_adj_c100: {min: -1000, max: 1000, default: 0, label: "ปรับค่าอุณหภูมิ (0.01 °C)"}
+  alarm_dwell_s: {min: 0, max: 3600, default: 300, label: "นอกช่วงนานเท่านี้ก่อนเตือน (วินาที)"}
+  alarm_hyst_c10: {min: 0, max: 100, default: 5, label: "ระยะกลับเข้าช่วง (0.1 °C)"}
   buzzer_enabled: {min: 0, max: 1, default: 1, label: "เสียงเตือน (0 ปิด, 1 เปิด)"}
+  buzzer_volume: {min: 1, max: 100, default: 100, label: "ความดังเสียง (%)"}
   led_bright_pct: {min: 1, max: 100, default: 20, label: "ความสว่างไฟข้าง (%)"}
   led_front_pct: {min: 1, max: 100, default: 2, label: "ความสว่างไฟหน้า (%)"}
   led_status_s: {min: 60, max: 3600, default: 900, label: "กะพริบบอกว่ายังทำงานทุก (วินาที)"}
@@ -104,6 +107,7 @@ routes:
   - [quick, rack]
   - [usb, line]          # the line's web app (mflash/web): USB in the browser, the rest by MQTT
   - [usb, line, ship]    # ... and handed over to the customer's Wi-Fi when it leaves the company
+  - [usb, retest]        # tested again (before or after shipping), the full set
 
 # Done in the browser by the web app (Web Serial + esptool-js), recorded here.
 external_stages: [usb]
@@ -439,9 +443,66 @@ ship:
   - name: กล่องต่อ broker, firmware เป็นรุ่นจริง
     type: online
     timeout: 120
-    ip: true
-    firmware: production
+    firmware: production      # no IP check: a box shipped once is on DHCP
   - name: ส่งมอบ (ปิดโหมดโรงงาน, Wi-Fi ลูกค้า, Wi-Fi โรงงานเป็น DHCP)
     type: wifi_handover
     line_wifi: keep
     timeout: 120
+
+# ---- tested again: before or after shipping, the full set -----------------
+# The module tests need factory mode. Before shipping a box still has it; after
+# shipping the page asks for the USB cable once and sends `factory on` at the
+# console, then runs this. A box that passes is back to "passed, not shipped"
+# and is shipped again (FACTORY_DONE again).
+retest:
+  - name: กล่องต่อ broker
+    type: online
+    timeout: 120
+  - name: อยู่ในโหมดโรงงาน (คำสั่งทดสอบใช้ได้)
+    type: rpc
+    cmd: GET_DEBUG
+    timeout: 15
+    expect: {factory_mode: true}
+    help: "ส่งมอบไปแล้ว: เสียบ USB แล้วกด เปิดโหมดโรงงาน ในช่องของเครื่อง"
+  - name: อุณหภูมิและไฟเลี้ยงจาก status
+    type: status
+    expect: {temp.ok: true, power.external: true}
+    range: {temp.c: [-40, 85]}
+  - name: ทดสอบโมดูลอัตโนมัติ (I2C, อุณหภูมิ, GNSS, accel, NFC, ชาร์จ, ราง, trip log)
+    type: rpc
+    cmd: DIAG_RUN
+    args: {items: [i2c, temp, gnss, accel, nfc, charger, rails, logtest]}
+    timeout: 240
+    expect: {ok: true, i2c.ok: true, temp.ok: true, gnss.ok: true, accel.ok: true, nfc.ok: true,
+             charger.ok: true, rails.ok: true, logtest.ok: true}
+    range: {charger.ma: [250, 300]}
+    fallback:
+      cmd: FACTORY_TEST
+      args: {items: [i2c, temp, gnss, logtest], gnss_s: 15}
+      expect: {ok: true, i2c.ok: true, temp.ok: true, gnss.ok: true, logtest.ok: true}
+  - name: กล่องไหน (กะพริบ + beep)
+    type: identify_confirm
+    seconds: 10
+    ask: "เครื่อง {unit} ({ip}) คือกล่องที่กะพริบขาวและบี๊บอยู่?"
+  - name: ไฟทุกดวง ทุกสี
+    type: rpc_confirm
+    cmd: DIAG_RUN
+    args: {items: [leds]}
+    ask: "เครื่อง {unit}: ไฟ 4 ดวงติดไล่ครบ แดง เขียว น้ำเงิน ขาว?"
+    fallback: {cmd: IDENTIFY, args: {s: 8}, ask: "เครื่อง {unit}: ไฟทั้ง 4 ดวงกะพริบขาวครบ? (firmware นี้ยังไล่สีไม่ได้)"}
+  - name: เสียง buzzer
+    type: rpc_confirm
+    cmd: DIAG_RUN
+    args: {items: [buzzer]}
+    ask: "เครื่อง {unit}: ได้ยินเสียง beep 3 ครั้ง ดังชัด?"
+    fallback: {cmd: IDENTIFY, args: {s: 4}, ask: "เครื่อง {unit}: ได้ยินเสียง beep ดังชัด?"}
+  - name: จอ e-paper
+    type: rpc_confirm
+    cmd: DIAG_RUN
+    args: {items: [epd]}
+    timeout: 40
+    ask: "เครื่อง {unit}: จอแสดงลายทดสอบเต็มจอ ไม่มีเส้นหรือจุดขาด?"
+    fallback: {cmd: GET_STATUS, ask: "เครื่อง {unit}: จอแสดงหน้าปกติ (SN, อุณหภูมิ) ชัด ไม่มีเส้นหรือจุดขาด?"}
+  - name: ดึงข้อมูล debug
+    type: debug_pull
+    expect: {coredump: false}
