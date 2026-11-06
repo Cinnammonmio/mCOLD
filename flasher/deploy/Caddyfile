@@ -1,0 +1,8 @@
+# https for the line's web app. A public name gets a certificate by itself;
+# for a name only the factory network knows, keep `tls internal` and trust
+# Caddy's root certificate on the line's PCs (docs/web.md).
+{$LINE_HOST} {
+	tls internal
+	encode gzip
+	reverse_proxy line:8800
+}

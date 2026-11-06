@@ -31,6 +31,7 @@ docs/
   led-design.md                               สเปกไฟ RGB 4 ดวง (หน้าที่แต่ละดวง, pattern, event)
   SCH_Schematic_foamV1.0.1_P.1_2026-09-19.pdf schematic ตัวเครื่อง
   SCH_Schematic_foam_dock_P.3_2026-09-19.pdf  schematic dock
+flasher/                                      สถานีสายผลิต: ทดสอบโมดูล → flash firmware จริง → ตั้งค่า → ตรวจ (mflash)
 display-mock/                                 renderer + ภาพหน้าจอทุก state ขนาดจริง
 led-mock/                                     renderer + ภาพ pattern ไฟและผังตำแหน่ง
 mcold-spec/                                   ต้นฉบับเอกสารสเปกสำหรับผู้บริหาร/ฝ่ายขาย
